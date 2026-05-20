@@ -1,0 +1,25 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "noUncheckedIndexedAccess": true,
+        "lib": [
+            "ES2022"
+        ],
+        "jsx": "react-jsx",
+        "jsxImportSource": "react",
+        "allowImportingTsExtensions": true,
+        "noEmit": true,
+        "types": [
+            "node"
+        ]
+    },
+    "exclude": [
+        "node_modules",
+        "dist",
+        "cc-src",
+        "book"
+    ]
+}
