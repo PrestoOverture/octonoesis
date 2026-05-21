@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "test": "bun test"
+    "test": "bun test",
+    "check": "bun run typecheck && bun run lint"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",
