@@ -1,5 +1,5 @@
 import { Command } from 'commander'
-import { callAnthropicStream } from './providers/anthropic'
+import { runQuery } from './query'
 
 const program = new Command()
 
@@ -15,10 +15,7 @@ program
     }
 
     try {
-      for await (const delta of callAnthropicStream(prompt)) {
-        process.stdout.write(delta.text)
-      }
-      process.stdout.write('\n')
+      await runQuery(prompt)
     } catch (error) {
       if (error instanceof Error) {
         console.error(`Error: ${error.message}`)
