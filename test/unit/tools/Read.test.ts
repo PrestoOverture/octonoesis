@@ -1,14 +1,57 @@
 import { describe, expect, it } from 'bun:test'
+import { symlink, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
-import { readFile } from '../../../src/tools/Read'
+import { getRepoRoot } from '../../../src/query'
+import { readTool } from '../../../src/tools/Read'
 
 describe('Read tool', () => {
-  it('reads an existing file', async () => {
-    const result = await readFile({ path: join(import.meta.dir, '../../../package.json') })
-    expect(result).toContain('"name": "octonoesis"')
+  const repoRoot = getRepoRoot()
+  const ctx = { repoRoot }
+
+  it('reads an existing file with line numbers', async () => {
+    const result = await readTool.call({ path: 'package.json' }, ctx)
+    expect(result.ok).toBe(true)
+    if (result.ok) {
+      expect(result.value).toContain('1\t{')
+      expect(result.value).toContain('"name": "octonoesis"')
+    }
   })
 
-  it('rejects a nonexistent file', async () => {
-    await expect(readFile({ path: '/nonexistent/file.txt' })).rejects.toThrow()
+  it('rejects a nonexistent file with a structured error', async () => {
+    const result = await readTool.call({ path: 'nonexistent-file-that-does-not-exist.txt' }, ctx)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('file_not_found')
+    }
+  })
+
+  it('blocks directory traversal outside of repoRoot', async () => {
+    const result = await readTool.call({ path: '../../../../etc/passwd' }, ctx)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.error).toContain('path_outside_repo')
+    }
+  })
+
+  it('blocks symlink escapes outside of repoRoot', async () => {
+    // Create a symlink pointing to /etc/hosts inside the repoRoot
+    const symlinkPath = join(repoRoot, 'test_hosts_symlink')
+    try {
+      await unlink(symlinkPath)
+    } catch {}
+
+    try {
+      await symlink('/etc/hosts', symlinkPath)
+
+      const result = await readTool.call({ path: 'test_hosts_symlink' }, ctx)
+      expect(result.ok).toBe(false)
+      if (!result.ok) {
+        expect(result.error).toContain('path_outside_repo')
+      }
+    } finally {
+      try {
+        await unlink(symlinkPath)
+      } catch {}
+    }
   })
 })

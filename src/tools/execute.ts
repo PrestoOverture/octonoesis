@@ -1,0 +1,73 @@
+import { preToolUseHook } from '../permissions/hooks'
+import type { ToolContext, ToolResult } from './Tool'
+import { getTool } from './registry'
+
+export async function runTool(
+  name: string,
+  rawInput: unknown,
+  ctx: ToolContext,
+): Promise<ToolResult> {
+  // 1. Resolve tool from registry
+  const tool = getTool(name)
+  if (!tool) {
+    return { ok: false, error: `unknown_tool: Tool "${name}" is not registered.` }
+  }
+
+  // 2. Validate input shape via Zod
+  let validatedInput: unknown
+  try {
+    const parseResult = tool.inputSchema.safeParse(rawInput)
+    if (!parseResult.success) {
+      const errorMsg = parseResult.error.issues
+        .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+        .join('; ')
+      return { ok: false, error: `invalid_input: ${errorMsg}` }
+    }
+    validatedInput = parseResult.data
+  } catch (err) {
+    return {
+      ok: false,
+      error: `schema_validation_error: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+
+  // 3. Run PreToolUse Hook (placeholder for security filters / auto-moderation)
+  try {
+    const hookResult = await preToolUseHook(name, validatedInput, ctx)
+    if (hookResult.action === 'deny') {
+      return {
+        ok: false,
+        error: `permission_denied: ${hookResult.reason ?? 'Pre-tool check rejected execution.'}`,
+      }
+    }
+    if (hookResult.action === 'modify' && hookResult.modifiedInput !== undefined) {
+      validatedInput = hookResult.modifiedInput
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      error: `pre_tool_hook_error: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+
+  // 4. Permission Decision Gate (placeholder)
+  // For Phase 3, we auto-allow. In Phase 5, we will build a terminal prompt dialog for non-readonly tools.
+  const isReadOnly = tool.isReadOnly(validatedInput)
+  if (!isReadOnly) {
+    // Phase 5 will implement the interactive [y/n/a] prompt block.
+    // For now we automatically grant permission.
+  }
+
+  // 5. Execute actual tool callback
+  try {
+    if (ctx.abortSignal?.aborted) {
+      return { ok: false, error: 'aborted: Operation cancelled by user.' }
+    }
+    return await tool.call(validatedInput, ctx)
+  } catch (err) {
+    return {
+      ok: false,
+      error: `tool_execution_error: ${err instanceof Error ? err.message : String(err)}`,
+    }
+  }
+}
