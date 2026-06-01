@@ -13,6 +13,41 @@ registerTool(readTool)
 registerTool(globTool)
 registerTool(bashTool)
 
+export type CanonicalMessage =
+  | { role: 'user'; content: string | ContentBlock[] }
+  | { role: 'assistant'; content: ContentBlock[] }
+  | { role: 'tool'; tool_use_id: string; content: string | ContentBlock[] }
+
+export type ContentBlock =
+  | { type: 'text'; text: string }
+  | { type: 'tool_use'; id: string; name: string; input: unknown }
+  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }
+
+export type StreamEvent =
+  | { type: 'text_delta'; text: string }
+  | { type: 'tool_use'; id: string; name: string; input: unknown }
+  | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error' }
+  | { type: 'message_end'; usage: Usage }
+
+export type Usage = {
+  input_tokens: number
+  output_tokens: number
+}
+
+export type QueryResult = {
+  exit_reason: 'completed' | 'max_turns' | 'fatal_error' | 'user_cancel'
+  usage: Usage
+  turns: number
+  final_message?: string
+  error?: string
+}
+
+export interface ToolContext {
+  repoRoot: string
+  messages?: CanonicalMessage[]
+  [key: string]: unknown
+}
+
 let cachedRepoRoot: string | null = null
 
 /**
@@ -37,23 +72,49 @@ export function getRepoRoot(): string {
 }
 
 /**
- * Run a multi-turn agent query loop with a maximum of 5 turns.
- * @param userPrompt The starting user prompt.
+ * Normalizes CanonicalMessages to Anthropic MessageParams at call-time.
  */
-export async function runQuery(userPrompt: string): Promise<void> {
-  const messages: Anthropic.MessageParam[] = [
-    {
-      role: 'user',
-      content: [{ type: 'text', text: userPrompt }],
-    },
-  ]
+export function toAnthropicMessages(messages: CanonicalMessage[]): Anthropic.MessageParam[] {
+  return messages.map((msg) => {
+    if (msg.role === 'tool') {
+      return {
+        role: 'user',
+        content: [
+          {
+            type: 'tool_result',
+            tool_use_id: msg.tool_use_id,
+            content:
+              typeof msg.content === 'string'
+                ? msg.content
+                : msg.content.map((c) => (c.type === 'text' ? c.text : '')).join(''),
+          },
+        ],
+      } as Anthropic.MessageParam
+    }
+    return msg as Anthropic.MessageParam
+  })
+}
 
-  // Initialize the Tool Context with the cached repository root
-  const repoRoot = getRepoRoot()
-  const ctx = { repoRoot }
+/**
+ * Normalized multi-turn query engine generator loop matching the PRD contract.
+ */
+export async function* query(
+  input: string,
+  ctx: ToolContext,
+): AsyncGenerator<StreamEvent, QueryResult, undefined> {
+  if (!ctx.messages) {
+    ctx.messages = []
+  }
 
-  const MAX_TURNS = 5
+  // Push user input to conversational history
+  ctx.messages.push({
+    role: 'user',
+    content: [{ type: 'text', text: input }],
+  })
+
+  const MAX_TURNS = 50
   let turn = 0
+  const cumulativeUsage: Usage = { input_tokens: 0, output_tokens: 0 }
 
   while (turn < MAX_TURNS) {
     turn++
@@ -61,28 +122,52 @@ export async function runQuery(userPrompt: string): Promise<void> {
 
     let finalMessage: Anthropic.Message | null = null
 
-    for await (const event of callAnthropicStream(messages)) {
-      if (event.type === 'text_delta') {
-        process.stdout.write(event.text)
-      } else if (event.type === 'message_done') {
-        finalMessage = event.message
+    const apiMessages = toAnthropicMessages(ctx.messages)
+    try {
+      for await (const event of callAnthropicStream(apiMessages)) {
+        if (event.type === 'text_delta') {
+          yield { type: 'text_delta', text: event.text }
+        } else if (event.type === 'message_done') {
+          finalMessage = event.message
+        }
+      }
+    } catch (err) {
+      dbg('query', 'Fatal error during LLM streaming', err)
+      const errorMsg = err instanceof Error ? err.message : String(err)
+      return {
+        exit_reason: 'fatal_error',
+        usage: cumulativeUsage,
+        turns: turn,
+        error: errorMsg,
       }
     }
 
-    console.log(finalMessage)
-
     if (!finalMessage) {
-      throw new Error('No message returned from API')
+      return {
+        exit_reason: 'fatal_error',
+        usage: cumulativeUsage,
+        turns: turn,
+        error: 'No message returned from API',
+      }
     }
 
-    const hasText = finalMessage.content.some((c) => c.type === 'text' && c.text.length > 0)
-    if (hasText) {
-      process.stdout.write('\n')
+    const usage = finalMessage.usage || { input_tokens: 0, output_tokens: 0 }
+    cumulativeUsage.input_tokens += usage.input_tokens
+    cumulativeUsage.output_tokens += usage.output_tokens
+
+    // Yield message_end containing this turn's usage
+    yield {
+      type: 'message_end',
+      usage: {
+        input_tokens: usage.input_tokens,
+        output_tokens: usage.output_tokens,
+      },
     }
 
-    messages.push({
+    // Record the assistant response to conversational history
+    ctx.messages.push({
       role: 'assistant',
-      content: finalMessage.content,
+      content: finalMessage.content as ContentBlock[],
     })
 
     const toolUses = finalMessage.content.filter(
@@ -90,49 +175,92 @@ export async function runQuery(userPrompt: string): Promise<void> {
     )
 
     if (toolUses.length === 0) {
-      break
+      const assistantText = finalMessage.content
+        .filter((block) => block.type === 'text')
+        .map((block) => block.text)
+        .join('\n')
+
+      return {
+        exit_reason: 'completed',
+        usage: cumulativeUsage,
+        turns: turn,
+        final_message: assistantText,
+      }
     }
 
-    // Execute the detected tool using the unified runTool pipeline
     const toolUse = toolUses[0]
     if (!toolUse) {
       continue
     }
 
-    dbg('query', 'tool call detected', { tool: toolUse.name, input: toolUse.input })
-    let inputStr = ''
-    if (toolUse.input && typeof toolUse.input === 'object') {
-      const vals = Object.values(toolUse.input)
-      if (vals.length > 0) {
-        inputStr = ` ${vals[0]}`
-      }
+    // Yield tool usage event to the UI
+    yield {
+      type: 'tool_use',
+      id: toolUse.id,
+      name: toolUse.name,
+      input: toolUse.input,
     }
-    process.stdout.write(`\n[Tool Call] ${toolUse.name}${inputStr}...\n`)
+
+    dbg('query', 'tool call detected', { tool: toolUse.name, input: toolUse.input })
 
     let toolResultContent: string
     let isError = false
 
     const toolResult = await runTool(toolUse.name, toolUse.input, ctx)
 
+    // Yield tool completion details to coordinate with TUI ToolCards
+    yield {
+      type: 'tool_done',
+      id: toolUse.id,
+      name: toolUse.name,
+      status: toolResult.ok ? 'done' : 'error',
+    }
+
     if (toolResult.ok) {
       toolResultContent =
         typeof toolResult.value === 'string' ? toolResult.value : JSON.stringify(toolResult.value)
     } else {
       isError = true
-      // Return structured error payloads in JSON format with is_error: true
       toolResultContent = JSON.stringify({ error: toolResult.error })
     }
 
-    messages.push({
-      role: 'user',
-      content: [
-        {
-          type: 'tool_result',
-          tool_use_id: toolUse.id,
-          content: toolResultContent,
-          is_error: isError,
-        },
-      ],
+    // Push tool result using the canonical role 'tool'
+    ctx.messages.push({
+      role: 'tool',
+      tool_use_id: toolUse.id,
+      content: toolResultContent,
     })
   }
+
+  return {
+    exit_reason: 'max_turns',
+    usage: cumulativeUsage,
+    turns: turn,
+  }
+}
+
+/**
+ * Simple compatibility wrapper mapping the query() generator to process standard stdout/stderr streams.
+ * Keeps CLI mode and integration tests passing successfully without revisions.
+ * @param userPrompt The starting user prompt.
+ */
+export async function runQuery(userPrompt: string): Promise<void> {
+  const ctx: ToolContext = { repoRoot: getRepoRoot() }
+  const generator = query(userPrompt, ctx)
+
+  for await (const event of generator) {
+    if (event.type === 'text_delta') {
+      process.stdout.write(event.text)
+    } else if (event.type === 'tool_use') {
+      let inputStr = ''
+      if (event.input && typeof event.input === 'object') {
+        const vals = Object.values(event.input)
+        if (vals.length > 0) {
+          inputStr = ` ${vals[0]}`
+        }
+      }
+      process.stdout.write(`\n[Tool Call] ${event.name}${inputStr}...\n`)
+    }
+  }
+  process.stdout.write('\n')
 }

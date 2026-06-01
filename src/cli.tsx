@@ -1,5 +1,8 @@
 import { Command } from 'commander'
+import { render } from 'ink'
+import React from 'react'
 import { runQuery } from './query'
+import { App } from './ui/App'
 
 const program = new Command()
 
@@ -10,7 +13,9 @@ program
   .argument('[prompt]', 'One-shot prompt to send to the model')
   .action(async (prompt?: string) => {
     if (!prompt) {
-      console.log('Hello from Octonoesis.')
+      // Launch interactive Ink TUI mode
+      const { waitUntilExit } = render(<App />)
+      await waitUntilExit()
       return
     }
 
