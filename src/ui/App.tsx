@@ -1,7 +1,9 @@
 import { Box, Text } from 'ink'
 import TextInput from 'ink-text-input'
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
+import { registerPromptHandler, unregisterPromptHandler } from '../permissions/confirm'
 import { type CanonicalMessage, type ToolContext, getRepoRoot, query } from '../query'
+import { ConfirmDialog } from './ConfirmDialog'
 import { StatusBar } from './StatusBar'
 import { ToolCard } from './ToolCard'
 export type { CanonicalMessage } from '../query'
@@ -152,6 +154,34 @@ export function App({
   const [inputValue, setInputValue] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
 
+  // Permission dialog state
+  interface PendingConfirm {
+    toolName: string
+    input: unknown
+    resolve: (decision: 'allow_once' | 'allow_always' | 'deny') => void
+  }
+  const [pendingConfirm, setPendingConfirm] = useState<PendingConfirm | null>(null)
+
+  // Register prompt handler at mount, unregister at unmount
+  useEffect(() => {
+    registerPromptHandler((toolName, input) => {
+      return new Promise<'allow_once' | 'allow_always' | 'deny'>((resolve) => {
+        setPendingConfirm({
+          toolName,
+          input,
+          resolve: (decision) => {
+            setPendingConfirm(null)
+            resolve(decision)
+          },
+        })
+      })
+    })
+
+    return () => {
+      unregisterPromptHandler()
+    }
+  }, [])
+
   // Streaming states (hooks default props cleanly for tests)
   const [streamingText, setStreamingText] = useState(initialStreamingText)
   const [streamingToolUses, setStreamingToolUses] = useState<
@@ -227,13 +257,21 @@ export function App({
     <Box flexDirection="column" padding={1}>
       <MessageList messages={messages} />
       <StreamingResponse text={streamingText} toolUses={streamingToolUses} />
-      <Input
-        value={inputValue}
-        onChange={setInputValue}
-        onSubmit={handleSubmit}
-        placeholder={placeholder}
-        isDisabled={isGenerating}
-      />
+      {pendingConfirm ? (
+        <ConfirmDialog
+          toolName={pendingConfirm.toolName}
+          input={pendingConfirm.input}
+          onResolve={pendingConfirm.resolve}
+        />
+      ) : (
+        <Input
+          value={inputValue}
+          onChange={setInputValue}
+          onSubmit={handleSubmit}
+          placeholder={placeholder}
+          isDisabled={isGenerating}
+        />
+      )}
       <StatusBar
         modelName="claude-haiku-4-5-20251001"
         inputTokens={usage.input_tokens}

@@ -1,3 +1,4 @@
+import { requestPermission } from '../permissions/confirm'
 import { preToolUseHook } from '../permissions/hooks'
 import type { ToolContext, ToolResult } from './Tool'
 import { getTool } from './registry'
@@ -50,12 +51,20 @@ export async function runTool(
     }
   }
 
-  // 4. Permission Decision Gate (placeholder)
-  // For Phase 3, we auto-allow. In Phase 5, we will build a terminal prompt dialog for non-readonly tools.
+  // 4. Permission Decision Gate
   const isReadOnly = tool.isReadOnly(validatedInput)
   if (!isReadOnly) {
-    // Phase 5 will implement the interactive [y/n/a] prompt block.
-    // For now we automatically grant permission.
+    try {
+      const decision = await requestPermission(name, validatedInput)
+      if (decision === 'deny') {
+        return { ok: false, error: 'permission_denied: User denied execution.' }
+      }
+    } catch (err) {
+      return {
+        ok: false,
+        error: `permission_request_error: ${err instanceof Error ? err.message : String(err)}`,
+      }
+    }
   }
 
   // 5. Execute actual tool callback
