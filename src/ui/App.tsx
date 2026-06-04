@@ -1,6 +1,6 @@
-import { Box, Text } from 'ink'
+import { Box, Text, useApp, useInput } from 'ink'
 import TextInput from 'ink-text-input'
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { registerPromptHandler, unregisterPromptHandler } from '../permissions/confirm'
 import { type CanonicalMessage, type ToolContext, getRepoRoot, query } from '../query'
 import { ConfirmDialog } from './ConfirmDialog'
@@ -154,6 +154,20 @@ export function App({
   const [inputValue, setInputValue] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
 
+  const { exit } = useApp()
+  const abortControllerRef = useRef<AbortController | null>(null)
+
+  // Wire the key binding
+  useInput((input, key) => {
+    if (key.ctrl && input === 'c') {
+      if (isGenerating) {
+        abortControllerRef.current?.abort()
+      } else {
+        exit()
+      }
+    }
+  })
+
   // Permission dialog state
   interface PendingConfirm {
     toolName: string
@@ -210,10 +224,13 @@ export function App({
     }
     setMessages((prev) => [...prev, newMsg])
 
+    const controller = new AbortController()
+    abortControllerRef.current = controller
+
     // Execute query loop asynchronously in the background
     ;(async () => {
       try {
-        const generator = query(value, ctx)
+        const generator = query(value, ctx, controller.signal)
         for await (const event of generator) {
           if (event.type === 'text_delta') {
             setStreamingText((prev) => prev + event.text)
@@ -249,6 +266,7 @@ export function App({
         setStreamingText('')
         setStreamingToolUses([])
         setIsGenerating(false)
+        abortControllerRef.current = null
       }
     })()
   }

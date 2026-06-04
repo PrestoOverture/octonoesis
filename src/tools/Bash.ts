@@ -2,6 +2,7 @@
 declare const Bun: any
 import { z } from 'zod'
 import type { Tool, ToolContext, ToolResult } from './Tool'
+export const activeSubprocesses = new Set<unknown>()
 
 // Input validation schema using Zod
 const BashInputSchema = z.object({
@@ -48,6 +49,9 @@ class BashTool implements Tool<BashInput, string> {
       if (ctx.abortSignal) {
         ctx.abortSignal.removeEventListener('abort', handleAbort)
       }
+      if (proc) {
+        activeSubprocesses.delete(proc)
+      }
     }
 
     const handleAbort = () => {
@@ -55,8 +59,13 @@ class BashTool implements Tool<BashInput, string> {
       cleanup()
       if (proc) {
         try {
-          proc.kill()
-        } catch {}
+          // Send SIGTERM to the entire process group
+          process.kill(-proc.pid, 'SIGTERM')
+        } catch {
+          try {
+            proc.kill() // Fallback to single process kill if PGID skill fails
+          } catch {}
+        }
       }
     }
 
@@ -86,7 +95,9 @@ class BashTool implements Tool<BashInput, string> {
         cwd: ctx.repoRoot,
         stdout: 'pipe',
         stderr: 'pipe',
+        detached: true, // Run in a separate process
       })
+      activeSubprocesses.add(proc)
 
       // 5. Stream and wait for stdout and stderr to complete
       const [stdoutText, stderrText, exitCode] = await Promise.all([

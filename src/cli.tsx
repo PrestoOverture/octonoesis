@@ -14,7 +14,7 @@ program
   .action(async (prompt?: string) => {
     if (!prompt) {
       // Launch interactive Ink TUI mode
-      const { waitUntilExit } = render(<App />)
+      const { waitUntilExit } = render(<App />, { exitOnCtrlC: false })
       await waitUntilExit()
       return
     }

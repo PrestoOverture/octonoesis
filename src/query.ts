@@ -45,6 +45,7 @@ export type QueryResult = {
 export interface ToolContext {
   repoRoot: string
   messages?: CanonicalMessage[]
+  abortSignal?: AbortSignal
   [key: string]: unknown
 }
 
@@ -101,9 +102,23 @@ export function toAnthropicMessages(messages: CanonicalMessage[]): Anthropic.Mes
 export async function* query(
   input: string,
   ctx: ToolContext,
+  signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent, QueryResult, undefined> {
   if (!ctx.messages) {
     ctx.messages = []
+  }
+
+  if (signal) {
+    ctx.abortSignal = signal
+  }
+
+  if (ctx.abortSignal?.aborted) {
+    return {
+      exit_reason: 'user_cancel',
+      usage: { input_tokens: 0, output_tokens: 0 },
+      turns: 0,
+      error: 'Query aborted by user',
+    }
   }
 
   // Push user input to conversational history
@@ -117,6 +132,14 @@ export async function* query(
   const cumulativeUsage: Usage = { input_tokens: 0, output_tokens: 0 }
 
   while (turn < MAX_TURNS) {
+    if (ctx.abortSignal?.aborted) {
+      return {
+        exit_reason: 'user_cancel',
+        usage: cumulativeUsage,
+        turns: turn - 1,
+        error: 'Query aborted by user',
+      }
+    }
     turn++
     dbg('query', `Starting turn ${turn}/${MAX_TURNS}`)
 
@@ -124,7 +147,15 @@ export async function* query(
 
     const apiMessages = toAnthropicMessages(ctx.messages)
     try {
-      for await (const event of callAnthropicStream(apiMessages)) {
+      for await (const event of callAnthropicStream(apiMessages, ctx.abortSignal)) {
+        if (ctx.abortSignal?.aborted) {
+          return {
+            exit_reason: 'user_cancel',
+            usage: cumulativeUsage,
+            turns: turn,
+            error: 'Query aborted by user',
+          }
+        }
         if (event.type === 'text_delta') {
           yield { type: 'text_delta', text: event.text }
         } else if (event.type === 'message_done') {
@@ -132,6 +163,14 @@ export async function* query(
         }
       }
     } catch (err) {
+      if (ctx.abortSignal?.aborted) {
+        return {
+          exit_reason: 'user_cancel',
+          usage: cumulativeUsage,
+          turns: turn,
+          error: 'Query aborted by user',
+        }
+      }
       dbg('query', 'Fatal error during LLM streaming', err)
       const errorMsg = err instanceof Error ? err.message : String(err)
       return {
