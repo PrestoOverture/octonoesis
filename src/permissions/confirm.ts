@@ -5,8 +5,10 @@ import readline from 'node:readline'
 const allowlist = new Set<string>()
 
 /**
- * Computes a unique exact-input hash for a tool call.
- * Format: `${toolName}:${sha256(JSON.stringify(input)).slice(0,8)}`
+ * Computes a unique exact-input hash signature for a tool call.
+ * @param toolName The name of the tool.
+ * @param input The tool input payload.
+ * @returns The generated permission key string.
  */
 export function getPermissionKey(toolName: string, input: unknown): string {
   const serialized = JSON.stringify(input)
@@ -15,7 +17,7 @@ export function getPermissionKey(toolName: string, input: unknown): string {
 }
 
 /**
- * Clears the session allowlist (mainly for unit tests).
+ * Clears all approved keys from the current session allowlist.
  */
 export function clearAllowlist(): void {
   allowlist.clear()
@@ -28,18 +30,26 @@ type PromptHandler = (
 ) => Promise<'allow_once' | 'allow_always' | 'deny'>
 let activePromptHandler: PromptHandler | null = null
 
+/**
+ * Registers a delegated UI handler to display permission prompts.
+ * @param handler The delegated prompt handler callback.
+ */
 export function registerPromptHandler(handler: PromptHandler): void {
   activePromptHandler = handler
 }
 
+/**
+ * Unregisters the currently active delegated UI prompt handler.
+ */
 export function unregisterPromptHandler(): void {
   activePromptHandler = null
 }
 
 /**
- * Requests permission to run a non-read-only tool.
- * Delegates to an active prompt handler if registered, otherwise falls back
- * to a clean interactive CLI console prompt.
+ * Requests permission from the user to execute a non-read-only tool.
+ * @param toolName The name of the tool requesting permission.
+ * @param input The validated input payload of the tool.
+ * @returns A promise resolving to the user's permission decision.
  */
 export async function requestPermission(
   toolName: string,

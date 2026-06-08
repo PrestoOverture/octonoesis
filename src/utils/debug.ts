@@ -3,9 +3,9 @@ import chalk from 'chalk'
 const isDebug = process.env.DEBUG === '1' || process.argv.includes('--debug')
 
 /**
- * Debug logger — writes to stderr only when DEBUG=1 or --debug flag is present.
- * @param scope  A short label like 'api', 'tool', 'retry'
- * @param args   Values to log (objects are auto-stringified)
+ * Logs debug messages to stderr when DEBUG=1 or the --debug CLI flag is active.
+ * @param scope A short namespace label (e.g. 'api', 'tool').
+ * @param args Additional values or objects to log.
  */
 export function dbg(scope: string, ...args: unknown[]): void {
   if (!isDebug) return

@@ -7,10 +7,19 @@ export interface StatusBarProps {
   outputTokens: number
 }
 
+/**
+ * Renders a bottom status bar displaying the active LLM model and token usage.
+ * @param props The props containing the model name, input token count, and output token count.
+ * @returns A JSX.Element showing the status bar.
+ */
 export const StatusBar = React.memo(({ modelName, inputTokens, outputTokens }: StatusBarProps) => {
   const totalTokens = inputTokens + outputTokens
 
-  // Format token counts in an abbreviated format if they grow large
+  /**
+   * Formats a token count into a human-readable abbreviated string (e.g. 1.5k).
+   * @param count The numeric token count.
+   * @returns The formatted string representation of the token count.
+   */
   const formatTokens = (count: number): string => {
     if (count >= 1000) {
       return `${(count / 1000).toFixed(1)}k`

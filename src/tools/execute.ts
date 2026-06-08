@@ -3,6 +3,13 @@ import { preToolUseHook } from '../permissions/hooks'
 import type { ToolContext, ToolResult } from './Tool'
 import { getTool } from './registry'
 
+/**
+ * Executes a tool by resolving it, validating input, running hooks, checking permissions, and calling the tool.
+ * @param name The name of the tool to run.
+ * @param rawInput The unvalidated input arguments.
+ * @param ctx The tool execution context.
+ * @returns A promise resolving to the ToolResult from the execution.
+ */
 export async function runTool(
   name: string,
   rawInput: unknown,

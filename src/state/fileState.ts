@@ -13,6 +13,8 @@ interface ExtendedToolContext extends ToolContext {
 
 /**
  * Lazily initializes and retrieves the file state cache from ToolContext.
+ * @param ctx The tool execution context.
+ * @returns The active FileStateCache mapping paths to content hashes.
  */
 function getCache(ctx: ToolContext): FileStateCache {
   const extendedCtx = ctx as ExtendedToolContext
@@ -26,6 +28,8 @@ function getCache(ctx: ToolContext): FileStateCache {
 
 /**
  * Computes a SHA-256 hash of the given file content.
+ * @param content The string content to hash.
+ * @returns The hex string representation of the sha256 hash.
  */
 export function computeHash(content: string): string {
   return crypto.createHash('sha256').update(content).digest('hex')
@@ -33,9 +37,9 @@ export function computeHash(content: string): string {
 
 /**
  * Records a file read event by caching its content hash.
- * @param ctx ToolContext
- * @param filePath Resolved absolute path to the file
- * @param content Raw string content of the file
+ * @param ctx The tool execution context.
+ * @param filePath Resolved absolute path to the file.
+ * @param content Raw string content of the file.
  */
 export function recordFileRead(ctx: ToolContext, filePath: string, content: string): void {
   const cache = getCache(ctx)
@@ -45,12 +49,9 @@ export function recordFileRead(ctx: ToolContext, filePath: string, content: stri
 
 /**
  * Checks if a file is safe to edit.
- * Returns:
- * - 'ok': File is in cache and matches disk content.
- * - 'must_read_first': File has not been read in this session.
- * - 'file_changed_since_read': File has been modified on disk since it was read.
- * @param ctx ToolContext
- * @param filePath Resolved absolute path to the file
+ * @param ctx The tool execution context.
+ * @param filePath Resolved absolute path to the file.
+ * @returns 'ok' if unchanged, 'must_read_first' if not in cache, or 'file_changed_since_read' if modified.
  */
 export async function checkFileState(
   ctx: ToolContext,

@@ -4,32 +4,32 @@ import type { Tool } from './Tool'
 const registry = new Map<string, Tool>()
 
 /**
- * Register a tool in the global registry
- * @param tool
+ * Registers a tool in the global registry map.
+ * @param tool The Tool instance to register.
  */
 export function registerTool(tool: Tool): void {
   registry.set(tool.name, tool)
 }
 
 /**
- * Look up a tool by its name.
- * @param name
- * @returns
+ * Looks up a registered tool by its name.
+ * @param name The name of the tool.
+ * @returns The registered Tool instance, or undefined if not found.
  */
 export function getTool(name: string): Tool | undefined {
   return registry.get(name)
 }
 
 /**
- * Retrieve all registered tools.
- * @returns
+ * Retrieves all currently registered tools.
+ * @returns An array containing all registered Tool instances.
  */
 export function getAllTools(): Tool[] {
   return Array.from(registry.values())
 }
 
 /**
- * Reset/clear the registry (useful for clean testing).
+ * Resets and clears the global tool registry.
  */
 export function clearRegistry(): void {
   registry.clear()

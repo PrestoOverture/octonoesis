@@ -1,8 +1,6 @@
 /**
- * Environment variable helpers.
- * Bun auto-loads .env at the beginning, so no dotenv is nedded.
- * Checks whether the key is set, otherwise throws an error
- * @returns Anthropic API key
+ * Resolves the Anthropic API key from the environment variables, throwing an error if missing.
+ * @returns The resolved Anthropic API key string.
  */
 export function getAnthropicKey(): string {
   const key = process.env.ANTHROPIC_API_KEY

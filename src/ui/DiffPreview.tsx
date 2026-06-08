@@ -9,6 +9,11 @@ export interface DiffPreviewProps {
   filePath: string
 }
 
+/**
+ * Renders a color-coded unified diff preview of file changes, showing +/-3 context lines and truncating long diffs.
+ * @param props The props containing the old text, new text, and path of the file.
+ * @returns A JSX.Element showing the formatted unified diff.
+ */
 export function DiffPreview({ oldText, newText, filePath }: DiffPreviewProps) {
   // Generate unified patch with 3 context lines
   const patch = createPatch(filePath, oldText, newText, undefined, undefined, { context: 3 })

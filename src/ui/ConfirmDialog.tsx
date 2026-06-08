@@ -8,6 +8,11 @@ export interface ConfirmDialogProps {
   onResolve: (decision: 'allow_once' | 'allow_always' | 'deny') => void
 }
 
+/**
+ * Renders an interactive confirmation dialog prompting the user to approve a tool execution.
+ * @param props The props containing the tool name, tool input parameters, and resolution callback.
+ * @returns A JSX.Element rendering the warning dialog and keystroke instructions.
+ */
 export function ConfirmDialog({ toolName, input, onResolve }: ConfirmDialogProps) {
   // Listen for keyboard inputs
   useInput((inputStr) => {

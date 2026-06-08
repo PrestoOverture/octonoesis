@@ -7,6 +7,11 @@ export interface ToolCardProps {
   status: 'running' | 'done' | 'error'
 }
 
+/**
+ * Renders a visual one-line card showing the status of a tool execution.
+ * @param props The props containing the tool name, serialized arguments, and current execution status.
+ * @returns A JSX.Element showing the tool card.
+ */
 export const ToolCard = React.memo(({ tool, args, status }: ToolCardProps) => {
   let icon = '⏳'
   let color = 'yellow'
