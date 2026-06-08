@@ -54,4 +54,15 @@ describe('Read tool', () => {
       } catch {}
     }
   })
+
+  it('records the file read state in the context', async () => {
+    const checkCtx = { repoRoot }
+    const result = await readTool.call({ path: 'package.json' }, checkCtx)
+    expect(result.ok).toBe(true)
+
+    const { checkFileState } = await import('../../../src/state/fileState')
+    const { resolve } = await import('node:path')
+    const status = await checkFileState(checkCtx, resolve(repoRoot, 'package.json'))
+    expect(status).toBe('ok')
+  })
 })

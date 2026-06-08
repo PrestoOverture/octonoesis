@@ -24,7 +24,6 @@ describe('execute pipeline (runTool)', () => {
   it('rejects an unregistered tool with unknown_tool error', async () => {
     clearRegistry()
     const result = await runTool('UnregisteredTool', {}, ctx)
-    console.log(result)
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.error).toContain('unknown_tool')
@@ -37,7 +36,6 @@ describe('execute pipeline (runTool)', () => {
 
     // Read tool expects path (string), but we pass a number
     const result = await runTool('Read', { path: 12345 }, ctx)
-    console.log(result)
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.error).toContain('invalid_input')
@@ -51,7 +49,6 @@ describe('execute pipeline (runTool)', () => {
 
     // The mock hook is programmed to deny Read on "blocked-by-hook.txt"
     const result = await runTool('Read', { path: 'blocked-by-hook.txt' }, ctx)
-    console.log(result)
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.error).toContain('permission_denied')
@@ -64,7 +61,6 @@ describe('execute pipeline (runTool)', () => {
     registerTool(readTool)
 
     const result = await runTool('Read', { path: 'package.json' }, ctx)
-    console.log(result)
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.value).toContain('"name": "octonoesis"')

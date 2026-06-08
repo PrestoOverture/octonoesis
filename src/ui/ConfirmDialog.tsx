@@ -1,5 +1,6 @@
 import { Box, Text, useInput } from 'ink'
 import React from 'react'
+import { DiffPreview } from './DiffPreview'
 
 export interface ConfirmDialogProps {
   toolName: string
@@ -20,7 +21,10 @@ export function ConfirmDialog({ toolName, input, onResolve }: ConfirmDialogProps
     }
   })
 
-  // Format parameters cleanly
+  const isEdit = toolName === 'Edit'
+  const editInput = input as { path: string; old_string: string; new_string: string }
+
+  // Format parameters cleanly for non-Edit tools
   const paramsStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2)
 
   return (
@@ -36,12 +40,28 @@ export function ConfirmDialog({ toolName, input, onResolve }: ConfirmDialogProps
         <Text> wants to execute.</Text>
       </Box>
 
-      <Box flexDirection="column" marginBottom={1} paddingLeft={2}>
-        <Text bold color="gray">
-          Parameters:
-        </Text>
-        <Text color="white">{paramsStr}</Text>
-      </Box>
+      {isEdit ? (
+        <Box flexDirection="column" marginBottom={1}>
+          <Box>
+            <Text bold color="gray">
+              File:{' '}
+            </Text>
+            <Text color="white">{editInput.path}</Text>
+          </Box>
+          <DiffPreview
+            oldText={editInput.old_string}
+            newText={editInput.new_string}
+            filePath={editInput.path}
+          />
+        </Box>
+      ) : (
+        <Box flexDirection="column" marginBottom={1} paddingLeft={2}>
+          <Text bold color="gray">
+            Parameters:
+          </Text>
+          <Text color="white">{paramsStr}</Text>
+        </Box>
+      )}
 
       <Box flexDirection="row">
         <Text>Press </Text>

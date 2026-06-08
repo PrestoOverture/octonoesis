@@ -1,6 +1,7 @@
 import { readFile as fsReadFile, realpath } from 'node:fs/promises'
 import { resolve, sep } from 'node:path'
 import z from 'zod'
+import { recordFileRead } from '../state/fileState'
 import type { Tool, ToolContext, ToolResult } from './Tool'
 
 // Zod schema defining the input argument shape
@@ -56,6 +57,9 @@ class ReadTool implements Tool<ReadInput, string> {
     // 4. Read the target file
     try {
       const content = await fsReadFile(realTargetPath, 'utf-8')
+
+      // Record the file state cache in the context
+      recordFileRead(ctx, realTargetPath, content)
 
       // 5. Line Numbering: Prefix every line with a 1-indexed line number and tab
       const lines = content.split(/\r?\n/)

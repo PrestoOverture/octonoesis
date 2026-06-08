@@ -8,7 +8,6 @@ describe('Bash tool', () => {
 
   it('runs a simple command successfully', async () => {
     const result = await bashTool.call({ command: 'echo "hello agent"' }, ctx)
-    console.log(result)
     expect(result.ok).toBe(true)
     if (result.ok) {
       const output = JSON.parse(result.value)
@@ -20,7 +19,6 @@ describe('Bash tool', () => {
 
   it('blocks dangerous commands in the denylist', async () => {
     const result = await bashTool.call({ command: 'sudo apt install something' }, ctx)
-    console.log(result)
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.error).toContain('blocked_command')

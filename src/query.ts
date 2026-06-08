@@ -2,8 +2,10 @@ import { spawnSync } from 'node:child_process'
 import type Anthropic from '@anthropic-ai/sdk'
 import { callAnthropicStream } from './providers/anthropic'
 import { bashTool } from './tools/Bash'
+import { editTool } from './tools/Edit'
 import { globTool } from './tools/Glob'
 import { readTool } from './tools/Read'
+import { writeTool } from './tools/Write'
 import { runTool } from './tools/execute'
 import { registerTool } from './tools/registry'
 import { dbg } from './utils/debug'
@@ -12,6 +14,8 @@ import { dbg } from './utils/debug'
 registerTool(readTool)
 registerTool(globTool)
 registerTool(bashTool)
+registerTool(writeTool)
+registerTool(editTool)
 
 export type CanonicalMessage =
   | { role: 'user'; content: string | ContentBlock[] }

@@ -5,7 +5,7 @@ import { ConfirmDialog } from '../../../src/ui/ConfirmDialog'
 
 describe('ConfirmDialog TUI Component', () => {
   test('renders tool name and formatted parameters correctly', () => {
-    const onResolve = mock(() => {})
+    const onResolve = mock(() => { })
     const { lastFrame } = render(
       <ConfirmDialog toolName="Bash" input={{ command: 'bun test' }} onResolve={onResolve} />,
     )
@@ -64,5 +64,42 @@ describe('ConfirmDialog TUI Component', () => {
     stdin.write('a')
     expect(calls.length).toBe(1)
     expect(calls[0]).toBe('allow_always')
+  })
+
+  test('renders diff preview when tool is Edit', () => {
+    const onResolve = mock(() => { })
+    const editInput = {
+      path: 'src/main.ts',
+      old_string: 'const x = 1;',
+      new_string: 'const x = 2;',
+    }
+    const { lastFrame } = render(
+      <ConfirmDialog toolName="Edit" input={editInput} onResolve={onResolve} />,
+    )
+
+    const frame = lastFrame()
+    console.log(frame)
+    expect(frame).toContain('File:')
+    expect(frame).toContain('src/main.ts')
+    expect(frame).toContain('@@')
+    expect(frame).toContain('-const x = 1;')
+    expect(frame).toContain('+const x = 2;')
+  })
+
+  test('does not render diff preview when tool is Write', () => {
+    const onResolve = mock(() => { })
+    const writeInput = {
+      path: 'src/main.ts',
+      content: 'const x = 1;',
+    }
+    const { lastFrame } = render(
+      <ConfirmDialog toolName="Write" input={writeInput} onResolve={onResolve} />,
+    )
+
+    const frame = lastFrame()
+    console.log(frame)
+    expect(frame).toContain('src/main.ts')
+    expect(frame).toContain('const x = 1;')
+    expect(frame).not.toContain('@@')
   })
 })

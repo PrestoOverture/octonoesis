@@ -8,7 +8,6 @@ describe('Glob tool', () => {
 
   it('lists existing files with pattern', async () => {
     const result = await globTool.call({ pattern: 'docs/*.md' }, ctx)
-    console.log(result)
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.value.length >= 4).toBe(true)
@@ -18,7 +17,6 @@ describe('Glob tool', () => {
 
   it('excludes node_modules and .git by default', async () => {
     const result = await globTool.call({ pattern: '**/node_modules/**/*' }, ctx)
-    console.log(result)
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.value.length).toBe(0)
@@ -27,7 +25,6 @@ describe('Glob tool', () => {
 
   it('truncates matches according to limit', async () => {
     const result = await globTool.call({ pattern: 'src/**/*.ts', limit: 1 }, ctx)
-    console.log(result)
     expect(result.ok).toBe(true)
     if (result.ok) {
       expect(result.value.length).toBe(1)
@@ -36,7 +33,6 @@ describe('Glob tool', () => {
 
   it('blocks traversal escapes outside of repoRoot via cwd', async () => {
     const result = await globTool.call({ pattern: '*', cwd: '../../../../etc' }, ctx)
-    console.log(result)
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.error).toContain('path_outside_repo')
