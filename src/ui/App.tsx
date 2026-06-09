@@ -5,6 +5,7 @@ import { registerPromptHandler, unregisterPromptHandler } from '../permissions/c
 import { type CanonicalMessage, type ToolContext, getRepoRoot, query } from '../query'
 import { ConfirmDialog } from './ConfirmDialog'
 import { StatusBar } from './StatusBar'
+import { TodoPanel } from './TodoPanel'
 import { ToolCard } from './ToolCard'
 export type { CanonicalMessage } from '../query'
 
@@ -15,6 +16,12 @@ export interface AppProps {
   placeholder?: string
 }
 
+/**
+ * MessageList renders the chronological history of user messages and agent turns,
+ * rendering tool usages as compact <ToolCard> components.
+ *
+ * @returns The rendered Box containing message logs.
+ */
 export function MessageList({ messages = [] }: { messages?: CanonicalMessage[] }) {
   return (
     <Box flexDirection="column">
@@ -77,6 +84,12 @@ export function MessageList({ messages = [] }: { messages?: CanonicalMessage[] }
   )
 }
 
+/**
+ * StreamingResponse renders the actively streaming text response and running tools
+ * from the current query turn.
+ *
+ * @returns The rendered Box containing active streaming logs, or null if empty.
+ */
 export function StreamingResponse({
   text = '',
   toolUses = [],
@@ -107,6 +120,11 @@ export function StreamingResponse({
   )
 }
 
+/**
+ * Input renders the interactive prompt line where user enters message instructions.
+ *
+ * @returns The rendered Box containing the input field layout.
+ */
 export function Input({
   value,
   onChange,
@@ -139,6 +157,13 @@ export function Input({
   )
 }
 
+/**
+ * App is the root React component of the terminal TUI.
+ * It coordinates chat history state, input submissions, active streaming generator execution,
+ * permission dialog triggers, and layout splitting with the todo sidebar panel.
+ *
+ * @returns The rendered main terminal viewport.
+ */
 export function App({
   messages: initialMessages = [],
   streamingText: initialStreamingText = '',
@@ -270,26 +295,30 @@ export function App({
       }
     })()
   }
-
   return (
     <Box flexDirection="column" padding={1}>
-      <MessageList messages={messages} />
-      <StreamingResponse text={streamingText} toolUses={streamingToolUses} />
-      {pendingConfirm ? (
-        <ConfirmDialog
-          toolName={pendingConfirm.toolName}
-          input={pendingConfirm.input}
-          onResolve={pendingConfirm.resolve}
-        />
-      ) : (
-        <Input
-          value={inputValue}
-          onChange={setInputValue}
-          onSubmit={handleSubmit}
-          placeholder={placeholder}
-          isDisabled={isGenerating}
-        />
-      )}
+      <Box flexDirection="row" flexGrow={1}>
+        <Box flexDirection="column" flexGrow={1}>
+          <MessageList messages={messages} />
+          <StreamingResponse text={streamingText} toolUses={streamingToolUses} />
+          {pendingConfirm ? (
+            <ConfirmDialog
+              toolName={pendingConfirm.toolName}
+              input={pendingConfirm.input}
+              onResolve={pendingConfirm.resolve}
+            />
+          ) : (
+            <Input
+              value={inputValue}
+              onChange={setInputValue}
+              onSubmit={handleSubmit}
+              placeholder={placeholder}
+              isDisabled={isGenerating}
+            />
+          )}
+        </Box>
+        <TodoPanel />
+      </Box>
       <StatusBar
         modelName="claude-haiku-4-5-20251001"
         inputTokens={usage.input_tokens}

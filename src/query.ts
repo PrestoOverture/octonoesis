@@ -4,18 +4,22 @@ import { callAnthropicStream } from './providers/anthropic'
 import { bashTool } from './tools/Bash'
 import { editTool } from './tools/Edit'
 import { globTool } from './tools/Glob'
+import { grepTool } from './tools/Grep'
 import { readTool } from './tools/Read'
+import { todoWriteTool } from './tools/TodoWrite'
 import { writeTool } from './tools/Write'
 import { runTool } from './tools/execute'
 import { registerTool } from './tools/registry'
 import { dbg } from './utils/debug'
 
-// 1. Automatically register all 3 tools in the registry
+// 1. Automatically register all tools in the registry
 registerTool(readTool)
 registerTool(globTool)
 registerTool(bashTool)
 registerTool(writeTool)
 registerTool(editTool)
+registerTool(grepTool)
+registerTool(todoWriteTool)
 
 export type CanonicalMessage =
   | { role: 'user'; content: string | ContentBlock[] }
