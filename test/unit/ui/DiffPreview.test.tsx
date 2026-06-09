@@ -12,7 +12,6 @@ describe('DiffPreview Component', () => {
     )
 
     const frame = lastFrame()
-    console.log(frame)
     // Check that we render hunk headers and line content modifications
     expect(frame).toContain('@@')
     expect(frame).toContain('-line two')
@@ -28,7 +27,6 @@ describe('DiffPreview Component', () => {
     )
 
     const frame = lastFrame()
-    console.log(frame)
     // It should have truncated the output and displayed the truncation indicator
     expect(frame).toContain('lines truncated')
   })

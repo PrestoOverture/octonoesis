@@ -5,7 +5,7 @@ import { ConfirmDialog } from '../../../src/ui/ConfirmDialog'
 
 describe('ConfirmDialog TUI Component', () => {
   test('renders tool name and formatted parameters correctly', () => {
-    const onResolve = mock(() => {})
+    const onResolve = mock(() => { })
     const { lastFrame } = render(
       <ConfirmDialog toolName="Bash" input={{ command: 'bun test' }} onResolve={onResolve} />,
     )
@@ -67,7 +67,7 @@ describe('ConfirmDialog TUI Component', () => {
   })
 
   test('renders diff preview when tool is Edit', () => {
-    const onResolve = mock(() => {})
+    const onResolve = mock(() => { })
     const editInput = {
       path: 'src/main.ts',
       old_string: 'const x = 1;',
@@ -78,7 +78,6 @@ describe('ConfirmDialog TUI Component', () => {
     )
 
     const frame = lastFrame()
-    console.log(frame)
     expect(frame).toContain('File:')
     expect(frame).toContain('src/main.ts')
     expect(frame).toContain('@@')
@@ -87,7 +86,7 @@ describe('ConfirmDialog TUI Component', () => {
   })
 
   test('does not render diff preview when tool is Write', () => {
-    const onResolve = mock(() => {})
+    const onResolve = mock(() => { })
     const writeInput = {
       path: 'src/main.ts',
       content: 'const x = 1;',
@@ -97,7 +96,6 @@ describe('ConfirmDialog TUI Component', () => {
     )
 
     const frame = lastFrame()
-    console.log(frame)
     expect(frame).toContain('src/main.ts')
     expect(frame).toContain('const x = 1;')
     expect(frame).not.toContain('@@')
