@@ -11,7 +11,8 @@ let activeProvider: LLMProvider | null = null
 /**
  * Resolves the configured provider instance based on LLM_PROVIDER.
  * Defaults to 'anthropic'.
- * @returns The resolved LLMProvider instance.
+ *
+ * @return The resolved LLMProvider instance.
  */
 export function getProvider(): LLMProvider {
   if (activeProvider) return activeProvider
@@ -32,6 +33,8 @@ export function getProvider(): LLMProvider {
 
 /**
  * Overrides the provider instance. Useful for mock injection during tests.
+ *
+ * @param provider The provider override instance or null.
  */
 export function setProvider(provider: LLMProvider | null): void {
   activeProvider = provider
@@ -40,7 +43,8 @@ export function setProvider(provider: LLMProvider | null): void {
 /**
  * Resolves the active model ID based on env configuration priorities:
  * MODEL > provider-specific model env var > default model constant.
- * @returns The resolved model name.
+ *
+ * @return The resolved model name.
  */
 export function getResolvedModel(): string {
   const providerEnv = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()

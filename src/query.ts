@@ -46,6 +46,8 @@ let cachedRepoRoot: string | null = null
 /**
  * Discovers and caches the Git repository root using `git rev-parse --show-toplevel`.
  * Falls back to process.cwd() if not inside a git repository.
+ *
+ * @return The absolute path to the repository root.
  */
 export function getRepoRoot(): string {
   if (cachedRepoRoot) return cachedRepoRoot
@@ -66,6 +68,11 @@ export function getRepoRoot(): string {
 
 /**
  * Normalized multi-turn query engine generator loop matching the PRD contract.
+ *
+ * @param input The user prompt string.
+ * @param ctx The tool execution context.
+ * @param signal The optional abort signal for cancellation.
+ * @return An async generator yielding stream events and resolving to query results.
  */
 export async function* query(
   input: string,
@@ -282,7 +289,9 @@ export type QueryResult = {
 /**
  * Simple compatibility wrapper mapping the query() generator to process standard stdout/stderr streams.
  * Keeps CLI mode and integration tests passing successfully without revisions.
+ *
  * @param userPrompt The starting user prompt.
+ * @return A promise that resolves when the query has completed.
  */
 export async function runQuery(userPrompt: string): Promise<void> {
   const ctx: ToolContext = { repoRoot: getRepoRoot() }

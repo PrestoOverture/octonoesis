@@ -13,8 +13,9 @@ export function registerTool(tool: Tool): void {
 
 /**
  * Looks up a registered tool by its name.
+ *
  * @param name The name of the tool.
- * @returns The registered Tool instance, or undefined if not found.
+ * @return The registered Tool instance, or undefined if not found.
  */
 export function getTool(name: string): Tool | undefined {
   return registry.get(name)
@@ -22,7 +23,8 @@ export function getTool(name: string): Tool | undefined {
 
 /**
  * Retrieves all currently registered tools.
- * @returns An array containing all registered Tool instances.
+ *
+ * @return An array containing all registered Tool instances.
  */
 export function getAllTools(): Tool[] {
   return Array.from(registry.values())

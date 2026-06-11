@@ -3,6 +3,9 @@ import z from 'zod'
 /**
  * A lightweight, dependency-free utility to convert Zod Object schemas
  * into standard JSON Schema draft-7 formats, as expected by the Anthropic and OpenAI APIs.
+ *
+ * @param schema The ZodObject schema to convert.
+ * @return The converted JSON Schema draft-7 object.
  */
 // biome-ignore lint/suspicious/noExplicitAny: Zod 4 internal type mapping bypass
 export function zodToJsonSchema(schema: any): any {

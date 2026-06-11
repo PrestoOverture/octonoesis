@@ -9,10 +9,11 @@ export interface PreToolUseDecision {
 /**
  * Pre-execution hook that runs after validation but before human confirmation.
  * Currently stubbed to automatically approve all tool uses.
- * @param toolName
- * @param input
- * @param ctx
- * @returns
+ *
+ * @param toolName The name of the tool requesting execution.
+ * @param input The validated input payload of the tool.
+ * @param ctx The tool execution context.
+ * @return A promise resolving to the execution decision.
  */
 export async function preToolUseHook(
   toolName: string,

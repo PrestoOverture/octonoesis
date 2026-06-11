@@ -56,7 +56,8 @@ export function toAnthropicMessages(messages: CanonicalMessage[]): Anthropic.Mes
  *
  * @param messages The user/assistant message payload history.
  * @param signal The abort signal for cancellation.
- * @returns An async generator yielding Anthropic stream events.
+ * @param system The system prompt blocks containing the static configuration.
+ * @return An async generator yielding Anthropic stream events.
  */
 export async function* callAnthropicStream(
   messages: Anthropic.MessageParam[],

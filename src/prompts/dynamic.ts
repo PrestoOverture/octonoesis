@@ -7,6 +7,11 @@ declare const Bun: any
 /**
  * Builds the dynamic suffix for the system prompt.
  * Contains: OS, Shell, CWD, current time, Node/Bun versions, Git Status, Model Name, and Token Usage.
+ *
+ * @param ctx The current tool execution context.
+ * @param modelName The active LLM model name.
+ * @param usage The cumulative input and output token count.
+ * @return A promise resolving to the formatted dynamic prompt suffix string.
  */
 export async function buildDynamicSuffix(
   ctx: ToolContext,
@@ -45,13 +50,14 @@ export async function buildDynamicSuffix(
 - **Bun Version**: ${bunVersion}
 - **Node Version**: ${nodeVersion}
 - **Git Status**:
-${gitStatus === 'clean' || gitStatus === 'no git'
-      ? gitStatus
-      : gitStatus
+${
+  gitStatus === 'clean' || gitStatus === 'no git'
+    ? gitStatus
+    : gitStatus
         .split('\n')
         .map((line) => `  ${line}`)
         .join('\n')
-    }
+}
 - **Active Model**: ${modelName}
 - **Cumulative Tokens**: Input: ${usage.input_tokens}, Output: ${usage.output_tokens}`
 }

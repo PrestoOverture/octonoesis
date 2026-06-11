@@ -12,7 +12,7 @@ const listeners = new Set<() => void>()
 /**
  * Retrieves the current in-memory todo list.
  *
- * @returns The array of current todo items.
+ * @return The array of current todo items.
  */
 export function getTodos(): Todo[] {
   return globalTodos
@@ -20,6 +20,8 @@ export function getTodos(): Todo[] {
 
 /**
  * Replaces the current todo list and notifies all subscribers.
+ *
+ * @param todos The new array of todo items.
  */
 export function setTodos(todos: Todo[]): void {
   globalTodos = todos
@@ -31,7 +33,7 @@ export function setTodos(todos: Todo[]): void {
 /**
  * A custom hook to access the todo list reactive to updates.
  *
- * @returns The reactive array of todo items.
+ * @return The reactive array of todo items.
  */
 export function useTodos(): Todo[] {
   const [todos, setTodoState] = useState<Todo[]>(globalTodos)

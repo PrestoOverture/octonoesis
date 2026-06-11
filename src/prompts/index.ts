@@ -5,6 +5,11 @@ import { buildStaticPrompt } from './static'
 /**
  * Builds the static and dynamic system prompts for the current turn.
  * Coordinates static rules and active dynamic suffix values.
+ *
+ * @param ctx The current tool execution context.
+ * @param modelName The active LLM model name.
+ * @param usage The cumulative input and output token count.
+ * @return A promise resolving to the static and dynamic system prompt strings.
  */
 export async function buildSystemMessages(
   ctx: ToolContext,

@@ -3,6 +3,8 @@ import { getAllTools } from '../tools/registry'
 /**
  * Builds the static, cacheable system prompt.
  * Contains the six core guidelines: Identity, Task Philosophy, Tool Rules, Safety, Tone, and Tool Descriptions.
+ *
+ * @return The formatted static system prompt string.
  */
 export function buildStaticPrompt(): string {
   const identity =
