@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process'
+import { buildSystemMessages } from './prompts'
 import { getProvider, getResolvedModel } from './providers'
 import type {
   CanonicalMessage,
@@ -122,10 +123,16 @@ export async function* query(
         inputSchema: zodToJsonSchema(tool.inputSchema) as Record<string, unknown>,
       }))
 
+      const { system, dynamicSystem } = await buildSystemMessages(ctx, resolvedModel, {
+        ...cumulativeUsage,
+      })
+
       const stream = provider.createMessageStream(ctx.messages, activeTools, {
         model: resolvedModel,
         maxTokens: 4096,
         signal: ctx.abortSignal || new AbortController().signal,
+        system,
+        dynamicSystem,
       })
 
       for await (const event of stream) {

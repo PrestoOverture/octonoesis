@@ -18,6 +18,12 @@ export type AnthropicStreamEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'message_done'; message: Anthropic.Message }
 
+export type SystemPromptPart = {
+  type: 'text'
+  text: string
+  cache_control?: { type: 'ephemeral' }
+}
+
 /**
  * Normalizes CanonicalMessages to Anthropic MessageParams at call-time.
  * @param messages The canonical messages to convert.
@@ -55,6 +61,7 @@ export function toAnthropicMessages(messages: CanonicalMessage[]): Anthropic.Mes
 export async function* callAnthropicStream(
   messages: Anthropic.MessageParam[],
   signal?: AbortSignal,
+  system?: SystemPromptPart[],
 ): AsyncGenerator<AnthropicStreamEvent, void, undefined> {
   const client = new Anthropic({ apiKey: getAnthropicKey() })
 
@@ -78,8 +85,14 @@ export async function* callAnthropicStream(
         max_tokens: 4096,
         messages,
         tools: activeTools.length > 0 ? activeTools : undefined,
+        system,
       },
-      { signal },
+      {
+        signal,
+        headers: {
+          'anthropic-beta': 'prompt-caching-2024-07-31',
+        },
+      },
     )
 
     // 3. Yield events
@@ -112,11 +125,44 @@ export class AnthropicProvider implements LLMProvider {
   async *createMessageStream(
     messages: CanonicalMessage[],
     tools: CanonicalTool[],
-    opts: { model: string; maxTokens: number; signal: AbortSignal },
+    opts: {
+      model: string
+      maxTokens: number
+      signal: AbortSignal
+      system?: string
+      dynamicSystem?: string
+    },
   ): AsyncIterable<StreamEvent> {
     const apiMessages = toAnthropicMessages(messages)
 
-    for await (const event of callAnthropicStream(apiMessages, opts.signal)) {
+    // Prepend dynamicSystem to the first user message if provided
+    if (opts.dynamicSystem && apiMessages.length > 0) {
+      const firstMsg = { ...apiMessages[0] } as Anthropic.MessageParam
+      if (firstMsg) {
+        if (typeof firstMsg.content === 'string') {
+          firstMsg.content = `${opts.dynamicSystem}\n\n${firstMsg.content}`
+        } else if (Array.isArray(firstMsg.content)) {
+          firstMsg.content = [
+            { type: 'text' as const, text: opts.dynamicSystem },
+            ...firstMsg.content,
+          ]
+        }
+        apiMessages[0] = firstMsg
+      }
+    }
+
+    // Format the static system prompt with cache_control
+    const systemParam = opts.system
+      ? [
+          {
+            type: 'text' as const,
+            text: opts.system,
+            cache_control: { type: 'ephemeral' as const },
+          },
+        ]
+      : undefined
+
+    for await (const event of callAnthropicStream(apiMessages, opts.signal, systemParam)) {
       if (event.type === 'text_delta') {
         yield { type: 'text_delta', text: event.text }
       } else if (event.type === 'message_done') {

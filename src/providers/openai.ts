@@ -71,7 +71,13 @@ export class OpenAIProvider implements LLMProvider {
   async *createMessageStream(
     messages: CanonicalMessage[],
     tools: CanonicalTool[],
-    opts: { model: string; maxTokens: number; signal: AbortSignal },
+    opts: {
+      model: string
+      maxTokens: number
+      signal: AbortSignal
+      system?: string
+      dynamicSystem?: string
+    },
   ): AsyncIterable<StreamEvent> {
     const apiKey = getOpenAIKey()
     const baseURL = process.env.OPENAI_BASE_URL || undefined
@@ -86,6 +92,15 @@ export class OpenAIProvider implements LLMProvider {
         parameters: t.inputSchema,
       },
     }))
+
+    // Prepend system message if system or dynamicSystem is provided
+    if (opts.system || opts.dynamicSystem) {
+      const parts = [opts.system, opts.dynamicSystem].filter(Boolean)
+      const combined = parts.join('\n\n')
+      if (combined) {
+        openAIMessages.unshift({ role: 'system', content: combined })
+      }
+    }
 
     dbg('api', 'OpenAI streaming request', {
       model: opts.model,

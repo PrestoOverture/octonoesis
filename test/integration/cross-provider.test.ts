@@ -11,11 +11,18 @@ import type { CanonicalMessage, CanonicalTool } from '../../src/providers/types'
 
 // Mock Anthropic's callAnthropicStream helper
 let mockAnthropicEvents: AnthropicStreamEvent[] = []
+let lastCallAnthropicStreamParams: {
+  messages: unknown[]
+  signal?: unknown
+  system?: unknown
+} | null = null
+
 mock.module('../../src/providers/anthropic', () => {
   return {
     DEFAULT_ANTHROPIC_MODEL: 'claude-haiku-4-5-20251001',
     toAnthropicMessages,
-    callAnthropicStream: async function* () {
+    callAnthropicStream: async function* (messages: unknown[], signal?: unknown, system?: unknown) {
+      lastCallAnthropicStreamParams = { messages, signal, system }
       for (const event of mockAnthropicEvents) {
         yield event
       }
@@ -25,6 +32,8 @@ mock.module('../../src/providers/anthropic', () => {
 
 // Mock the entire 'openai' module using Bun's mock.module
 let mockOpenAICallback: () => AsyncGenerator<unknown, void, undefined> = async function* () {}
+let lastOpenAICreateBody: unknown = null
+
 mock.module('openai', () => {
   return {
     default: class MockOpenAI {
@@ -32,6 +41,7 @@ mock.module('openai', () => {
         completions: {
           // biome-ignore lint/suspicious/noExplicitAny: mock completions stream return type
           create: async (body: unknown, opts?: unknown): Promise<any> => {
+            lastOpenAICreateBody = body
             return mockOpenAICallback()
           },
         },
@@ -151,6 +161,39 @@ describe('LLM Providers & Router Integration', () => {
         },
       ])
     })
+    it('passes static system prompt with cache_control and prepends dynamic suffix to the first user message', async () => {
+      lastCallAnthropicStreamParams = null
+      mockAnthropicEvents = [
+        { type: 'message_done', message: { content: [] } as unknown as Anthropic.Message },
+      ]
+
+      const provider = new AnthropicProvider()
+      const canonicalMessages: CanonicalMessage[] = [{ role: 'user', content: 'hello' }]
+
+      const generator = provider.createMessageStream(canonicalMessages, [], {
+        model: 'claude-haiku-4-5-20251001',
+        maxTokens: 100,
+        signal: new AbortController().signal,
+        system: 'STATIC_PROMPT',
+        dynamicSystem: 'DYNAMIC_SUFFIX',
+      })
+
+      for await (const _ of generator) {
+      }
+
+      // biome-ignore lint/suspicious/noExplicitAny: bypass type checks for mock assertions
+      const params = lastCallAnthropicStreamParams as any
+      expect(params).not.toBe(null)
+      if (params) {
+        expect(params.system).toEqual([
+          { type: 'text', text: 'STATIC_PROMPT', cache_control: { type: 'ephemeral' } },
+        ])
+        expect(params.messages[0]).toEqual({
+          role: 'user',
+          content: 'DYNAMIC_SUFFIX\n\nhello',
+        })
+      }
+    })
   })
 
   describe('OpenAIProvider Message Stream Translation & Chunk Accumulation', () => {
@@ -224,6 +267,40 @@ describe('LLM Providers & Router Integration', () => {
           usage: { input_tokens: 80, output_tokens: 40 },
         },
       ])
+    })
+    it('prepends combined system message if system or dynamicSystem is provided', async () => {
+      lastOpenAICreateBody = null
+      mockOpenAICallback = async function* () {
+        yield { usage: { prompt_tokens: 10, completion_tokens: 5 }, choices: [] }
+      }
+
+      const provider = new OpenAIProvider()
+      const canonicalMessages: CanonicalMessage[] = [{ role: 'user', content: 'hello' }]
+
+      const generator = provider.createMessageStream(canonicalMessages, [], {
+        model: 'gpt-5-nano',
+        maxTokens: 100,
+        signal: new AbortController().signal,
+        system: 'STATIC_PROMPT',
+        dynamicSystem: 'DYNAMIC_SUFFIX',
+      })
+
+      for await (const _ of generator) {
+      }
+
+      // biome-ignore lint/suspicious/noExplicitAny: bypass type checks for mock assertions
+      const body = lastOpenAICreateBody as any
+      expect(body).not.toBe(null)
+      if (body) {
+        expect(body.messages[0]).toEqual({
+          role: 'system',
+          content: 'STATIC_PROMPT\n\nDYNAMIC_SUFFIX',
+        })
+        expect(body.messages[1]).toEqual({
+          role: 'user',
+          content: 'hello',
+        })
+      }
     })
   })
 

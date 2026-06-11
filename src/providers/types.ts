@@ -29,6 +29,12 @@ export interface LLMProvider {
   createMessageStream(
     messages: CanonicalMessage[],
     tools: CanonicalTool[],
-    opts: { model: string; maxTokens: number; signal: AbortSignal },
+    opts: {
+      model: string
+      maxTokens: number
+      signal: AbortSignal
+      system?: string
+      dynamicSystem?: string
+    },
   ): AsyncIterable<StreamEvent>
 }
