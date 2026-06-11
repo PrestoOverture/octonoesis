@@ -13,3 +13,19 @@ export function getAnthropicKey(): string {
   }
   return key
 }
+
+/**
+ * Resolves the OpenAI API key from the environment variables, throwing an error if missing.
+ * @returns The resolved OpenAI API key string.
+ */
+export function getOpenAIKey(): string {
+  const key = process.env.OPENAI_API_KEY
+  if (!key) {
+    throw new Error(
+      'OPENAI_API_KEY is not set. ' +
+        'Export it in your shell or add it to a .env file: \n\n' +
+        'export OPENAI_API_KEY=sk-proj-...',
+    )
+  }
+  return key
+}

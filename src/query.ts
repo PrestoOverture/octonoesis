@@ -1,6 +1,11 @@
 import { spawnSync } from 'node:child_process'
-import type Anthropic from '@anthropic-ai/sdk'
-import { callAnthropicStream } from './providers/anthropic'
+import { getProvider, getResolvedModel } from './providers'
+import type {
+  CanonicalMessage,
+  ContentBlock,
+  StreamEvent as ProviderStreamEvent,
+  Usage,
+} from './providers'
 import { bashTool } from './tools/Bash'
 import { editTool } from './tools/Edit'
 import { globTool } from './tools/Glob'
@@ -11,6 +16,7 @@ import { writeTool } from './tools/Write'
 import { runTool } from './tools/execute'
 import { registerTool } from './tools/registry'
 import { dbg } from './utils/debug'
+import { zodToJsonSchema } from './utils/schema'
 
 // 1. Automatically register all tools in the registry
 registerTool(readTool)
@@ -21,34 +27,11 @@ registerTool(editTool)
 registerTool(grepTool)
 registerTool(todoWriteTool)
 
-export type CanonicalMessage =
-  | { role: 'user'; content: string | ContentBlock[] }
-  | { role: 'assistant'; content: ContentBlock[] }
-  | { role: 'tool'; tool_use_id: string; content: string | ContentBlock[] }
-
-export type ContentBlock =
-  | { type: 'text'; text: string }
-  | { type: 'tool_use'; id: string; name: string; input: unknown }
-  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean }
+export type { CanonicalMessage, ContentBlock, Usage }
 
 export type StreamEvent =
-  | { type: 'text_delta'; text: string }
-  | { type: 'tool_use'; id: string; name: string; input: unknown }
+  | ProviderStreamEvent
   | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error' }
-  | { type: 'message_end'; usage: Usage }
-
-export type Usage = {
-  input_tokens: number
-  output_tokens: number
-}
-
-export type QueryResult = {
-  exit_reason: 'completed' | 'max_turns' | 'fatal_error' | 'user_cancel'
-  usage: Usage
-  turns: number
-  final_message?: string
-  error?: string
-}
 
 export interface ToolContext {
   repoRoot: string
@@ -78,30 +61,6 @@ export function getRepoRoot(): string {
 
   cachedRepoRoot = process.cwd()
   return cachedRepoRoot
-}
-
-/**
- * Normalizes CanonicalMessages to Anthropic MessageParams at call-time.
- */
-export function toAnthropicMessages(messages: CanonicalMessage[]): Anthropic.MessageParam[] {
-  return messages.map((msg) => {
-    if (msg.role === 'tool') {
-      return {
-        role: 'user',
-        content: [
-          {
-            type: 'tool_result',
-            tool_use_id: msg.tool_use_id,
-            content:
-              typeof msg.content === 'string'
-                ? msg.content
-                : msg.content.map((c) => (c.type === 'text' ? c.text : '')).join(''),
-          },
-        ],
-      } as Anthropic.MessageParam
-    }
-    return msg as Anthropic.MessageParam
-  })
 }
 
 /**
@@ -151,11 +110,25 @@ export async function* query(
     turn++
     dbg('query', `Starting turn ${turn}/${MAX_TURNS}`)
 
-    let finalMessage: Anthropic.Message | null = null
+    const assistantContent: ContentBlock[] = []
+    let finalUsage: Usage | null = null
 
-    const apiMessages = toAnthropicMessages(ctx.messages)
     try {
-      for await (const event of callAnthropicStream(apiMessages, ctx.abortSignal)) {
+      const provider = getProvider()
+      const resolvedModel = getResolvedModel()
+      const activeTools = getAllTools().map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: zodToJsonSchema(tool.inputSchema) as Record<string, unknown>,
+      }))
+
+      const stream = provider.createMessageStream(ctx.messages, activeTools, {
+        model: resolvedModel,
+        maxTokens: 4096,
+        signal: ctx.abortSignal || new AbortController().signal,
+      })
+
+      for await (const event of stream) {
         if (ctx.abortSignal?.aborted) {
           return {
             exit_reason: 'user_cancel',
@@ -164,10 +137,32 @@ export async function* query(
             error: 'Query aborted by user',
           }
         }
+
         if (event.type === 'text_delta') {
           yield { type: 'text_delta', text: event.text }
-        } else if (event.type === 'message_done') {
-          finalMessage = event.message
+
+          const lastBlock = assistantContent[assistantContent.length - 1]
+          if (lastBlock && lastBlock.type === 'text') {
+            lastBlock.text += event.text
+          } else {
+            assistantContent.push({ type: 'text', text: event.text })
+          }
+        } else if (event.type === 'tool_use') {
+          yield {
+            type: 'tool_use',
+            id: event.id,
+            name: event.name,
+            input: event.input,
+          }
+
+          assistantContent.push({
+            type: 'tool_use',
+            id: event.id,
+            name: event.name,
+            input: event.input,
+          })
+        } else if (event.type === 'message_end') {
+          finalUsage = event.usage
         }
       }
     } catch (err) {
@@ -189,16 +184,7 @@ export async function* query(
       }
     }
 
-    if (!finalMessage) {
-      return {
-        exit_reason: 'fatal_error',
-        usage: cumulativeUsage,
-        turns: turn,
-        error: 'No message returned from API',
-      }
-    }
-
-    const usage = finalMessage.usage || { input_tokens: 0, output_tokens: 0 }
+    const usage = finalUsage || { input_tokens: 0, output_tokens: 0 }
     cumulativeUsage.input_tokens += usage.input_tokens
     cumulativeUsage.output_tokens += usage.output_tokens
 
@@ -214,15 +200,15 @@ export async function* query(
     // Record the assistant response to conversational history
     ctx.messages.push({
       role: 'assistant',
-      content: finalMessage.content as ContentBlock[],
+      content: assistantContent,
     })
 
-    const toolUses = finalMessage.content.filter(
-      (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use',
+    const toolUses = assistantContent.filter(
+      (block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use',
     )
 
     if (toolUses.length === 0) {
-      const assistantText = finalMessage.content
+      const assistantText = assistantContent
         .filter((block) => block.type === 'text')
         .map((block) => block.text)
         .join('\n')
@@ -238,14 +224,6 @@ export async function* query(
     const toolUse = toolUses[0]
     if (!toolUse) {
       continue
-    }
-
-    // Yield tool usage event to the UI
-    yield {
-      type: 'tool_use',
-      id: toolUse.id,
-      name: toolUse.name,
-      input: toolUse.input,
     }
 
     dbg('query', 'tool call detected', { tool: toolUse.name, input: toolUse.input })
@@ -286,6 +264,14 @@ export async function* query(
   }
 }
 
+export type QueryResult = {
+  exit_reason: 'completed' | 'max_turns' | 'fatal_error' | 'user_cancel'
+  usage: Usage
+  turns: number
+  final_message?: string
+  error?: string
+}
+
 /**
  * Simple compatibility wrapper mapping the query() generator to process standard stdout/stderr streams.
  * Keeps CLI mode and integration tests passing successfully without revisions.
@@ -311,3 +297,6 @@ export async function runQuery(userPrompt: string): Promise<void> {
   }
   process.stdout.write('\n')
 }
+
+// Helpers
+import { getAllTools } from './tools/registry'

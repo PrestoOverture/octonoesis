@@ -2,6 +2,7 @@ import { Box, Text, useApp, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import React, { useState, useEffect, useRef } from 'react'
 import { registerPromptHandler, unregisterPromptHandler } from '../permissions/confirm'
+import { getResolvedModel } from '../providers'
 import { type CanonicalMessage, type ToolContext, getRepoRoot, query } from '../query'
 import { ConfirmDialog } from './ConfirmDialog'
 import { StatusBar } from './StatusBar'
@@ -320,7 +321,7 @@ export function App({
         <TodoPanel />
       </Box>
       <StatusBar
-        modelName="claude-haiku-4-5-20251001"
+        modelName={getResolvedModel()}
         inputTokens={usage.input_tokens}
         outputTokens={usage.output_tokens}
       />
