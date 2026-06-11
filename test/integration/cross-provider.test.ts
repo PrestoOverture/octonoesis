@@ -190,7 +190,17 @@ describe('LLM Providers & Router Integration', () => {
         ])
         expect(params.messages[0]).toEqual({
           role: 'user',
-          content: 'DYNAMIC_SUFFIX\n\nhello',
+          content: [
+            {
+              type: 'text',
+              text: 'DYNAMIC_SUFFIX',
+            },
+            {
+              type: 'text',
+              text: 'hello',
+              cache_control: { type: 'ephemeral' },
+            },
+          ],
         })
       }
     })

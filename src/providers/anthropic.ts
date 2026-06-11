@@ -29,8 +29,14 @@ export type SystemPromptPart = {
  * @param messages The canonical messages to convert.
  * @returns The converted Anthropic MessageParam array.
  */
-export function toAnthropicMessages(messages: CanonicalMessage[]): Anthropic.MessageParam[] {
-  return messages.map((msg) => {
+export function toAnthropicMessages(
+  messages: CanonicalMessage[],
+  addCacheControl = false,
+): Anthropic.MessageParam[] {
+  return messages.map((msg, idx) => {
+    const isLast = idx === messages.length - 1
+    const cacheControl = addCacheControl && isLast ? { type: 'ephemeral' as const } : undefined
+
     if (msg.role === 'tool') {
       return {
         role: 'user',
@@ -42,10 +48,44 @@ export function toAnthropicMessages(messages: CanonicalMessage[]): Anthropic.Mes
               typeof msg.content === 'string'
                 ? msg.content
                 : msg.content.map((c) => (c.type === 'text' ? c.text : '')).join(''),
+            cache_control: cacheControl,
           },
         ],
       } as Anthropic.MessageParam
     }
+
+    if (cacheControl) {
+      if (typeof msg.content === 'string') {
+        return {
+          role: msg.role,
+          content: [
+            {
+              type: 'text',
+              text: msg.content,
+              cache_control: cacheControl,
+            },
+          ],
+        } as Anthropic.MessageParam
+      }
+      if (Array.isArray(msg.content)) {
+        const contentCopy = [...msg.content]
+        const lastBlockIdx = contentCopy.length - 1
+        if (lastBlockIdx >= 0) {
+          const lastBlock = contentCopy[lastBlockIdx]
+          if (lastBlock) {
+            contentCopy[lastBlockIdx] = {
+              ...lastBlock,
+              cache_control: cacheControl,
+            } as typeof lastBlock & { cache_control?: typeof cacheControl }
+          }
+        }
+        return {
+          role: msg.role,
+          content: contentCopy,
+        } as Anthropic.MessageParam
+      }
+    }
+
     return msg as Anthropic.MessageParam
   })
 }
@@ -134,7 +174,7 @@ export class AnthropicProvider implements LLMProvider {
       dynamicSystem?: string
     },
   ): AsyncIterable<StreamEvent> {
-    const apiMessages = toAnthropicMessages(messages)
+    const apiMessages = toAnthropicMessages(messages, true)
 
     // Prepend dynamicSystem to the first user message if provided
     if (opts.dynamicSystem && apiMessages.length > 0) {
@@ -168,6 +208,14 @@ export class AnthropicProvider implements LLMProvider {
         yield { type: 'text_delta', text: event.text }
       } else if (event.type === 'message_done') {
         const finalMsg = event.message
+
+        const usageRecord = finalMsg.usage as unknown as Record<string, unknown>
+        dbg('api', 'response usage details', {
+          input_tokens: finalMsg.usage?.input_tokens,
+          output_tokens: finalMsg.usage?.output_tokens,
+          cache_creation_input_tokens: usageRecord?.cache_creation_input_tokens,
+          cache_read_input_tokens: usageRecord?.cache_read_input_tokens,
+        })
 
         // Yield tool uses first if present in the final message content
         const toolUses = finalMsg.content.filter(

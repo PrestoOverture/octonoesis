@@ -1,0 +1,48 @@
+[0m[2m[35m$[0m [2m[1mbun src/cli.tsx[0m
+[90m[2026-06-11T14:31:38.762Z] [query][39m Starting turn 1/50
+[90m[2026-06-11T14:31:38.787Z] [api][39m streaming request { model: 'claude-haiku-4-5-20251001', messageCount: 1 }
+[90m[2026-06-11T14:31:40.274Z] [stream][39m text_delta { length: 9 }
+[90m[2026-06-11T14:31:40.275Z] [stream][39m text_delta { length: 31 }
+[90m[2026-06-11T14:31:40.653Z] [api][39m response usage details {
+  input_tokens: 1790,
+  output_tokens: 65,
+  cache_creation_input_tokens: 0,
+  cache_read_input_tokens: 0
+}
+[90m[2026-06-11T14:31:40.654Z] [query][39m tool call detected { tool: 'Read', input: { path: 'docs/progress.md' } }
+[90m[2026-06-11T14:31:40.712Z] [query][39m Starting turn 2/50
+[90m[2026-06-11T14:31:40.729Z] [api][39m streaming request { model: 'claude-haiku-4-5-20251001', messageCount: 3 }
+[90m[2026-06-11T14:31:42.050Z] [stream][39m text_delta { length: 3 }
+[90m[2026-06-11T14:31:42.051Z] [stream][39m text_delta { length: 29 }
+[90m[2026-06-11T14:31:42.256Z] [stream][39m text_delta { length: 40 }
+[90m[2026-06-11T14:31:42.524Z] [stream][39m text_delta { length: 76 }
+[90m[2026-06-11T14:31:42.744Z] [stream][39m text_delta { length: 61 }
+[90m[2026-06-11T14:31:42.981Z] [stream][39m text_delta { length: 50 }
+[90m[2026-06-11T14:31:43.567Z] [stream][39m text_delta { length: 48 }
+[90m[2026-06-11T14:31:43.568Z] [stream][39m text_delta { length: 54 }
+[90m[2026-06-11T14:31:43.738Z] [stream][39m text_delta { length: 42 }
+[90m[2026-06-11T14:31:43.811Z] [stream][39m text_delta { length: 55 }
+[90m[2026-06-11T14:31:44.055Z] [stream][39m text_delta { length: 64 }
+[90m[2026-06-11T14:31:44.240Z] [stream][39m text_delta { length: 70 }
+[90m[2026-06-11T14:31:44.468Z] [stream][39m text_delta { length: 68 }
+[90m[2026-06-11T14:31:45.280Z] [stream][39m text_delta { length: 53 }
+[90m[2026-06-11T14:31:45.287Z] [stream][39m text_delta { length: 66 }
+[90m[2026-06-11T14:31:45.289Z] [stream][39m text_delta { length: 57 }
+[90m[2026-06-11T14:31:45.443Z] [stream][39m text_delta { length: 56 }
+[90m[2026-06-11T14:31:45.540Z] [stream][39m text_delta { length: 40 }
+[90m[2026-06-11T14:31:47.618Z] [api][39m response usage details {
+  input_tokens: 6,
+  output_tokens: 267,
+  cache_creation_input_tokens: 8727,
+  cache_read_input_tokens: 0
+}
+[90m[2026-06-11T14:31:52.648Z] [query][39m Starting turn 1/50
+[90m[2026-06-11T14:31:52.678Z] [api][39m streaming request { model: 'claude-haiku-4-5-20251001', messageCount: 5 }
+[90m[2026-06-11T14:31:59.574Z] [stream][39m text_delta { length: 2 }
+[90m[2026-06-11T14:31:59.576Z] [stream][39m text_delta { length: 20 }
+[90m[2026-06-11T14:31:59.577Z] [api][39m response usage details {
+  input_tokens: 3,
+  output_tokens: 14,
+  cache_creation_input_tokens: 276,
+  cache_read_input_tokens: 8727
+}

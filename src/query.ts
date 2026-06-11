@@ -134,12 +134,16 @@ export async function* query(
         ...cumulativeUsage,
       })
 
+      if (!ctx.firstTurnDynamicSystem) {
+        ctx.firstTurnDynamicSystem = dynamicSystem
+      }
+
       const stream = provider.createMessageStream(ctx.messages, activeTools, {
         model: resolvedModel,
         maxTokens: 4096,
         signal: ctx.abortSignal || new AbortController().signal,
         system,
-        dynamicSystem,
+        dynamicSystem: ctx.firstTurnDynamicSystem as string,
       })
 
       for await (const event of stream) {
