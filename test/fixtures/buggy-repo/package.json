@@ -1,0 +1,9 @@
+{
+  "name": "buggy-repo",
+  "version": "1.0.0",
+  "description": "Golden path test fixture",
+  "type": "module",
+  "scripts": {
+    "test": "bun test"
+  }
+}
