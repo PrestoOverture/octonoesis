@@ -28,14 +28,14 @@ export function toOpenAIMessages(messages: CanonicalMessage[]): ChatCompletionMe
       const tool_calls =
         toolUseBlocks.length > 0
           ? toolUseBlocks.map((block) => ({
-              id: block.id,
-              type: 'function' as const,
-              function: {
-                name: block.name,
-                arguments:
-                  typeof block.input === 'string' ? block.input : JSON.stringify(block.input),
-              },
-            }))
+            id: block.id,
+            type: 'function' as const,
+            function: {
+              name: block.name,
+              arguments:
+                typeof block.input === 'string' ? block.input : JSON.stringify(block.input),
+            },
+          }))
           : undefined
       return {
         role: 'assistant',
@@ -111,7 +111,7 @@ export class OpenAIProvider implements LLMProvider {
       const stream = await client.chat.completions.create(
         {
           model: opts.model,
-          max_tokens: opts.maxTokens,
+          max_completion_tokens: opts.maxTokens,
           messages: openAIMessages,
           tools: openAITools.length > 0 ? openAITools : undefined,
           stream: true,

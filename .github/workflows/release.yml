@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release-binaries:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: bun-linux-x64
+            binary: octonoesis-linux-x64
+          - os: macos-latest
+            target: bun-darwin-arm64
+            binary: octonoesis-macos-arm64
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Standalone Binary
+        run: |
+          mkdir -p dist
+          bun build src/cli.tsx --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.binary }}
+
+      - name: Check Binary Size
+        run: |
+          SIZE=$(wc -c < dist/${{ matrix.binary }})
+          echo "Binary size: $SIZE bytes"
+          # 80 MB = 83,886,080 bytes
+          if [ "$SIZE" -gt 83886080 ]; then
+            echo "Error: Binary size exceeds 80MB limit!"
+            exit 1
+          fi
+
+      - name: Verify Standalone Execution
+        run: |
+          chmod +x dist/${{ matrix.binary }}
+          dist/${{ matrix.binary }} --help
+
+      - name: Upload Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.binary }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
