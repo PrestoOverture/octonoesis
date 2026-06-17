@@ -28,14 +28,14 @@ export function toOpenAIMessages(messages: CanonicalMessage[]): ChatCompletionMe
       const tool_calls =
         toolUseBlocks.length > 0
           ? toolUseBlocks.map((block) => ({
-            id: block.id,
-            type: 'function' as const,
-            function: {
-              name: block.name,
-              arguments:
-                typeof block.input === 'string' ? block.input : JSON.stringify(block.input),
-            },
-          }))
+              id: block.id,
+              type: 'function' as const,
+              function: {
+                name: block.name,
+                arguments:
+                  typeof block.input === 'string' ? block.input : JSON.stringify(block.input),
+              },
+            }))
           : undefined
       return {
         role: 'assistant',
