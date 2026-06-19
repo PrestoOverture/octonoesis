@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { runQuery } from '../../src/query'
 import { setProvider } from '../../src/providers'
 import type { LLMProvider } from '../../src/providers/types'
+import { runQuery } from '../../src/query'
 
 describe('Phase 2 - End-to-End tool_use Loop', () => {
   let callCount = 0
@@ -27,8 +27,9 @@ describe('Phase 2 - End-to-End tool_use Loop', () => {
           const lastMsg = messages[messages.length - 1]
           expect(lastMsg).toBeDefined()
           expect(lastMsg?.role).toBe('tool')
-          expect((lastMsg as any).tool_use_id).toBe('toolu_test_123')
-          expect((lastMsg as any).content).toContain('"name": "octonoesis"')
+          const toolMsg = lastMsg as { tool_use_id: string; content: string }
+          expect(toolMsg.tool_use_id).toBe('toolu_test_123')
+          expect(toolMsg.content).toContain('"name": "octonoesis"')
 
           yield { type: 'text_delta', text: 'It is named octonoesis.' }
           yield {
@@ -36,7 +37,7 @@ describe('Phase 2 - End-to-End tool_use Loop', () => {
             usage: { input_tokens: 20, output_tokens: 10 },
           }
         }
-      }
+      },
     }
     setProvider(mockProvider)
   })

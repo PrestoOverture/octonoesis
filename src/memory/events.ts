@@ -7,13 +7,15 @@ export const toolEventSchema = z.object({
   outcome: z.enum(['success', 'failure']),
   error_class: z.string().nullable(),
   duration_ms: z.number(),
-  fingerprints: z.array(
-    z.object({
-      coarse: z.string(),
-      medium: z.string(),
-      fine: z.string(),
-    })
-  ).optional(),
+  fingerprints: z
+    .array(
+      z.object({
+        coarse: z.string(),
+        medium: z.string(),
+        fine: z.string(),
+      }),
+    )
+    .optional(),
 })
 
 export const permissionEventSchema = z.object({

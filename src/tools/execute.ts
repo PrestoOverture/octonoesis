@@ -1,13 +1,13 @@
 import crypto from 'node:crypto'
+import { defaultCachedExtractor } from '../memory/fingerprint/cache'
+import type { Fingerprint } from '../memory/fingerprint/extract'
+import { scrub } from '../memory/fingerprint/scrub'
 import { appendJournal } from '../memory/journal'
 import { requestPermission } from '../permissions/confirm'
 import { preToolUseHook } from '../permissions/hooks'
+import { getResolvedModel } from '../providers/index'
 import type { ToolContext, ToolResult } from './Tool'
 import { getTool } from './registry'
-import { scrub } from '../memory/fingerprint/scrub'
-import { defaultCachedExtractor } from '../memory/fingerprint/cache'
-import { getResolvedModel } from '../providers/index'
-import type { Fingerprint } from '../memory/fingerprint/extract'
 
 /**
  * Executes a tool by resolving it, validating input, running hooks, checking permissions, and calling the tool.
@@ -113,8 +113,8 @@ export async function runTool(
           const model = getResolvedModel()
           const fp = await defaultCachedExtractor.getOrCreate(
             scrubbed,
-            (rawInput as any)?.command || '',
-            { model }
+            (rawInput as { command?: string })?.command || '',
+            { model },
           )
           fingerprints = [fp]
         }
