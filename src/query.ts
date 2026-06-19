@@ -1,4 +1,5 @@
-import { spawnSync } from 'node:child_process'
+import crypto from 'node:crypto'
+import { appendJournal, flushJournal, setSessionId } from './memory/journal'
 import { buildSystemMessages } from './prompts'
 import { getProvider, getResolvedModel } from './providers'
 import type {
@@ -16,7 +17,9 @@ import { todoWriteTool } from './tools/TodoWrite'
 import { writeTool } from './tools/Write'
 import { runTool } from './tools/execute'
 import { registerTool } from './tools/registry'
+import { getAllTools } from './tools/registry'
 import { dbg } from './utils/debug'
+import { getRepoRoot } from './utils/path'
 import { zodToJsonSchema } from './utils/schema'
 
 // 1. Automatically register all tools in the registry
@@ -29,6 +32,7 @@ registerTool(grepTool)
 registerTool(todoWriteTool)
 
 export type { CanonicalMessage, ContentBlock, Usage }
+export { getRepoRoot }
 
 export type StreamEvent =
   | ProviderStreamEvent
@@ -39,31 +43,6 @@ export interface ToolContext {
   messages?: CanonicalMessage[]
   abortSignal?: AbortSignal
   [key: string]: unknown
-}
-
-let cachedRepoRoot: string | null = null
-
-/**
- * Discovers and caches the Git repository root using `git rev-parse --show-toplevel`.
- * Falls back to process.cwd() if not inside a git repository.
- *
- * @return The absolute path to the repository root.
- */
-export function getRepoRoot(): string {
-  if (cachedRepoRoot) return cachedRepoRoot
-
-  try {
-    const result = spawnSync('git', ['rev-parse', '--show-toplevel'], {
-      encoding: 'utf-8',
-    })
-    if (result.status === 0 && result.stdout) {
-      cachedRepoRoot = result.stdout.trim()
-      return cachedRepoRoot
-    }
-  } catch {}
-
-  cachedRepoRoot = process.cwd()
-  return cachedRepoRoot
 }
 
 /**
@@ -79,75 +58,157 @@ export async function* query(
   ctx: ToolContext,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent, QueryResult, undefined> {
-  if (!ctx.messages) {
-    ctx.messages = []
+  if (!ctx.sessionId) {
+    ctx.sessionId = crypto.randomUUID()
   }
+  setSessionId(ctx.sessionId as string)
 
-  if (signal) {
-    ctx.abortSignal = signal
-  }
-
-  if (ctx.abortSignal?.aborted) {
-    return {
-      exit_reason: 'user_cancel',
-      usage: { input_tokens: 0, output_tokens: 0 },
-      turns: 0,
-      error: 'Query aborted by user',
-    }
-  }
-
-  // Push user input to conversational history
-  ctx.messages.push({
-    role: 'user',
-    content: [{ type: 'text', text: input }],
+  // Log user initial prompt event
+  appendJournal({
+    kind: 'user',
+    digest: crypto.createHash('sha256').update(input).digest('hex'),
+    cancel: false,
   })
 
-  const MAX_TURNS = 50
-  let turn = 0
+  let exitReason: 'completed' | 'max_turns' | 'fatal_error' | 'user_cancel' = 'fatal_error'
   const cumulativeUsage: Usage = { input_tokens: 0, output_tokens: 0 }
+  let turn = 0
 
-  while (turn < MAX_TURNS) {
+  try {
+    if (!ctx.messages) {
+      ctx.messages = []
+    }
+
+    if (signal) {
+      ctx.abortSignal = signal
+    }
+
     if (ctx.abortSignal?.aborted) {
+      exitReason = 'user_cancel'
+      appendJournal({
+        kind: 'user',
+        digest: crypto.createHash('sha256').update(input).digest('hex'),
+        cancel: true,
+      })
       return {
         exit_reason: 'user_cancel',
-        usage: cumulativeUsage,
-        turns: turn - 1,
+        usage: { input_tokens: 0, output_tokens: 0 },
+        turns: 0,
         error: 'Query aborted by user',
       }
     }
-    turn++
-    dbg('query', `Starting turn ${turn}/${MAX_TURNS}`)
 
-    const assistantContent: ContentBlock[] = []
-    let finalUsage: Usage | null = null
+    // Push user input to conversational history
+    ctx.messages.push({
+      role: 'user',
+      content: [{ type: 'text', text: input }],
+    })
 
-    try {
-      const provider = getProvider()
-      const resolvedModel = getResolvedModel()
-      const activeTools = getAllTools().map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        inputSchema: zodToJsonSchema(tool.inputSchema) as Record<string, unknown>,
-      }))
+    const MAX_TURNS = 50
 
-      const { system, dynamicSystem } = await buildSystemMessages(ctx, resolvedModel, {
-        ...cumulativeUsage,
-      })
-
-      if (!ctx.firstTurnDynamicSystem) {
-        ctx.firstTurnDynamicSystem = dynamicSystem
+    while (turn < MAX_TURNS) {
+      if (ctx.abortSignal?.aborted) {
+        exitReason = 'user_cancel'
+        appendJournal({
+          kind: 'user',
+          digest: crypto.createHash('sha256').update(input).digest('hex'),
+          cancel: true,
+        })
+        return {
+          exit_reason: 'user_cancel',
+          usage: cumulativeUsage,
+          turns: turn - 1,
+          error: 'Query aborted by user',
+        }
       }
+      turn++
+      dbg('query', `Starting turn ${turn}/${MAX_TURNS}`)
 
-      const stream = provider.createMessageStream(ctx.messages, activeTools, {
-        model: resolvedModel,
-        maxTokens: 4096,
-        signal: ctx.abortSignal || new AbortController().signal,
-        system,
-        dynamicSystem: ctx.firstTurnDynamicSystem as string,
+      // Log turn event
+      appendJournal({
+        kind: 'turn',
+        turn,
       })
 
-      for await (const event of stream) {
+      const assistantContent: ContentBlock[] = []
+      let finalUsage: Usage | null = null
+
+      try {
+        const provider = getProvider()
+        const resolvedModel = getResolvedModel()
+        const activeTools = getAllTools().map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: zodToJsonSchema(tool.inputSchema) as Record<string, unknown>,
+        }))
+
+        const { system, dynamicSystem } = await buildSystemMessages(ctx, resolvedModel, {
+          ...cumulativeUsage,
+        })
+
+        if (!ctx.firstTurnDynamicSystem) {
+          ctx.firstTurnDynamicSystem = dynamicSystem
+        }
+
+        const stream = provider.createMessageStream(ctx.messages, activeTools, {
+          model: resolvedModel,
+          maxTokens: 4096,
+          signal: ctx.abortSignal || new AbortController().signal,
+          system,
+          dynamicSystem: ctx.firstTurnDynamicSystem as string,
+        })
+
+        for await (const event of stream) {
+          if (ctx.abortSignal?.aborted) {
+            exitReason = 'user_cancel'
+            appendJournal({
+              kind: 'user',
+              digest: crypto.createHash('sha256').update(input).digest('hex'),
+              cancel: true,
+            })
+            return {
+              exit_reason: 'user_cancel',
+              usage: cumulativeUsage,
+              turns: turn,
+              error: 'Query aborted by user',
+            }
+          }
+
+          if (event.type === 'text_delta') {
+            yield { type: 'text_delta', text: event.text }
+
+            const lastBlock = assistantContent[assistantContent.length - 1]
+            if (lastBlock && lastBlock.type === 'text') {
+              lastBlock.text += event.text
+            } else {
+              assistantContent.push({ type: 'text', text: event.text })
+            }
+          } else if (event.type === 'tool_use') {
+            yield {
+              type: 'tool_use',
+              id: event.id,
+              name: event.name,
+              input: event.input,
+            }
+
+            assistantContent.push({
+              type: 'tool_use',
+              id: event.id,
+              name: event.name,
+              input: event.input,
+            })
+          } else if (event.type === 'message_end') {
+            finalUsage = event.usage
+          }
+        }
+      } catch (err) {
         if (ctx.abortSignal?.aborted) {
+          exitReason = 'user_cancel'
+          appendJournal({
+            kind: 'user',
+            digest: crypto.createHash('sha256').update(input).digest('hex'),
+            cancel: true,
+          })
           return {
             exit_reason: 'user_cancel',
             usage: cumulativeUsage,
@@ -155,130 +216,117 @@ export async function* query(
             error: 'Query aborted by user',
           }
         }
-
-        if (event.type === 'text_delta') {
-          yield { type: 'text_delta', text: event.text }
-
-          const lastBlock = assistantContent[assistantContent.length - 1]
-          if (lastBlock && lastBlock.type === 'text') {
-            lastBlock.text += event.text
-          } else {
-            assistantContent.push({ type: 'text', text: event.text })
-          }
-        } else if (event.type === 'tool_use') {
-          yield {
-            type: 'tool_use',
-            id: event.id,
-            name: event.name,
-            input: event.input,
-          }
-
-          assistantContent.push({
-            type: 'tool_use',
-            id: event.id,
-            name: event.name,
-            input: event.input,
-          })
-        } else if (event.type === 'message_end') {
-          finalUsage = event.usage
-        }
-      }
-    } catch (err) {
-      if (ctx.abortSignal?.aborted) {
+        dbg('query', 'Fatal error during LLM streaming', err)
+        exitReason = 'fatal_error'
+        const errorMsg = err instanceof Error ? err.message : String(err)
         return {
-          exit_reason: 'user_cancel',
+          exit_reason: 'fatal_error',
           usage: cumulativeUsage,
           turns: turn,
-          error: 'Query aborted by user',
+          error: errorMsg,
         }
       }
-      dbg('query', 'Fatal error during LLM streaming', err)
-      const errorMsg = err instanceof Error ? err.message : String(err)
-      return {
-        exit_reason: 'fatal_error',
-        usage: cumulativeUsage,
-        turns: turn,
-        error: errorMsg,
+
+      const usage = finalUsage || { input_tokens: 0, output_tokens: 0 }
+      cumulativeUsage.input_tokens += usage.input_tokens
+      cumulativeUsage.output_tokens += usage.output_tokens
+
+      // Yield message_end containing this turn's usage
+      yield {
+        type: 'message_end',
+        usage: {
+          input_tokens: usage.input_tokens,
+          output_tokens: usage.output_tokens,
+        },
+      }
+
+      // Record the assistant response to conversational history
+      ctx.messages.push({
+        role: 'assistant',
+        content: assistantContent,
+      })
+
+      const toolUses = assistantContent.filter(
+        (block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use',
+      )
+
+      if (toolUses.length === 0) {
+        const assistantText = assistantContent
+          .filter((block) => block.type === 'text')
+          .map((block) => block.text)
+          .join('\n')
+
+        exitReason = 'completed'
+
+        return {
+          exit_reason: 'completed',
+          usage: cumulativeUsage,
+          turns: turn,
+          final_message: assistantText,
+        }
+      }
+
+      for (const toolUse of toolUses) {
+        if (ctx.abortSignal?.aborted) {
+          exitReason = 'user_cancel'
+          appendJournal({
+            kind: 'user',
+            digest: crypto.createHash('sha256').update(input).digest('hex'),
+            cancel: true,
+          })
+          break
+        }
+
+        dbg('query', 'tool call detected', { tool: toolUse.name, input: toolUse.input })
+
+        let toolResultContent: string
+        let isError = false
+
+        const toolResult = await runTool(toolUse.name, toolUse.input, ctx)
+
+        // Yield tool completion details to coordinate with TUI ToolCards
+        yield {
+          type: 'tool_done',
+          id: toolUse.id,
+          name: toolUse.name,
+          status: toolResult.ok ? 'done' : 'error',
+        }
+
+        if (toolResult.ok) {
+          toolResultContent =
+            typeof toolResult.value === 'string'
+              ? toolResult.value
+              : JSON.stringify(toolResult.value)
+        } else {
+          isError = true
+          toolResultContent = JSON.stringify({ error: toolResult.error })
+        }
+
+        // Push tool result using the canonical role 'tool'
+        ctx.messages.push({
+          role: 'tool',
+          tool_use_id: toolUse.id,
+          content: toolResultContent,
+        })
       }
     }
 
-    const usage = finalUsage || { input_tokens: 0, output_tokens: 0 }
-    cumulativeUsage.input_tokens += usage.input_tokens
-    cumulativeUsage.output_tokens += usage.output_tokens
-
-    // Yield message_end containing this turn's usage
-    yield {
-      type: 'message_end',
+    exitReason = 'max_turns'
+    return {
+      exit_reason: 'max_turns',
+      usage: cumulativeUsage,
+      turns: turn,
+    }
+  } finally {
+    appendJournal({
+      kind: 'session',
+      exit_reason: exitReason,
       usage: {
-        input_tokens: usage.input_tokens,
-        output_tokens: usage.output_tokens,
+        input_tokens: cumulativeUsage.input_tokens,
+        output_tokens: cumulativeUsage.output_tokens,
       },
-    }
-
-    // Record the assistant response to conversational history
-    ctx.messages.push({
-      role: 'assistant',
-      content: assistantContent,
     })
-
-    const toolUses = assistantContent.filter(
-      (block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use',
-    )
-
-    if (toolUses.length === 0) {
-      const assistantText = assistantContent
-        .filter((block) => block.type === 'text')
-        .map((block) => block.text)
-        .join('\n')
-
-      return {
-        exit_reason: 'completed',
-        usage: cumulativeUsage,
-        turns: turn,
-        final_message: assistantText,
-      }
-    }
-
-    const toolUse = toolUses[0]
-    if (!toolUse) {
-      continue
-    }
-
-    dbg('query', 'tool call detected', { tool: toolUse.name, input: toolUse.input })
-
-    let toolResultContent: string
-    let isError = false
-
-    const toolResult = await runTool(toolUse.name, toolUse.input, ctx)
-
-    // Yield tool completion details to coordinate with TUI ToolCards
-    yield {
-      type: 'tool_done',
-      id: toolUse.id,
-      name: toolUse.name,
-      status: toolResult.ok ? 'done' : 'error',
-    }
-
-    if (toolResult.ok) {
-      toolResultContent =
-        typeof toolResult.value === 'string' ? toolResult.value : JSON.stringify(toolResult.value)
-    } else {
-      isError = true
-      toolResultContent = JSON.stringify({ error: toolResult.error })
-    }
-
-    // Push tool result using the canonical role 'tool'
-    ctx.messages.push({
-      role: 'tool',
-      tool_use_id: toolUse.id,
-      content: toolResultContent,
-    })
-  }
-
-  return {
-    exit_reason: 'max_turns',
-    usage: cumulativeUsage,
-    turns: turn,
+    await flushJournal()
   }
 }
 
@@ -317,6 +365,3 @@ export async function runQuery(userPrompt: string): Promise<void> {
   }
   process.stdout.write('\n')
 }
-
-// Helpers
-import { getAllTools } from './tools/registry'

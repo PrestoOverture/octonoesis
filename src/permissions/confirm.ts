@@ -1,5 +1,6 @@
 import crypto from 'node:crypto'
 import readline from 'node:readline'
+import { appendJournal } from '../memory/journal'
 
 // In-memory allowlist of approved exact commands for this session
 const allowlist = new Set<string>()
@@ -54,6 +55,7 @@ export function unregisterPromptHandler(): void {
 export async function requestPermission(
   toolName: string,
   input: unknown,
+  ctx?: unknown, // Accept optional context parameter
 ): Promise<'allow_once' | 'allow_always' | 'deny'> {
   const key = getPermissionKey(toolName, input)
 
@@ -65,6 +67,11 @@ export async function requestPermission(
   // Delegate to active UI handler if registered (e.g. Ink TUI)
   if (activePromptHandler) {
     const decision = await activePromptHandler(toolName, input)
+    appendJournal({
+      kind: 'permission',
+      decision,
+      key,
+    })
     if (decision === 'allow_always') {
       allowlist.add(key)
     }

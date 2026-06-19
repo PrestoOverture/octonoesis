@@ -1,0 +1,55 @@
+import { z } from 'zod'
+
+export const toolEventSchema = z.object({
+  kind: z.literal('tool'),
+  tool: z.string(),
+  input_digest: z.string(),
+  outcome: z.enum(['success', 'failure']),
+  error_class: z.string().nullable(),
+  duration_ms: z.number(),
+})
+
+export const permissionEventSchema = z.object({
+  kind: z.literal('permission'),
+  decision: z.enum(['allow_once', 'allow_always', 'deny']),
+  key: z.string(),
+})
+
+export const turnEventSchema = z.object({
+  kind: z.literal('turn'),
+  turn: z.number(),
+})
+
+export const sessionEventSchema = z.object({
+  kind: z.literal('session'),
+  exit_reason: z.enum(['completed', 'max_turns', 'fatal_error', 'user_cancel']),
+  usage: z.object({
+    input_tokens: z.number(),
+    output_tokens: z.number(),
+  }),
+})
+
+export const verifyEventSchema = z.object({
+  kind: z.literal('verify'),
+  verdict: z.enum(['PASS', 'FAIL', 'PARTIAL']),
+  fingerprints: z.array(z.any()),
+  command: z.string(),
+  stale: z.boolean(),
+})
+
+export const userEventSchema = z.object({
+  kind: z.literal('user'),
+  digest: z.string(),
+  cancel: z.boolean(),
+})
+
+export const journalEventSchema = z.discriminatedUnion('kind', [
+  toolEventSchema,
+  permissionEventSchema,
+  turnEventSchema,
+  sessionEventSchema,
+  verifyEventSchema,
+  userEventSchema,
+])
+
+export type JournalEvent = z.infer<typeof journalEventSchema>
