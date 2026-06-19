@@ -4,6 +4,10 @@ import { requestPermission } from '../permissions/confirm'
 import { preToolUseHook } from '../permissions/hooks'
 import type { ToolContext, ToolResult } from './Tool'
 import { getTool } from './registry'
+import { scrub } from '../memory/fingerprint/scrub'
+import { defaultCachedExtractor } from '../memory/fingerprint/cache'
+import { getResolvedModel } from '../providers/index'
+import type { Fingerprint } from '../memory/fingerprint/extract'
 
 /**
  * Executes a tool by resolving it, validating input, running hooks, checking permissions, and calling the tool.
@@ -98,6 +102,26 @@ export async function runTool(
   const durationMs = Math.round(performance.now() - startTime)
   const errorClass = result.ok ? null : result.error.split(':')[0] || 'unknown_error'
 
+  let fingerprints: Fingerprint[] | undefined = undefined
+  if (name === 'Bash' && result.ok && typeof result.value === 'string') {
+    try {
+      const parsed = JSON.parse(result.value)
+      if (parsed && typeof parsed === 'object' && parsed.code !== 0) {
+        const errorOutput = (parsed.stderr || parsed.stdout || '').trim()
+        if (errorOutput) {
+          const scrubbed = scrub(errorOutput, ctx.repoRoot)
+          const model = getResolvedModel()
+          const fp = await defaultCachedExtractor.getOrCreate(
+            scrubbed,
+            (rawInput as any)?.command || '',
+            { model }
+          )
+          fingerprints = [fp]
+        }
+      }
+    } catch {}
+  }
+
   appendJournal({
     kind: 'tool',
     tool: name,
@@ -105,6 +129,7 @@ export async function runTool(
     outcome: result.ok ? 'success' : 'failure',
     error_class: errorClass,
     duration_ms: durationMs,
+    fingerprints,
   })
 
   return result

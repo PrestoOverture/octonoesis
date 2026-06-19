@@ -51,7 +51,14 @@ mock.module('openai', () => {
 })
 
 describe('LLM Providers & Router Integration', () => {
-  const originalEnv = { ...process.env }
+  const originalEnv = {
+    LLM_PROVIDER: process.env.LLM_PROVIDER,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    MODEL: process.env.MODEL,
+    ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
+    OPENAI_MODEL: process.env.OPENAI_MODEL,
+  }
 
   beforeEach(() => {
     setProvider(null)
@@ -60,7 +67,13 @@ describe('LLM Providers & Router Integration', () => {
   })
 
   afterEach(() => {
-    process.env = { ...originalEnv }
+    for (const [key, val] of Object.entries(originalEnv)) {
+      if (val === undefined) {
+        delete process.env[key]
+      } else {
+        process.env[key] = val
+      }
+    }
   })
 
   describe('Routing & Configuration', () => {
