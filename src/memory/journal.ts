@@ -35,12 +35,14 @@ export function appendJournal(
 
   const line = `${JSON.stringify(fullEvent)}\n`
 
+  // Capture target directory and path synchronously at call time to prevent environment variables leaking across async tests
+  const memoryDir = getMemoryDir()
+  const journalPath = path.join(memoryDir, 'journal.jsonl')
+
   // Queue to preserve chronological append order on disk
   writeQueue = writeQueue.then(async () => {
     try {
-      const memoryDir = getMemoryDir()
       await fs.mkdir(memoryDir, { recursive: true })
-      const journalPath = path.join(memoryDir, 'journal.jsonl')
       await fs.appendFile(journalPath, line, 'utf8')
     } catch (err) {
       // Fail silently in production, but report to stderr in debug modes

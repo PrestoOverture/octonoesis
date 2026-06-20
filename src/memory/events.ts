@@ -7,6 +7,9 @@ export const toolEventSchema = z.object({
   outcome: z.enum(['success', 'failure']),
   error_class: z.string().nullable(),
   duration_ms: z.number(),
+  path: z.string().optional(),
+  cmd: z.string().optional(),
+  exit_code: z.number().optional(),
   fingerprints: z
     .array(
       z.object({
@@ -43,6 +46,7 @@ export const verifyEventSchema = z.object({
   verdict: z.enum(['PASS', 'FAIL', 'PARTIAL']),
   fingerprints: z.array(z.any()),
   command: z.string(),
+  exit_code: z.number(),
   stale: z.boolean(),
 })
 

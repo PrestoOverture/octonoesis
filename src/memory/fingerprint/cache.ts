@@ -11,19 +11,30 @@ import type { Fingerprint } from './extract.ts'
  */
 export class CachedExtractor {
   private cache: Map<string, Fingerprint> = new Map()
-  private cacheFilePath: string
+  private customCacheFilePath?: string
   private isLoaded = false
 
   constructor(cacheFilePath?: string) {
-    this.cacheFilePath = cacheFilePath || path.join(getMemoryDir(), 'fingerprint-cache.jsonl')
+    if (cacheFilePath) {
+      this.customCacheFilePath = cacheFilePath
+    }
+  }
+
+  private lastLoadedPath?: string
+
+  private getCacheFilePath(): string {
+    return this.customCacheFilePath || path.join(getMemoryDir(), 'fingerprint-cache.jsonl')
   }
 
   private async ensureLoaded() {
-    if (this.isLoaded) return
+    const currentPath = this.getCacheFilePath()
+    if (this.isLoaded && this.lastLoadedPath === currentPath) return
     this.isLoaded = true
+    this.lastLoadedPath = currentPath
+    this.cache.clear() // clear previous cache when switching directory
 
     try {
-      const fileContent = await fs.readFile(this.cacheFilePath, 'utf-8')
+      const fileContent = await fs.readFile(this.getCacheFilePath(), 'utf-8')
       const lines = fileContent.split('\n')
       for (const line of lines) {
         if (!line.trim()) continue
@@ -63,7 +74,7 @@ export class CachedExtractor {
 
     // Persist to disk (append-only)
     try {
-      const parentDir = path.dirname(this.cacheFilePath)
+      const parentDir = path.dirname(this.getCacheFilePath())
       await fs.mkdir(parentDir, { recursive: true })
       const entry = {
         key,
@@ -71,7 +82,7 @@ export class CachedExtractor {
         scrubbed,
         fingerprint,
       }
-      await fs.appendFile(this.cacheFilePath, `${JSON.stringify(entry)}\n`, 'utf-8')
+      await fs.appendFile(this.getCacheFilePath(), `${JSON.stringify(entry)}\n`, 'utf-8')
     } catch (err) {
       // Fail-safe: do not crash if writing to cache file fails
     }
@@ -87,7 +98,7 @@ export class CachedExtractor {
     this.cache.clear()
     this.isLoaded = false
     try {
-      await fs.unlink(this.cacheFilePath)
+      await fs.unlink(this.getCacheFilePath())
     } catch {}
   }
 }

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { runSessionEndEpisodes } from './memory/episodes/hook'
 import { appendJournal, flushJournal, setSessionId } from './memory/journal'
 import { buildSystemMessages } from './prompts'
 import { getProvider, getResolvedModel } from './providers'
@@ -327,6 +328,14 @@ export async function* query(
       },
     })
     await flushJournal()
+
+    try {
+      if (ctx.sessionId) {
+        await runSessionEndEpisodes(ctx.sessionId as string)
+      }
+    } catch (err) {
+      dbg('query', 'Failed to run session-end episode hook', err)
+    }
   }
 }
 

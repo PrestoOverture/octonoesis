@@ -103,23 +103,45 @@ export async function runTool(
   const errorClass = result.ok ? null : result.error.split(':')[0] || 'unknown_error'
 
   let fingerprints: Fingerprint[] | undefined = undefined
+  let exitCode: number | undefined = undefined
   if (name === 'Bash' && result.ok && typeof result.value === 'string') {
     try {
       const parsed = JSON.parse(result.value)
-      if (parsed && typeof parsed === 'object' && parsed.code !== 0) {
-        const errorOutput = (parsed.stderr || parsed.stdout || '').trim()
-        if (errorOutput) {
-          const scrubbed = scrub(errorOutput, ctx.repoRoot)
-          const model = getResolvedModel()
-          const fp = await defaultCachedExtractor.getOrCreate(
-            scrubbed,
-            (rawInput as { command?: string })?.command || '',
-            { model },
-          )
-          fingerprints = [fp]
+      if (parsed && typeof parsed === 'object') {
+        if (typeof parsed.code === 'number') {
+          exitCode = parsed.code
+        }
+        if (parsed.code !== 0) {
+          const errorOutput = (parsed.stderr || parsed.stdout || '').trim()
+          if (errorOutput) {
+            const scrubbed = scrub(errorOutput, ctx.repoRoot)
+            const model = getResolvedModel()
+            const fp = await defaultCachedExtractor.getOrCreate(
+              scrubbed,
+              (rawInput as { command?: string })?.command || '',
+              { model },
+            )
+            fingerprints = [fp]
+          }
         }
       }
     } catch {}
+  }
+
+  let targetPath: string | undefined = undefined
+  if (rawInput && typeof rawInput === 'object' && 'path' in rawInput) {
+    const p = (rawInput as { path?: unknown }).path
+    if (typeof p === 'string') {
+      targetPath = p
+    }
+  }
+
+  let targetCmd: string | undefined = undefined
+  if (rawInput && typeof rawInput === 'object' && 'command' in rawInput) {
+    const c = (rawInput as { command?: unknown }).command
+    if (typeof c === 'string') {
+      targetCmd = c
+    }
   }
 
   appendJournal({
@@ -129,6 +151,9 @@ export async function runTool(
     outcome: result.ok ? 'success' : 'failure',
     error_class: errorClass,
     duration_ms: durationMs,
+    path: targetPath,
+    cmd: targetCmd,
+    exit_code: exitCode,
     fingerprints,
   })
 

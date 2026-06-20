@@ -1,0 +1,146 @@
+import fs from 'node:fs/promises'
+import path from 'node:path'
+import { getMemoryDir } from '../../utils/path'
+import { type JournalEventWithLine, type StoredJournalEvent, segmentJournal } from './segment'
+import { appendEpisodes, readEpisodes } from './store'
+import type { Episode } from './types'
+
+/**
+ * Checks if two episodes are equal (ignoring the ID and value_score).
+ */
+function isEpisodeEqual(ep1: Episode, ep2: Episode): boolean {
+  if (ep1.outcome !== ep2.outcome) return false
+  if (ep1.value_score !== ep2.value_score) return false
+  if (ep1.is_excluded !== ep2.is_excluded) return false
+  if (ep1.exclusion_reason !== ep2.exclusion_reason) return false
+  if (ep1.journal_line_range.start !== ep2.journal_line_range.start) return false
+  if (ep1.journal_line_range.end !== ep2.journal_line_range.end) return false
+
+  // Compare fix
+  if (ep1.fix || ep2.fix) {
+    if (!ep1.fix || !ep2.fix) return false
+    if (ep1.fix.tool !== ep2.fix.tool) return false
+    if (ep1.fix.path !== ep2.fix.path) return false
+    if (ep1.fix.summary !== ep2.fix.summary) return false
+  }
+
+  // Compare verification
+  if (ep1.verification || ep2.verification) {
+    if (!ep1.verification || !ep2.verification) return false
+    if (ep1.verification.cmd !== ep2.verification.cmd) return false
+    if (ep1.verification.exit_code !== ep2.verification.exit_code) return false
+  }
+
+  return true
+}
+
+/**
+ * Session-end hook that reads the journal log, extracts this session's events,
+ * segments them into episodes, and appends new or updated episodes to episodes.jsonl.
+ * Enforces a 5-second timeout.
+ */
+export async function runSessionEndEpisodes(sessionId: string): Promise<void> {
+  let timeoutId: NodeJS.Timeout | null = null
+
+  const timeoutPromise = new Promise<void>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      reject(new Error('Session end episode segmentation hook timed out'))
+    }, 5000)
+  })
+
+  const workPromise = (async () => {
+    try {
+      const memoryDir = getMemoryDir()
+      const journalPath = path.join(memoryDir, 'journal.jsonl')
+
+      let fileContent = ''
+      try {
+        fileContent = await fs.readFile(journalPath, 'utf8')
+      } catch {
+        // Journal file doesn't exist, no episodes to process
+        return
+      }
+
+      const lines = fileContent.split('\n')
+      const eventsWithLines: JournalEventWithLine[] = []
+
+      for (let i = 0; i < lines.length; i++) {
+        const lineStr = lines[i]?.trim()
+        if (!lineStr) continue
+
+        try {
+          const parsed = JSON.parse(lineStr)
+          eventsWithLines.push({
+            event: parsed as StoredJournalEvent,
+            line: i + 1,
+          })
+        } catch {
+          // Skip malformed lines
+        }
+      }
+
+      // Read existing unique episodes from disk
+      const allEpisodes = await readEpisodes()
+
+      // Filter events belonging to the current session
+      const sessionEvents = eventsWithLines.filter((item) => item.event.session_id === sessionId)
+      if (sessionEvents.length === 0) {
+        return
+      }
+
+      // Determine the next sequential index based on the highest existing index in allEpisodes.
+      let nextIdx = 1
+      if (allEpisodes.length > 0) {
+        const lastEpisode = allEpisodes[allEpisodes.length - 1]
+        if (lastEpisode?.id) {
+          const match = lastEpisode.id.match(/^ep_(\d+)$/)
+          if (match?.[1]) {
+            nextIdx = Number.parseInt(match[1], 10) + 1
+          } else {
+            nextIdx = allEpisodes.length + 1
+          }
+        }
+      }
+
+      // Run segmenter (passing a temporary starting index)
+      const segmentedEpisodes = segmentJournal(sessionEvents, 9999)
+
+      // Map segmented episodes to existing ones, or assign new sequential IDs.
+      const episodesToAppend: Episode[] = []
+      const identityToExisting = new Map<string, Episode>()
+      for (const ep of allEpisodes) {
+        const key = `${ep.session_id}|${ep.journal_line_range.start}`
+        identityToExisting.set(key, ep)
+      }
+
+      for (const newEp of segmentedEpisodes) {
+        const key = `${newEp.session_id}|${newEp.journal_line_range.start}`
+        const existing = identityToExisting.get(key)
+
+        if (existing) {
+          // Reuse original ID
+          newEp.id = existing.id
+          // Only append if it has changed (e.g. outcome transitioned from abandoned to resolved)
+          if (!isEpisodeEqual(existing, newEp)) {
+            episodesToAppend.push(newEp)
+          }
+        } else {
+          // Assign new sequential ID
+          newEp.id = `ep_${String(nextIdx++).padStart(4, '0')}`
+          episodesToAppend.push(newEp)
+        }
+      }
+
+      // Append new or updated episodes to the file
+      if (episodesToAppend.length > 0) {
+        await appendEpisodes(episodesToAppend)
+      }
+    } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId)
+      }
+    }
+  })()
+
+  await Promise.race([workPromise, timeoutPromise])
+}

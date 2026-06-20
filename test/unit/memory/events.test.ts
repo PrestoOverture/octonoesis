@@ -53,6 +53,7 @@ describe('Journal Event Schema', () => {
       verdict: 'PASS' as const,
       fingerprints: [],
       command: 'bun test',
+      exit_code: 0,
       stale: false,
     }
     const parse = journalEventSchema.safeParse(event)
