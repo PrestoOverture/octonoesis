@@ -40,10 +40,18 @@ describe('Episode Storage Store Module', () => {
       error_class: 'TypeError',
       signature: 'bash|TypeError|src/buggy.ts',
     },
-    fix: {
-      tool: 'Edit',
-      path: 'src/buggy.ts',
-      summary: 'added check',
+    fix_candidates: [
+      {
+        tool: 'Edit',
+        path: 'src/buggy.ts',
+        summary: 'added check',
+        role: 'direct',
+      },
+    ],
+    attribution: {
+      status: 'single_direct',
+      primary: 'src/buggy.ts',
+      confidence: 0.9,
     },
     outcome: 'resolved',
     journal_line_range: { start: 1, end: 10 },

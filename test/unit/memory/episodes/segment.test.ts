@@ -74,7 +74,11 @@ describe('Episode Segmentation State Machine', () => {
     expect(ep?.failure.error_class).toBe('TypeError')
     expect(ep?.failure.cmd).toBe('bun test test/buggy.test.ts')
     expect(ep?.failure.signature).toBe("bash|TypeError|src/buggy.ts|evaluating 'user.name'")
-    expect(ep?.fix?.path).toBe('src/buggy.ts')
+    expect(ep?.fix_candidates?.[0]?.path).toBe('src/buggy.ts')
+    expect(ep?.fix_candidates?.[0]?.role).toBe('direct')
+    expect(ep?.attribution.status).toBe('single_direct')
+    expect(ep?.attribution.primary).toBe('src/buggy.ts')
+    expect(ep?.attribution.confidence).toBe(0.9)
     expect(ep?.verification?.cmd).toBe('bun test')
     expect(ep?.verification?.exit_code).toBe(0)
     expect(ep?.journal_line_range.start).toBe(2)
@@ -382,5 +386,227 @@ describe('Episode Segmentation State Machine', () => {
     const episodes = segmentJournal(events)
     expect(episodes.length).toBe(1)
     expect(episodes[0]?.outcome).toBe('abandoned')
+  })
+
+  it('should collect multi-edit candidates with ranked roles and discount scores', () => {
+    const events = [
+      {
+        line: 1,
+        event: {
+          kind: 'tool' as const,
+          ts: '2026-06-20T10:01:00.000Z',
+          session_id: 'sess-123',
+          tool: 'Bash',
+          input_digest: 'digest-1',
+          outcome: 'failure' as const,
+          error_class: 'TypeError',
+          duration_ms: 1000,
+          cmd: 'bun test',
+          fingerprints: [
+            {
+              coarse: 'bash|TypeError',
+              medium: 'bash|TypeError|src/buggy.ts',
+              fine: 'bash|TypeError|src/buggy.ts|null pointer',
+              tool: 'bash',
+              error_class: 'TypeError',
+              file: 'src/buggy.ts',
+              expression: 'null pointer',
+            },
+          ],
+        },
+      },
+      {
+        line: 2,
+        event: {
+          kind: 'tool' as const,
+          ts: '2026-06-20T10:02:00.000Z',
+          session_id: 'sess-123',
+          tool: 'Edit',
+          input_digest: 'digest-2',
+          outcome: 'success' as const,
+          path: 'src/buggy.ts',
+          duration_ms: 500,
+          error_class: null,
+        },
+      },
+      {
+        line: 3,
+        event: {
+          kind: 'tool' as const,
+          ts: '2026-06-20T10:03:00.000Z',
+          session_id: 'sess-123',
+          tool: 'Edit',
+          input_digest: 'digest-3',
+          outcome: 'success' as const,
+          path: 'src/utils.ts', // same directory -> related
+          duration_ms: 500,
+          error_class: null,
+        },
+      },
+      {
+        line: 4,
+        event: {
+          kind: 'tool' as const,
+          ts: '2026-06-20T10:04:00.000Z',
+          session_id: 'sess-123',
+          tool: 'Write',
+          input_digest: 'digest-4',
+          outcome: 'success' as const,
+          path: 'tests/buggy.test.ts', // different directory -> indirect
+          duration_ms: 500,
+          error_class: null,
+        },
+      },
+      {
+        line: 5,
+        event: {
+          kind: 'verify' as const,
+          ts: '2026-06-20T10:05:00.000Z',
+          session_id: 'sess-123',
+          verdict: 'PASS' as const,
+          fingerprints: [],
+          command: 'bun test',
+          exit_code: 0,
+          stale: false,
+        },
+      },
+    ]
+
+    const episodes = segmentJournal(events)
+    expect(episodes.length).toBe(1)
+    const ep = episodes[0]
+    expect(ep).toBeDefined()
+    expect(ep?.outcome).toBe('resolved')
+
+    // 3 candidates collected
+    expect(ep?.fix_candidates.length).toBe(3)
+
+    const buggyCand = ep?.fix_candidates.find((c) => c.path === 'src/buggy.ts')
+    expect(buggyCand?.role).toBe('direct')
+
+    const utilsCand = ep?.fix_candidates.find((c) => c.path === 'src/utils.ts')
+    expect(utilsCand?.role).toBe('related')
+
+    const testCand = ep?.fix_candidates.find((c) => c.path === 'tests/buggy.test.ts')
+    expect(testCand?.role).toBe('indirect')
+
+    // Attribution should be multi_with_direct
+    expect(ep?.attribution.status).toBe('multi_with_direct')
+    expect(ep?.attribution.primary).toBe('src/buggy.ts')
+    expect(ep?.attribution.confidence).toBe(0.7)
+
+    // Score should be baseline 1.0 * multiplier 0.85 = 0.85
+    expect(ep?.value_score).toBe(0.85)
+  })
+
+  it('should preserve multiple distinct edits to the same file path and count as single_direct', () => {
+    const events = [
+      {
+        line: 1,
+        event: {
+          kind: 'tool' as const,
+          ts: '2026-06-20T10:01:00.000Z',
+          session_id: 'sess-123',
+          tool: 'Bash',
+          input_digest: 'digest-1',
+          outcome: 'failure' as const,
+          error_class: 'TypeError',
+          duration_ms: 1000,
+          cmd: 'bun test',
+          fingerprints: [
+            {
+              coarse: 'bash|TypeError',
+              medium: 'bash|TypeError|src/buggy.ts',
+              fine: 'bash|TypeError|src/buggy.ts|null pointer',
+              tool: 'bash',
+              error_class: 'TypeError',
+              file: 'src/buggy.ts',
+              expression: 'null pointer',
+            },
+          ],
+        },
+      },
+      {
+        line: 2,
+        event: {
+          kind: 'tool' as const,
+          ts: '2026-06-20T10:02:00.000Z',
+          session_id: 'sess-123',
+          tool: 'Edit',
+          input_digest: 'digest-edit-1',
+          outcome: 'success' as const,
+          path: 'src/buggy.ts',
+          duration_ms: 500,
+          error_class: null,
+        },
+      },
+      {
+        line: 3,
+        event: {
+          kind: 'verify' as const,
+          ts: '2026-06-20T10:03:00.000Z',
+          session_id: 'sess-123',
+          verdict: 'FAIL' as const,
+          fingerprints: [
+            {
+              coarse: 'bash|TypeError',
+              medium: 'bash|TypeError|src/buggy.ts',
+              fine: 'bash|TypeError|src/buggy.ts|null pointer',
+              tool: 'bash',
+              error_class: 'TypeError',
+              file: 'src/buggy.ts',
+              expression: 'null pointer',
+            },
+          ],
+          command: 'bun test',
+          exit_code: 1,
+          stale: false,
+        },
+      },
+      {
+        line: 4,
+        event: {
+          kind: 'tool' as const,
+          ts: '2026-06-20T10:04:00.000Z',
+          session_id: 'sess-123',
+          tool: 'Edit',
+          input_digest: 'digest-edit-2',
+          outcome: 'success' as const,
+          path: 'src/buggy.ts',
+          duration_ms: 500,
+          error_class: null,
+        },
+      },
+      {
+        line: 5,
+        event: {
+          kind: 'verify' as const,
+          ts: '2026-06-20T10:05:00.000Z',
+          session_id: 'sess-123',
+          verdict: 'PASS' as const,
+          fingerprints: [],
+          command: 'bun test',
+          exit_code: 0,
+          stale: false,
+        },
+      },
+    ]
+
+    const episodes = segmentJournal(events)
+    expect(episodes.length).toBe(1)
+    const ep = episodes[0]
+    expect(ep).toBeDefined()
+    expect(ep?.outcome).toBe('resolved')
+
+    // Both edits are preserved
+    expect(ep?.fix_candidates.length).toBe(2)
+    expect(ep?.fix_candidates[0]?.path).toBe('src/buggy.ts')
+    expect(ep?.fix_candidates[1]?.path).toBe('src/buggy.ts')
+
+    // Status is multi_with_direct because there are multiple edit attempts
+    expect(ep?.attribution.status).toBe('multi_with_direct')
+    expect(ep?.attribution.primary).toBe('src/buggy.ts')
+    expect(ep?.attribution.confidence).toBe(0.7)
+    expect(ep?.value_score).toBe(0.85)
   })
 })

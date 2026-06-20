@@ -44,6 +44,10 @@ describe('Extraction Cache', () => {
     })
 
     expect(result.coarse).toBe('jest|TypeError')
+    expect(result.tool).toBe('jest')
+    expect(result.error_class).toBe('TypeError')
+    expect(result.file).toBe('test.ts')
+    expect(result.expression).toBe('cannot read property')
     expect(llmCallCount).toBe(1)
   })
 
@@ -110,7 +114,16 @@ describe('Extraction Cache', () => {
     })
 
     expect(result1.coarse).toBe('jest|TypeError')
+    expect(result1.tool).toBe('jest')
+    expect(result1.error_class).toBe('TypeError')
+    expect(result1.file).toBe('test.ts')
+    expect(result1.expression).toBe('cannot read property')
+
     expect(result2.coarse).toBe('eslint|SyntaxError')
+    expect(result2.tool).toBe('eslint')
+    expect(result2.error_class).toBe('SyntaxError')
+    expect(result2.file).toBe('main.ts')
+    expect(result2.expression).toBe('unexpected token')
 
     // Clean up new extractor's file
     await newExtractor.clearForTesting()

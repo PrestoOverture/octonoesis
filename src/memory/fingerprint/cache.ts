@@ -41,7 +41,16 @@ export class CachedExtractor {
         try {
           const entry = JSON.parse(line)
           if (entry.key && entry.fingerprint) {
-            this.cache.set(entry.key, entry.fingerprint)
+            const fp = entry.fingerprint
+            this.cache.set(entry.key, {
+              tool: fp.tool || '',
+              error_class: fp.error_class || '',
+              file: fp.file || '',
+              expression: fp.expression || '',
+              coarse: fp.coarse,
+              medium: fp.medium,
+              fine: fp.fine,
+            })
           }
         } catch {}
       }

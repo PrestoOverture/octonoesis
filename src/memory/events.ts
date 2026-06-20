@@ -13,6 +13,10 @@ export const toolEventSchema = z.object({
   fingerprints: z
     .array(
       z.object({
+        tool: z.string().optional(),
+        error_class: z.string().optional(),
+        file: z.string().optional(),
+        expression: z.string().optional(),
         coarse: z.string(),
         medium: z.string(),
         fine: z.string(),

@@ -90,7 +90,10 @@ describe('Episode Session-End Hook', () => {
     expect(ep?.id).toBe('ep_0001')
     expect(ep?.outcome).toBe('resolved')
     expect(ep?.failure.signature).toBe('bash|TypeError|src/bug.ts|null pointer')
-    expect(ep?.fix?.path).toBe('src/bug.ts')
+    expect(ep?.fix_candidates?.[0]?.path).toBe('src/bug.ts')
+    expect(ep?.fix_candidates?.[0]?.role).toBe('direct')
+    expect(ep?.attribution.status).toBe('single_direct')
+    expect(ep?.attribution.primary).toBe('src/bug.ts')
     expect(ep?.value_score).toBe(1.0)
     expect(ep?.is_excluded).toBe(false)
 

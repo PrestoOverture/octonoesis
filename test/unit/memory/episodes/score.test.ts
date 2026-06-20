@@ -13,10 +13,18 @@ describe('Episode Value Scoring', () => {
       error_class: 'TypeError',
       signature: 'bash|TypeError|src/buggy.ts',
     },
-    fix: {
-      tool: 'Edit',
-      path: 'src/buggy.ts',
-      summary: 'added check',
+    fix_candidates: [
+      {
+        tool: 'Edit',
+        path: 'src/buggy.ts',
+        summary: 'added check',
+        role: 'direct',
+      },
+    ],
+    attribution: {
+      status: 'single_direct',
+      primary: 'src/buggy.ts',
+      confidence: 0.9,
     },
     outcome: 'resolved',
     journal_line_range: { start: 1, end: 10 },
@@ -52,11 +60,15 @@ describe('Episode Value Scoring', () => {
     expect(ep.exclusion_reason).toBe('abandoned')
   })
 
-  it('should exclude episodes without fix edits', () => {
-    const noFixEp = { ...baseEpisode, fix: undefined }
+  it('should exclude episodes without fix edits (unattributable)', () => {
+    const noFixEp = {
+      ...baseEpisode,
+      fix_candidates: [],
+      attribution: { status: 'unattributable' as const, confidence: 0.1 },
+    }
     const ep = scoreEpisode(noFixEp, 5)
     expect(ep.value_score).toBe(0.0)
     expect(ep.is_excluded).toBe(true)
-    expect(ep.exclusion_reason).toBe('no_fix_recorded')
+    expect(ep.exclusion_reason).toBe('unattributable')
   })
 })

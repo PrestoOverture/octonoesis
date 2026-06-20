@@ -16,12 +16,21 @@ function isEpisodeEqual(ep1: Episode, ep2: Episode): boolean {
   if (ep1.journal_line_range.start !== ep2.journal_line_range.start) return false
   if (ep1.journal_line_range.end !== ep2.journal_line_range.end) return false
 
-  // Compare fix
-  if (ep1.fix || ep2.fix) {
-    if (!ep1.fix || !ep2.fix) return false
-    if (ep1.fix.tool !== ep2.fix.tool) return false
-    if (ep1.fix.path !== ep2.fix.path) return false
-    if (ep1.fix.summary !== ep2.fix.summary) return false
+  // Compare attribution
+  if (ep1.attribution.status !== ep2.attribution.status) return false
+  if (ep1.attribution.primary !== ep2.attribution.primary) return false
+  if (ep1.attribution.confidence !== ep2.attribution.confidence) return false
+
+  // Compare fix_candidates
+  if (ep1.fix_candidates.length !== ep2.fix_candidates.length) return false
+  for (let i = 0; i < ep1.fix_candidates.length; i++) {
+    const c1 = ep1.fix_candidates[i]
+    const c2 = ep2.fix_candidates[i]
+    if (!c1 || !c2) return false
+    if (c1.tool !== c2.tool) return false
+    if (c1.path !== c2.path) return false
+    if (c1.summary !== c2.summary) return false
+    if (c1.role !== c2.role) return false
   }
 
   // Compare verification

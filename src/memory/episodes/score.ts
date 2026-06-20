@@ -20,19 +20,27 @@ export function scoreEpisode(
     value_score = 0.0
     is_excluded = true
     exclusion_reason = 'abandoned'
-  } else if (!partial.fix) {
+  } else if (partial.attribution.status === 'unattributable') {
     value_score = 0.0
     is_excluded = true
-    exclusion_reason = 'no_fix_recorded'
+    exclusion_reason = 'unattributable'
   } else {
-    // Resolved and has a fix
+    // Resolved and has valid candidates
+    let baseline = 1.0
     if (options?.hasPermissionDeny) {
-      value_score = 0.6 // User correction
+      baseline = 0.6 // User correction
     } else if (options?.repetitionCount && options.repetitionCount > 1) {
-      value_score = 0.4 // Repeated failures before resolve
-    } else {
-      value_score = 1.0 // Clean verification flip
+      baseline = 0.4 // Repeated failures before resolve
     }
+
+    let multiplier = 1.0
+    if (partial.attribution.status === 'multi_with_direct') {
+      multiplier = 0.85
+    } else if (partial.attribution.status === 'indirect_only') {
+      multiplier = 0.5
+    }
+
+    value_score = Number((baseline * multiplier).toFixed(4))
   }
 
   return {

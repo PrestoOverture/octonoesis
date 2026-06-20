@@ -50,6 +50,10 @@ describe('LLM Fingerprint Extractor', () => {
     expect(result.coarse).toBe('bun-test|TypeError')
     expect(result.medium).toBe('bun-test|TypeError|src/buggy.ts')
     expect(result.fine).toBe("bun-test|TypeError|src/buggy.ts|evaluating 'user.name'")
+    expect(result.tool).toBe('bun-test')
+    expect(result.error_class).toBe('TypeError')
+    expect(result.file).toBe('src/buggy.ts')
+    expect(result.expression).toBe("evaluating 'user.name'")
   })
 
   it('should clean markdown formatting fences from the LLM response', async () => {
@@ -83,6 +87,10 @@ Here is the extracted information:
     expect(result.coarse).toBe('tsc|TS2345')
     expect(result.medium).toBe('tsc|TS2345|src/state.ts')
     expect(result.fine).toBe("tsc|TS2345|src/state.ts|Type 'string' is not assignable to 'number'")
+    expect(result.tool).toBe('tsc')
+    expect(result.error_class).toBe('TS2345')
+    expect(result.file).toBe('src/state.ts')
+    expect(result.expression).toBe("Type 'string' is not assignable to 'number'")
   })
 
   it('should fall back to deterministic extraction when LLM fails or times out', async () => {
@@ -133,6 +141,10 @@ Here is the extracted information:
     expect(result.coarse).toBe('bun-test|Type-Error')
     expect(result.medium).toBe('bun-test|Type-Error|src-buggy.ts')
     expect(result.fine).toBe('bun-test|Type-Error|src-buggy.ts|eval-user.name')
+    expect(result.tool).toBe('bun-test')
+    expect(result.error_class).toBe('Type-Error')
+    expect(result.file).toBe('src-buggy.ts')
+    expect(result.expression).toBe('eval-user.name')
   })
 
   it('should handle getFallbackFingerprint helper with relative command path', () => {

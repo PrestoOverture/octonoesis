@@ -1,6 +1,6 @@
 import type { JournalEvent } from '../events'
 import { scoreEpisode } from './score.ts'
-import type { Episode } from './types.ts'
+import type { AttributionStatus, Episode, FixCandidate } from './types.ts'
 
 export type StoredJournalEvent = JournalEvent & {
   ts: string
@@ -32,6 +32,18 @@ function getVerifySignatures(event: Extract<StoredJournalEvent, { kind: 'verify'
 }
 
 /**
+ * Checks if two repository-relative file paths are in the same parent directory.
+ */
+function isSameParentDirectory(pathA: string, pathB: string): boolean {
+  if (!pathA || !pathB) return false
+  const getParentDir = (p: string) => {
+    const lastSlash = p.lastIndexOf('/')
+    return lastSlash === -1 ? '' : p.slice(0, lastSlash)
+  }
+  return getParentDir(pathA) === getParentDir(pathB)
+}
+
+/**
  * Deterministic state machine that segments filtered journal events into episodes.
  */
 export function segmentJournal(events: JournalEventWithLine[], startEpisodeIndex = 1): Episode[] {
@@ -49,12 +61,14 @@ export function segmentJournal(events: JournalEventWithLine[], startEpisodeIndex
       cmd: string // filled if we can detect the command
       error_class: string
       signature: string
+      file?: string
     }
-    fix?: {
+    candidates: {
       tool: string
       path: string
       summary: string
-    }
+      input_digest?: string
+    }[]
     journal_line_range: {
       start: number
       end: number
@@ -79,13 +93,73 @@ export function segmentJournal(events: JournalEventWithLine[], startEpisodeIndex
 
     activeEpisodes.delete(signature)
 
+    // Build the candidates with roles
+    let errorFile = active.failure.file || ''
+    if (!errorFile && active.failure.signature) {
+      const parts = active.failure.signature.split('|')
+      if (parts.length >= 3) {
+        errorFile = parts[2] || ''
+      }
+    }
+    const fix_candidates: FixCandidate[] = active.candidates.map((c) => {
+      let role: 'direct' | 'related' | 'indirect' = 'indirect'
+      if (errorFile) {
+        if (c.path === errorFile) {
+          role = 'direct'
+        } else if (isSameParentDirectory(c.path, errorFile)) {
+          role = 'related'
+        }
+      }
+      return {
+        tool: c.tool,
+        path: c.path,
+        summary: c.summary,
+        role,
+      }
+    })
+
+    // Compute attribution
+    let status: AttributionStatus = 'unattributable'
+    let primary: string | undefined = undefined
+    let confidence = 0.1
+
+    if (fix_candidates.length > 0) {
+      const directs = fix_candidates.filter((c) => c.role === 'direct')
+      const relateds = fix_candidates.filter((c) => c.role === 'related')
+
+      if (directs.length > 0) {
+        primary = directs[0]?.path
+        if (fix_candidates.length === 1) {
+          status = 'single_direct'
+          confidence = 0.9
+        } else {
+          status = 'multi_with_direct'
+          confidence = 0.7
+        }
+      } else {
+        status = 'indirect_only'
+        primary = relateds[0]?.path || fix_candidates[0]?.path
+        confidence = 0.4
+      }
+    }
+
     const partialEpisode: Omit<Episode, 'id' | 'value_score' | 'is_excluded' | 'exclusion_reason'> =
       {
         session_id: active.session_id,
         timestamp: active.timestamp,
         task_digest: active.task_digest,
-        failure: active.failure,
-        fix: active.fix,
+        failure: {
+          tool: active.failure.tool,
+          cmd: active.failure.cmd,
+          error_class: active.failure.error_class,
+          signature: active.failure.signature,
+        },
+        fix_candidates,
+        attribution: {
+          status,
+          primary,
+          confidence,
+        },
         verification,
         outcome,
         journal_line_range: {
@@ -168,6 +242,7 @@ export function segmentJournal(events: JournalEventWithLine[], startEpisodeIndex
         // 1. Tool execution failed
         if (!activeEpisodes.has(signature)) {
           // WORKING -> FAILING
+          const fp = event.fingerprints?.[0]
           activeEpisodes.set(signature, {
             state: 'FAILING',
             session_id: currentSessionId,
@@ -183,7 +258,9 @@ export function segmentJournal(events: JournalEventWithLine[], startEpisodeIndex
                   : null) ||
                 'Error',
               signature,
+              file: fp?.file || '',
             },
+            candidates: [],
             journal_line_range: {
               start: line,
               end: line,
@@ -203,14 +280,22 @@ export function segmentJournal(events: JournalEventWithLine[], startEpisodeIndex
         // 2. Success edit tool: FAILING -> FIXING
         const editPath = event.path
         if (editPath) {
-          for (const [sig, active] of activeEpisodes.entries()) {
-            if (active.state === 'FAILING' && sig.includes(editPath)) {
+          for (const active of activeEpisodes.values()) {
+            if (active.state === 'FAILING' || active.state === 'FIXING') {
               active.state = 'FIXING'
-              active.fix = {
-                tool: event.tool,
-                path: editPath,
-                summary: `Successful ${event.tool} on ${editPath}`,
+
+              const alreadyExists = active.candidates.some(
+                (c) => c.path === editPath && c.input_digest === event.input_digest,
+              )
+              if (!alreadyExists) {
+                active.candidates.push({
+                  tool: event.tool,
+                  path: editPath,
+                  summary: `Successful ${event.tool} on ${editPath}`,
+                  input_digest: event.input_digest,
+                })
               }
+
               active.journal_line_range.end = line
             }
           }

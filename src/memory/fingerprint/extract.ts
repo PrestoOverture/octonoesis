@@ -3,6 +3,10 @@ import { getProvider } from '../../providers/index.ts'
 import type { CanonicalMessage, StreamEvent } from '../../providers/types.ts'
 
 export type Fingerprint = {
+  tool: string
+  error_class: string
+  file: string
+  expression: string
   coarse: string // tool + error class
   medium: string // + repo-relative file
   fine: string // + stable detail skeleton
@@ -135,5 +139,13 @@ export function assembleFingerprint(
   const medium = cleanFile ? `${coarse}|${cleanFile}` : coarse
   const fine = cleanExpr ? `${medium}|${cleanExpr}` : medium
 
-  return { coarse, medium, fine }
+  return {
+    tool: cleanTool,
+    error_class: cleanClass,
+    file: cleanFile,
+    expression: cleanExpr,
+    coarse,
+    medium,
+    fine,
+  }
 }
