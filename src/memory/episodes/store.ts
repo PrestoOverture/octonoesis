@@ -6,10 +6,9 @@ import type { Episode } from './types'
 /**
  * Reads all persisted episodes from disk, deduplicating by ID (later lines overwrite earlier ones).
  */
-export async function readEpisodes(): Promise<Episode[]> {
-  const memoryDir = getMemoryDir()
-  const episodesPath = path.join(memoryDir, 'episodes.jsonl')
-
+export async function readEpisodes(
+  episodesPath: string = path.join(getMemoryDir(), 'episodes.jsonl'),
+): Promise<Episode[]> {
   try {
     const data = await fs.readFile(episodesPath, 'utf8')
     const lines = data

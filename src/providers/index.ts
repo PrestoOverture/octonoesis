@@ -62,3 +62,15 @@ export function getResolvedModel(): string {
 
   return DEFAULT_ANTHROPIC_MODEL
 }
+
+/**
+ * Resolves the provider's cheapest available model ID (Haiku-tier/nano-tier).
+ * Bypasses general MODEL overrides to enforce cheap distillation context operations.
+ */
+export function getCheapestModel(): string {
+  const providerEnv = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
+  if (providerEnv === 'openai') {
+    return DEFAULT_OPENAI_MODEL
+  }
+  return DEFAULT_ANTHROPIC_MODEL
+}
