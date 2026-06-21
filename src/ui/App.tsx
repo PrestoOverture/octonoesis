@@ -241,6 +241,40 @@ export function App({
   const handleSubmit = (value: string) => {
     if (!value.trim() || isGenerating) return
 
+    if (value.trim() === '/stats') {
+      const userMsg: CanonicalMessage = {
+        role: 'user',
+        content: [{ type: 'text', text: value }],
+      }
+      setInputValue('')
+      setMessages((prev) => [...prev, userMsg])
+      ;(async () => {
+        try {
+          const { readCalibrationRecords, aggregateCalibrationStats } = await import(
+            '../memory/calibration/stats.ts'
+          )
+          const { formatStatsTable } = await import('../memory/calibration/format.ts')
+          const records = await readCalibrationRecords()
+          const statsList = aggregateCalibrationStats(records)
+          const table = formatStatsTable(statsList)
+
+          const assistantMsg: CanonicalMessage = {
+            role: 'assistant',
+            content: [{ type: 'text', text: table }],
+          }
+          setMessages((prev) => [...prev, assistantMsg])
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err)
+          const assistantMsg: CanonicalMessage = {
+            role: 'assistant',
+            content: [{ type: 'text', text: `Failed to load stats: ${errMsg}` }],
+          }
+          setMessages((prev) => [...prev, assistantMsg])
+        }
+      })()
+      return
+    }
+
     setIsGenerating(true)
     setInputValue('')
 

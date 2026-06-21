@@ -43,6 +43,7 @@ export const sessionEventSchema = z.object({
     input_tokens: z.number(),
     output_tokens: z.number(),
   }),
+  model: z.string().optional(),
 })
 
 export const verifyEventSchema = z.object({

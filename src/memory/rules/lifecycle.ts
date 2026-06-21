@@ -42,8 +42,11 @@ export async function updateLifecycle(rule: RuleFile, repoRoot: string): Promise
     return rule
   }
 
-  // Candidate -> Active if evidence count >= 2 or user_confirmed is true
-  if (rule.status === 'candidate' && (rule.evidence.length >= 2 || rule.user_confirmed)) {
+  // Candidate -> Active if evidence count >= 2 or user_confirmed is true or hits >= 1
+  if (
+    rule.status === 'candidate' &&
+    (rule.evidence.length >= 2 || rule.user_confirmed || rule.hits >= 1)
+  ) {
     rule.status = 'active'
   }
 

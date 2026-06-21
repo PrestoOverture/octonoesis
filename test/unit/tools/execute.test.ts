@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test'
 import { getRepoRoot } from '../../../src/query'
+import { bashTool } from '../../../src/tools/Bash'
 import { readTool } from '../../../src/tools/Read'
 import { runTool } from '../../../src/tools/execute'
 import { clearRegistry, registerTool } from '../../../src/tools/registry'
@@ -140,6 +141,79 @@ describe('execute pipeline (runTool)', () => {
       if (result.ok) {
         expect(result.value).toBe('wrote successfully')
       }
+    })
+
+    it('applies Bash safety denylist checks even when executing via runTool', async () => {
+      clearRegistry()
+      registerTool(bashTool)
+
+      let promptCalled = false
+      registerPromptHandler(async () => {
+        promptCalled = true
+        return 'allow_once'
+      })
+
+      const result = await runTool('Bash', { command: 'curl http://example.com' }, ctx)
+      expect(result.ok).toBe(false)
+      expect(promptCalled).toBe(true)
+      if (!result.ok) {
+        expect(result.error).toContain('blocked_command')
+        expect(result.error).toContain('curl')
+      }
+    })
+
+    it('journals the initial test run as a verification event and sets verificationCommand', async () => {
+      clearRegistry()
+      registerTool(bashTool)
+
+      registerPromptHandler(async () => {
+        return 'allow_once'
+      })
+
+      // biome-ignore lint/suspicious/noExplicitAny: test context
+      const localCtx: any = { repoRoot: ctx.repoRoot, messages: [] }
+      const result = await runTool('Bash', { command: 'bun test --help' }, localCtx)
+      expect(result.ok).toBe(true)
+      expect(localCtx.verificationCommand).toBe('bun test --help')
+      expect(localCtx._lastVerifyResultForQuery).toBeDefined()
+      expect(localCtx._lastVerifyResultForQuery.command).toBe('bun test --help')
+    })
+
+    it('does not set _lastVerifyResultForQuery for non-verification commands', async () => {
+      clearRegistry()
+      registerTool(bashTool)
+
+      registerPromptHandler(async () => {
+        return 'allow_once'
+      })
+
+      // biome-ignore lint/suspicious/noExplicitAny: test context
+      const localCtx: any = { repoRoot: ctx.repoRoot, messages: [] }
+      const result = await runTool('Bash', { command: 'echo "hello"' }, localCtx)
+      expect(result.ok).toBe(true)
+      expect(localCtx.verificationCommand).toBeUndefined()
+      expect(localCtx._lastVerifyResultForQuery).toBeUndefined()
+    })
+
+    it('journals cd-prefixed verification commands as verification runs', async () => {
+      clearRegistry()
+      registerTool(bashTool)
+
+      registerPromptHandler(async () => {
+        return 'allow_once'
+      })
+
+      // biome-ignore lint/suspicious/noExplicitAny: test context
+      const localCtx: any = { repoRoot: ctx.repoRoot, messages: [] }
+      const result = await runTool(
+        'Bash',
+        { command: 'cd packages/api && bun test --help' },
+        localCtx,
+      )
+      expect(result.ok).toBe(true)
+      expect(localCtx.verificationCommand).toBe('cd packages/api && bun test --help')
+      expect(localCtx._lastVerifyResultForQuery).toBeDefined()
+      expect(localCtx._lastVerifyResultForQuery.command).toBe('cd packages/api && bun test --help')
     })
   })
 })

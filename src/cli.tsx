@@ -41,8 +41,49 @@ program
   })
 
 program
+  .command('stats')
+  .description('Display calibration statistics')
+  .action(async () => {
+    try {
+      const { readCalibrationRecords, aggregateCalibrationStats } = await import(
+        './memory/calibration/stats.ts'
+      )
+      const { formatStatsTable } = await import('./memory/calibration/format.ts')
+      const records = await readCalibrationRecords()
+      const statsList = aggregateCalibrationStats(records)
+      console.log(formatStatsTable(statsList))
+    } catch (error) {
+      if (error instanceof Error) {
+        console.error(`Error displaying stats: ${error.message}`)
+        process.exit(1)
+      }
+      throw error
+    }
+  })
+
+program
+  .option('--stats', 'Display calibration statistics')
   .argument('[prompt]', 'One-shot prompt to send to the model')
   .action(async (prompt?: string) => {
+    if (program.opts().stats) {
+      try {
+        const { readCalibrationRecords, aggregateCalibrationStats } = await import(
+          './memory/calibration/stats.ts'
+        )
+        const { formatStatsTable } = await import('./memory/calibration/format.ts')
+        const records = await readCalibrationRecords()
+        const statsList = aggregateCalibrationStats(records)
+        console.log(formatStatsTable(statsList))
+        return
+      } catch (error) {
+        if (error instanceof Error) {
+          console.error(`Error displaying stats: ${error.message}`)
+          process.exit(1)
+        }
+        throw error
+      }
+    }
+
     if (!prompt) {
       // Launch interactive Ink TUI mode
       const { waitUntilExit } = render(<App />, { exitOnCtrlC: false })

@@ -3,11 +3,136 @@ import { defaultCachedExtractor } from '../memory/fingerprint/cache'
 import type { Fingerprint } from '../memory/fingerprint/extract'
 import { scrub } from '../memory/fingerprint/scrub'
 import { appendJournal } from '../memory/journal'
+import { type VerifyResult, verify } from '../memory/verifier'
 import { requestPermission } from '../permissions/confirm'
 import { preToolUseHook } from '../permissions/hooks'
 import { getResolvedModel } from '../providers/index'
 import type { ToolContext, ToolResult } from './Tool'
 import { getTool } from './registry'
+
+/**
+ * Checks if a command matches common verification tool patterns (e.g. test, lint, check, compile).
+ */
+export function isVerificationCommand(command: string, verificationCommand?: string): boolean {
+  if (verificationCommand && command === verificationCommand) {
+    return true
+  }
+
+  // Pre-process: replace parentheses with spaces to handle subshells (e.g. (cd foo && bun test))
+  const normalizedCommand = command.replace(/[\(\)]/g, ' ')
+
+  // Split by common shell execution chain operators: &&, ||, ;, and |
+  const segments = normalizedCommand.split(/&&|\|\||;|\|/)
+
+  for (const segment of segments) {
+    const trimmed = segment.trim()
+    if (!trimmed) continue
+
+    const tokens = trimmed.split(/\s+/)
+    if (tokens.length === 0) continue
+
+    // Filter out leading env vars (e.g. VAR=value)
+    let startIndex = 0
+    while (startIndex < tokens.length) {
+      const t = tokens[startIndex]
+      if (t?.includes('=')) {
+        startIndex++
+      } else {
+        break
+      }
+    }
+    const cleanTokens = tokens.slice(startIndex)
+    if (cleanTokens.length === 0) continue
+
+    // Helper to recursively strip common prefix wrappers (npx, poetry run, etc)
+    const stripWrappers = (toks: string[]): string[] => {
+      if (toks.length === 0) return toks
+      const first = toks[0]
+      if (first === 'npx' || first === 'bunx') {
+        return stripWrappers(toks.slice(1))
+      }
+      if (
+        toks.length >= 2 &&
+        first &&
+        (first === 'bun' ||
+          first === 'npm' ||
+          first === 'pnpm' ||
+          first === 'yarn' ||
+          first === 'poetry' ||
+          first === 'pipenv') &&
+        toks[1] === 'run'
+      ) {
+        return stripWrappers(toks.slice(2))
+      }
+      return toks
+    }
+
+    const finalTokens = stripWrappers(cleanTokens)
+    if (finalTokens.length === 0) continue
+
+    const firstToken = finalTokens[0]
+    if (!firstToken) continue
+
+    const isVerifierWord = (word: string): boolean => {
+      return (
+        word === 'test' ||
+        word.startsWith('test:') ||
+        word === 'check' ||
+        word.startsWith('check:') ||
+        word === 'lint' ||
+        word.startsWith('lint:') ||
+        word === 'compile' ||
+        word.startsWith('compile:')
+      )
+    }
+
+    // 1. Direct subcommands/scripts
+    if (isVerifierWord(firstToken)) {
+      return true
+    }
+
+    // 2. Package manager execution (without 'run')
+    if (
+      (firstToken === 'bun' ||
+        firstToken === 'npm' ||
+        firstToken === 'pnpm' ||
+        firstToken === 'yarn' ||
+        firstToken === 'deno') &&
+      finalTokens.length >= 2
+    ) {
+      const sub = finalTokens[1]
+      if (sub && isVerifierWord(sub)) {
+        return true
+      }
+    }
+
+    // 3. Known test runners
+    if (
+      firstToken === 'pytest' ||
+      firstToken === 'jest' ||
+      firstToken === 'vitest' ||
+      firstToken === 'tsc'
+    ) {
+      return true
+    }
+
+    // 4. Cargo / Go test runner
+    if ((firstToken === 'cargo' || firstToken === 'go') && finalTokens.length >= 2) {
+      if (finalTokens[1] === 'test') {
+        return true
+      }
+    }
+
+    // 5. Python test execution
+    if ((firstToken === 'python' || firstToken === 'python3') && finalTokens.length >= 2) {
+      if (finalTokens.slice(1).some((t) => t === 'pytest' || t === 'unittest')) {
+        return true
+      }
+    }
+  }
+
+  return false
+}
 
 /**
  * Executes a tool by resolving it, validating input, running hooks, checking permissions, and calling the tool.
@@ -89,6 +214,84 @@ export async function runTool(
       if (ctx.abortSignal?.aborted) {
         return { ok: false, error: 'aborted: Operation cancelled by user.' }
       }
+      if (name === 'Bash') {
+        const command = (validatedInput as { command: string }).command
+
+        // 2. Coalesce/determine if it is a verification run
+        // biome-ignore lint/suspicious/noExplicitAny: query context bypass
+        const anyCtx = ctx as any
+        const isVerificationRun = isVerificationCommand(command, anyCtx.verificationCommand)
+
+        if (isVerificationRun && !anyCtx.verificationCommand) {
+          anyCtx.verificationCommand = command
+        }
+
+        let toolResult: ToolResult
+        let verifyResult: VerifyResult & { isVerificationRun: boolean }
+
+        if (isVerificationRun) {
+          try {
+            const vr = await verify(command, ctx.repoRoot, ctx.abortSignal, true)
+            verifyResult = {
+              ...vr,
+              isVerificationRun,
+            }
+            toolResult = {
+              ok: true,
+              value: JSON.stringify({
+                stdout: vr.stdout,
+                stderr: vr.stderr,
+                code: vr.exit_code,
+              }),
+            }
+          } catch (err) {
+            return {
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            }
+          }
+        } else {
+          // 1. Run the standard tool call, which performs the safety checks and spawns the command
+          toolResult = await tool.call(validatedInput, ctx)
+          if (!toolResult.ok) {
+            return toolResult
+          }
+
+          // Parse exit code, stdout, and stderr from the JSON tool value
+          const parsed = JSON.parse(toolResult.value as string)
+          const exitCode = parsed.code
+          const stdoutText = parsed.stdout
+          const stderrText = parsed.stderr
+
+          // 3. Process fingerprints if command failed
+          const fingerprints: Fingerprint[] = []
+          if (exitCode !== 0) {
+            const errorOutput = (stderrText || stdoutText || '').trim()
+            if (errorOutput) {
+              const scrubbed = scrub(errorOutput, ctx.repoRoot)
+              const model = getResolvedModel()
+              const fp = await defaultCachedExtractor.getOrCreate(scrubbed, command, { model })
+              fingerprints.push(fp)
+            }
+          }
+
+          // 4. Construct the verification result structure
+          verifyResult = {
+            verdict: exitCode === 0 ? ('PASS' as const) : ('FAIL' as const),
+            fingerprints,
+            command,
+            exit_code: exitCode,
+            stale: false,
+            stdout: stdoutText,
+            stderr: stderrText,
+            isVerificationRun,
+          }
+        }
+
+        anyCtx._lastVerifyResult = verifyResult
+
+        return toolResult
+      }
       return await tool.call(validatedInput, ctx)
     } catch (err) {
       return {
@@ -104,28 +307,21 @@ export async function runTool(
 
   let fingerprints: Fingerprint[] | undefined = undefined
   let exitCode: number | undefined = undefined
-  if (name === 'Bash' && result.ok && typeof result.value === 'string') {
-    try {
-      const parsed = JSON.parse(result.value)
-      if (parsed && typeof parsed === 'object') {
-        if (typeof parsed.code === 'number') {
-          exitCode = parsed.code
-        }
-        if (parsed.code !== 0) {
-          const errorOutput = (parsed.stderr || parsed.stdout || '').trim()
-          if (errorOutput) {
-            const scrubbed = scrub(errorOutput, ctx.repoRoot)
-            const model = getResolvedModel()
-            const fp = await defaultCachedExtractor.getOrCreate(
-              scrubbed,
-              (rawInput as { command?: string })?.command || '',
-              { model },
-            )
-            fingerprints = [fp]
-          }
-        }
+  if (name === 'Bash') {
+    // biome-ignore lint/suspicious/noExplicitAny: query context bypass
+    const anyCtx = ctx as any
+    const vr = anyCtx._lastVerifyResult
+    if (vr) {
+      exitCode = vr.exit_code
+      fingerprints = vr.fingerprints.length > 0 ? vr.fingerprints : undefined
+      if (vr.isVerificationRun) {
+        anyCtx._lastVerifyResultForQuery = vr
       }
-    } catch {}
+      anyCtx._lastVerifyResult = undefined
+      if (fingerprints) {
+        anyCtx._lastFingerprints = fingerprints
+      }
+    }
   }
 
   let targetPath: string | undefined = undefined

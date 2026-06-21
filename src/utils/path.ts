@@ -10,6 +10,9 @@ let cachedRepoRoot: string | null = null
  * @returns The absolute path to the repository root.
  */
 export function getRepoRoot(): string {
+  if (process.env.OCTONOESIS_REPO_ROOT) {
+    return process.env.OCTONOESIS_REPO_ROOT
+  }
   if (cachedRepoRoot) return cachedRepoRoot
 
   try {

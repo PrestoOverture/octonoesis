@@ -1,6 +1,12 @@
 import crypto from 'node:crypto'
+import { runSessionEndCalibration } from './memory/calibration/hook'
 import { runSessionEndEpisodes } from './memory/episodes/hook'
+import type { Fingerprint } from './memory/fingerprint/extract'
 import { appendJournal, flushJournal, setSessionId } from './memory/journal'
+import { updateLifecycle } from './memory/rules/lifecycle'
+import { findMatchingRules, formatMatchAdvice } from './memory/rules/match'
+import { loadAllRules, saveRule } from './memory/rules/store'
+import type { RuleFile } from './memory/rules/types'
 import { buildSystemMessages } from './prompts'
 import { getProvider, getResolvedModel } from './providers'
 import type {
@@ -63,6 +69,10 @@ export async function* query(
     ctx.sessionId = crypto.randomUUID()
   }
   setSessionId(ctx.sessionId as string)
+
+  const rules = await loadAllRules()
+  ctx.injectedRules = ctx.injectedRules || []
+  ctx.recordedRuleOutcomes = ctx.recordedRuleOutcomes || new Set<string>()
 
   // Log user initial prompt event
   appendJournal({
@@ -303,6 +313,75 @@ export async function* query(
           toolResultContent = JSON.stringify({ error: toolResult.error })
         }
 
+        // 1. Hit/Miss outcome tracking for injected rules
+        // biome-ignore lint/suspicious/noExplicitAny: verifier types bypass
+        const verifyResult = ctx._lastVerifyResultForQuery as any
+        if (verifyResult?.isVerificationRun) {
+          ctx._lastVerifyResultForQuery = undefined
+          const injectedRulesList = ctx.injectedRules as {
+            rule: RuleFile
+            fingerprint: Fingerprint
+          }[]
+          const recordedOutcomes = ctx.recordedRuleOutcomes as Set<string>
+
+          if (injectedRulesList && injectedRulesList.length > 0) {
+            const postFingerprints = verifyResult.fingerprints as Fingerprint[]
+            const postSigs = postFingerprints.map((fp) => fp.fine)
+
+            for (const { rule, fingerprint } of injectedRulesList) {
+              if (recordedOutcomes.has(rule.id)) {
+                continue
+              }
+
+              const stillFailing = postSigs.includes(fingerprint.fine)
+
+              if (!stillFailing) {
+                // HIT! The signature that triggered the rule has disappeared
+                rule.hits++
+                rule.last_matched_at = new Date().toISOString()
+                recordedOutcomes.add(rule.id)
+                dbg('query', `Hit recorded for rule ${rule.id}. New hits count: ${rule.hits}`)
+
+                await updateLifecycle(rule, ctx.repoRoot)
+                await saveRule(rule)
+              } else {
+                // MISS! The signature is still present
+                rule.misses++
+                recordedOutcomes.add(rule.id)
+                dbg('query', `Miss recorded for rule ${rule.id}. New misses count: ${rule.misses}`)
+
+                await updateLifecycle(rule, ctx.repoRoot)
+                await saveRule(rule)
+              }
+            }
+          }
+        }
+
+        // 2. Post-failure rule matching and injection
+        const lastFingerprints = ctx._lastFingerprints as Fingerprint[] | undefined
+        if (lastFingerprints) {
+          ctx._lastFingerprints = undefined
+
+          if (toolUse.name === 'Bash' && !ctx.verificationCommand) {
+            ctx.verificationCommand = (toolUse.input as { command: string }).command
+          }
+
+          const matches = findMatchingRules(lastFingerprints, rules)
+          if (matches.length > 0) {
+            const adviceBlocks = matches.map(formatMatchAdvice).join('\n\n')
+            const octoMemoryBlock = `\n\n<octo-memory>\n${adviceBlocks}\n</octo-memory>`
+            toolResultContent += octoMemoryBlock
+
+            const injected = ctx.injectedRules as { rule: RuleFile; fingerprint: Fingerprint }[]
+            for (const match of matches) {
+              injected.push({
+                rule: match.rule,
+                fingerprint: match.fingerprint,
+              })
+            }
+          }
+        }
+
         // Push tool result using the canonical role 'tool'
         ctx.messages.push({
           role: 'tool',
@@ -326,6 +405,7 @@ export async function* query(
         input_tokens: cumulativeUsage.input_tokens,
         output_tokens: cumulativeUsage.output_tokens,
       },
+      model: getResolvedModel(),
     })
     await flushJournal()
 
@@ -335,6 +415,29 @@ export async function* query(
       }
     } catch (err) {
       dbg('query', 'Failed to run session-end episode hook', err)
+    }
+
+    try {
+      if (ctx.sessionId) {
+        await runSessionEndCalibration(ctx.sessionId as string)
+      }
+    } catch (err) {
+      dbg('query', 'Failed to run session-end calibration hook', err)
+    }
+
+    if (process.env.DEBUG === '1' || process.argv.includes('--debug')) {
+      try {
+        const { readCalibrationRecords, aggregateCalibrationStats } = await import(
+          './memory/calibration/stats.ts'
+        )
+        const { formatStatsTable } = await import('./memory/calibration/format.ts')
+        const records = await readCalibrationRecords()
+        const statsList = aggregateCalibrationStats(records)
+        const table = formatStatsTable(statsList)
+        dbg('calibration', `\n${table}`)
+      } catch (err) {
+        dbg('query', 'Failed to print debug calibration summary', err)
+      }
     }
   }
 }
