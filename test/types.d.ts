@@ -20,6 +20,9 @@ declare module 'bun:test' {
     toBeFalsy: () => void
     toContain: (expected: any) => void
     toThrow: (expected?: any) => void
+    toBeCloseTo: (expected: number, precision?: number) => void
+    toBeLessThan: (expected: number) => void
+    toBeGreaterThan: (expected: number) => void
     rejects: ExpectedMethods & { not: ExpectedMethods }
     resolves: ExpectedMethods & { not: ExpectedMethods }
   }

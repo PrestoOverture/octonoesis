@@ -353,12 +353,12 @@ describe('End-to-End Learning Loop', () => {
     for await (const _event of generator2) {
     }
 
-    // Verify the rule was updated and promoted to active with hits = 1 and confidence = 0.71
+    // Verify the rule was updated, remains candidate (due to wide CI), with hits = 1 and confidence = 0.6667
     const rule2 = await loadRule('rule-optional-chaining-buggy')
     expect(rule2).toBeDefined()
-    expect(rule2?.status).toBe('active')
+    expect(rule2?.status).toBe('candidate')
     expect(rule2?.hits).toBe(1)
     expect(rule2?.misses).toBe(0)
-    expect(rule2?.confidence).toBe(0.7143) // (1 + 0.5 * 1 + 1) / (1 + 0 + 0.5 * 1 + 2) = 2.5 / 3.5 = 0.7143
+    expect(rule2?.confidence).toBe(0.6667)
   })
 })

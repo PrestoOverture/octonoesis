@@ -14,6 +14,8 @@ describe('Rule Lifecycle Transitions', () => {
       error_signatures: ['bash|TypeError|package.json'],
     },
     scope: 'repo',
+    alpha: 3,
+    beta: 2,
     confidence: 0.6,
     evidence: ['ep_0001'],
     hits: 0,
@@ -31,17 +33,29 @@ describe('Rule Lifecycle Transitions', () => {
     advice: 'some advice',
   }
 
-  it('should promote candidate to active when evidence count is >= 2', async () => {
+  it('should NOT promote candidate to active when evidence count is too low (e.g. 1 resolved, lower bound not > 0.3)', async () => {
     const candidateRule: RuleFile = {
       ...baseRule,
-      evidence: ['ep_0001', 'ep_0002'],
+      evidence: ['ep_0001'],
+      alpha: 3,
+      beta: 2,
+    }
+
+    const result = await updateLifecycle(candidateRule, repoRoot)
+    expect(result.status).toBe('candidate')
+  })
+
+  it('should promote candidate to active when evidence count is high enough (e.g. 5 resolved, lower bound > 0.3)', async () => {
+    const candidateRule: RuleFile = {
+      ...baseRule,
+      evidence: ['ep_0001', 'ep_0002', 'ep_0003', 'ep_0004', 'ep_0005'],
+      alpha: 7, // 2 + 5 hits
+      beta: 2,
     }
 
     const result = await updateLifecycle(candidateRule, repoRoot)
     expect(result.status).toBe('active')
-    // Confidence formula: (hits + 0.5 * evidenceCount + 1) / (hits + misses + 0.5 * evidenceCount + 2)
-    // hits=0, misses=0, evidenceCount=2 -> (0 + 1 + 1) / (0 + 0 + 1 + 2) = 2/3 = 0.6667
-    expect(result.confidence).toBe(0.6667)
+    expect(result.confidence).toBeCloseTo(7 / 9, 4)
   })
 
   it('should promote candidate to active when user_confirmed is true', async () => {
@@ -54,24 +68,28 @@ describe('Rule Lifecycle Transitions', () => {
     expect(result.status).toBe('active')
   })
 
-  it('should demote active to retired if confidence drops below 0.45', async () => {
+  it('should demote active to retired if 95% CI upper bound drops below 0.45', async () => {
     const activeRule: RuleFile = {
       ...baseRule,
       status: 'active',
       hits: 0,
-      misses: 4, // high miss rate lowers confidence
+      misses: 10,
+      alpha: 2,
+      beta: 12,
       evidence: ['ep_0001'],
     }
 
     const result = await updateLifecycle(activeRule, repoRoot)
     expect(result.status).toBe('retired')
-    // hits=0, misses=4, evidenceCount=1 -> (0 + 0.5 + 1) / (0 + 4 + 0.5 + 2) = 1.5 / 6.5 = 0.2308
-    expect(result.confidence).toBe(0.2308)
+    expect(result.confidence).toBeCloseTo(2 / 14, 4)
   })
 
   it('should retire rules if the anchor file is missing', async () => {
     const missingAnchorRule: RuleFile = {
       ...baseRule,
+      alpha: 7,
+      beta: 2,
+      status: 'active',
       anchor: { file: 'non-existent-file-xyz.ts' },
     }
 
@@ -86,6 +104,8 @@ describe('Rule Lifecycle Transitions', () => {
       anchor: { file: 'non-existent-file-xyz.ts' }, // missing anchor
       hits: 0,
       misses: 10, // extremely low confidence
+      alpha: 2,
+      beta: 12,
     }
 
     const result = await updateLifecycle(pinnedRule, repoRoot)
@@ -106,6 +126,8 @@ describe('Rule Lifecycle Transitions', () => {
     const oldRule: RuleFile = {
       ...baseRule,
       status: 'active',
+      alpha: 7,
+      beta: 2,
       created_at: oldDate,
     }
 
@@ -119,6 +141,8 @@ describe('Rule Lifecycle Transitions', () => {
     const activeRule: RuleFile = {
       ...baseRule,
       status: 'active',
+      alpha: 7,
+      beta: 2,
       created_at: oldDate,
       last_matched_at: recentDate,
     }

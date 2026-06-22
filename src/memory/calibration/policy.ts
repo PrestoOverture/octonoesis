@@ -1,24 +1,23 @@
-import type { BucketStats } from './stats.ts'
+import type { BetaParams } from './beta.ts'
+import { intervalWidth, posteriorMean } from './beta.ts'
 
-export type Recommendation = 'confident' | 'review-recommended' | 'insufficient-data'
+export type Recommendation = 'confident' | 'review-recommended' | 'uncertain'
 
 /**
  * Returns a safety recommendation based on aggregated statistics of a task bucket.
- * Low-confidence buckets or those with small sample sizes prompt for reviews.
+ * Uses 95% credible interval and posterior mean to classify.
  *
- * @param stats Aggregated statistics for the task bucket.
- * @returns The recommendation: 'confident' | 'review-recommended' | 'insufficient-data'.
+ * @param params Beta parameters (alpha, beta).
+ * @returns The recommendation: 'confident' | 'review-recommended' | 'uncertain'.
  */
-export function assessBucket(stats: BucketStats): Recommendation {
-  const total = stats.total_attempts
-  if (total < 3) {
-    return 'insufficient-data'
+export function assessBucket(params: BetaParams): Recommendation {
+  const mean = posteriorMean(params)
+  const width = intervalWidth(params, 0.95)
+
+  if (width >= 0.5) {
+    return 'uncertain'
   }
-  if (total < 5) {
-    return 'review-recommended'
-  }
-  const rate = stats.first_attempt_success / total
-  if (rate >= 0.7) {
+  if (mean >= 0.6) {
     return 'confident'
   }
   return 'review-recommended'

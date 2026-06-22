@@ -3,6 +3,7 @@ import path from 'node:path'
 import { z } from 'zod'
 import { getMemoryDir } from '../../utils/path.ts'
 import type { Fingerprint } from '../fingerprint/extract.ts'
+import { createPrior, credibleInterval, posteriorMean, update } from './beta.ts'
 import { bucketKey } from './bucket.ts'
 
 export const calibrationRecordSchema = z.object({
@@ -22,11 +23,14 @@ export type CalibrationRecord = z.infer<typeof calibrationRecordSchema>
 export interface BucketStats {
   bucket_key: string
   model_id: string
+  alpha: number
+  beta: number
+  posterior_mean: number
+  credible_interval: [number, number]
   total_attempts: number
   first_attempt_success: number
   user_modifications: number
   user_reverts: number
-  avg_attempts_to_resolve: number
 }
 
 /**
@@ -103,20 +107,25 @@ export function aggregateCalibrationStats(records: CalibrationRecord[]): BucketS
     const user_modifications = list.reduce((sum, r) => sum + r.user_modifications, 0)
     const user_reverts = list.reduce((sum, r) => sum + r.user_reverts, 0)
 
-    const resolvedRecords = list.filter((r) => r.resolved)
-    const avg_attempts_to_resolve =
-      resolvedRecords.length > 0
-        ? resolvedRecords.reduce((sum, r) => sum + r.attempt_count, 0) / resolvedRecords.length
-        : 0
+    let betaParams = createPrior()
+    for (const record of list) {
+      betaParams = update(betaParams, record.first_attempt_success)
+    }
+
+    const posterior_mean = posteriorMean(betaParams)
+    const credible_interval = credibleInterval(betaParams, 0.95)
 
     result.push({
       bucket_key,
       model_id,
+      alpha: betaParams.alpha,
+      beta: betaParams.beta,
+      posterior_mean,
+      credible_interval,
       total_attempts,
       first_attempt_success,
       user_modifications,
       user_reverts,
-      avg_attempts_to_resolve,
     })
   }
 

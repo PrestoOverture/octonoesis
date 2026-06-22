@@ -78,7 +78,7 @@ describe('App TUI component', () => {
       expect(frame).toContain('User ›')
       expect(frame).toContain('/stats')
       expect(frame).toContain('bun-test|TypeError')
-      expect(frame).toContain('insufficient data') // because total attempts is 1 (< 3 attempts)
+      expect(frame).toContain('uncertain') // because total attempts is 1 (< 3 attempts)
     }
 
     // Clean up

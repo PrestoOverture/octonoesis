@@ -40,6 +40,8 @@ describe('Rule Storage Store Module', () => {
       error_signatures: ['bash|TypeError|src/buggy.ts'],
     },
     scope: 'repo',
+    alpha: 3,
+    beta: 2,
     confidence: 0.6,
     evidence: ['ep_0001'],
     hits: 0,
@@ -69,6 +71,8 @@ describe('Rule Storage Store Module', () => {
     expect(parsed.triggers.command_prefix).toEqual(mockRule.triggers.command_prefix)
     expect(parsed.triggers.error_signatures).toEqual(mockRule.triggers.error_signatures)
     expect(parsed.scope).toBe(mockRule.scope)
+    expect(parsed.alpha).toBe(mockRule.alpha)
+    expect(parsed.beta).toBe(mockRule.beta)
     expect(parsed.confidence).toBe(mockRule.confidence)
     expect(parsed.evidence).toEqual(mockRule.evidence)
     expect(parsed.hits).toBe(mockRule.hits)

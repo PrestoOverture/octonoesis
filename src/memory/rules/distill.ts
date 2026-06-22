@@ -96,7 +96,9 @@ export async function distillEpisode(
   const anchorFile = (data.anchor_file || episode.attribution.primary || '').trim()
   const advice = (data.advice || '').trim()
 
-  const confidence = calculateConfidence(0, 0, 1) // hits = 0, misses = 0, evidence = 1 => 0.60
+  const alpha = 3
+  const beta = 2
+  const confidence = calculateConfidence(alpha, beta)
 
   return {
     id: `rule-${slug}`,
@@ -106,6 +108,8 @@ export async function distillEpisode(
       error_signatures: errorSignatures,
     },
     scope: 'repo',
+    alpha,
+    beta,
     confidence,
     evidence: [episode.id],
     hits: 0,

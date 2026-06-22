@@ -63,6 +63,7 @@ program
 
 program
   .option('--stats', 'Display calibration statistics')
+  .option('--debug', 'Enable debug logging')
   .argument('[prompt]', 'One-shot prompt to send to the model')
   .action(async (prompt?: string) => {
     if (program.opts().stats) {

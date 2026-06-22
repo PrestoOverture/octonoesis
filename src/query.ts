@@ -338,6 +338,7 @@ export async function* query(
               if (!stillFailing) {
                 // HIT! The signature that triggered the rule has disappeared
                 rule.hits++
+                rule.alpha++
                 rule.last_matched_at = new Date().toISOString()
                 recordedOutcomes.add(rule.id)
                 dbg('query', `Hit recorded for rule ${rule.id}. New hits count: ${rule.hits}`)
@@ -347,6 +348,7 @@ export async function* query(
               } else {
                 // MISS! The signature is still present
                 rule.misses++
+                rule.beta++
                 recordedOutcomes.add(rule.id)
                 dbg('query', `Miss recorded for rule ${rule.id}. New misses count: ${rule.misses}`)
 

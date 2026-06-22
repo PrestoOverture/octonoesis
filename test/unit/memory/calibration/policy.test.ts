@@ -1,81 +1,31 @@
 import { describe, expect, it } from 'bun:test'
+import type { BetaParams } from '../../../../src/memory/calibration/beta.ts'
 import { assessBucket } from '../../../../src/memory/calibration/policy.ts'
-import type { BucketStats } from '../../../../src/memory/calibration/stats.ts'
 
 describe('Fails-Safe Calibration Policy', () => {
-  it("should return 'insufficient-data' when total attempts < 3", () => {
-    const stats: BucketStats = {
-      bucket_key: 'bun-test|TypeError',
-      model_id: 'gpt-5-nano',
-      total_attempts: 2,
-      first_attempt_success: 2,
-      user_modifications: 0,
-      user_reverts: 0,
-      avg_attempts_to_resolve: 1,
-    }
-    expect(assessBucket(stats)).toBe('insufficient-data')
+  it("should return 'uncertain' when data is sparse (e.g. prior Beta(2, 2))", () => {
+    const params: BetaParams = { alpha: 2, beta: 2 } // total = 4
+    expect(assessBucket(params)).toBe('uncertain')
   })
 
-  it("should return 'review-recommended' when total attempts is 3 or 4", () => {
-    const stats3: BucketStats = {
-      bucket_key: 'bun-test|TypeError',
-      model_id: 'gpt-5-nano',
-      total_attempts: 3,
-      first_attempt_success: 3,
-      user_modifications: 0,
-      user_reverts: 0,
-      avg_attempts_to_resolve: 1,
-    }
-    expect(assessBucket(stats3)).toBe('review-recommended')
-
-    const stats4: BucketStats = {
-      bucket_key: 'bun-test|TypeError',
-      model_id: 'gpt-5-nano',
-      total_attempts: 4,
-      first_attempt_success: 4,
-      user_modifications: 0,
-      user_reverts: 0,
-      avg_attempts_to_resolve: 1,
-    }
-    expect(assessBucket(stats4)).toBe('review-recommended')
+  it("should return 'uncertain' even with partial observations if CI width is still wide", () => {
+    const params: BetaParams = { alpha: 5, beta: 5 } // total = 10
+    expect(assessBucket(params)).toBe('uncertain')
   })
 
-  it("should return 'confident' when total attempts >= 5 and success rate >= 70%", () => {
-    const stats: BucketStats = {
-      bucket_key: 'bun-test|TypeError',
-      model_id: 'gpt-5-nano',
-      total_attempts: 5,
-      first_attempt_success: 4, // 80% success
-      user_modifications: 0,
-      user_reverts: 0,
-      avg_attempts_to_resolve: 1,
-    }
-    expect(assessBucket(stats)).toBe('confident')
+  it("should return 'confident' when CI width is narrow (< 0.5) and posterior mean >= 0.6", () => {
+    const params: BetaParams = { alpha: 30, beta: 5 } // total = 35, mean = 0.857
+    expect(assessBucket(params)).toBe('confident')
   })
 
-  it("should return 'review-recommended' when total attempts >= 5 and success rate < 50%", () => {
-    const stats: BucketStats = {
-      bucket_key: 'bun-test|TypeError',
-      model_id: 'gpt-5-nano',
-      total_attempts: 5,
-      first_attempt_success: 2, // 40% success
-      user_modifications: 0,
-      user_reverts: 0,
-      avg_attempts_to_resolve: 1.5,
-    }
-    expect(assessBucket(stats)).toBe('review-recommended')
+  it("should return 'review-recommended' when CI width is narrow (< 0.5) but posterior mean < 0.6", () => {
+    const params: BetaParams = { alpha: 20, beta: 30 } // total = 50, mean = 0.4
+    expect(assessBucket(params)).toBe('review-recommended')
   })
 
-  it("should return 'review-recommended' when total attempts >= 5 and success rate is between 50% and 70%", () => {
-    const stats: BucketStats = {
-      bucket_key: 'bun-test|TypeError',
-      model_id: 'gpt-5-nano',
-      total_attempts: 5,
-      first_attempt_success: 3, // 60% success
-      user_modifications: 0,
-      user_reverts: 0,
-      avg_attempts_to_resolve: 1.2,
-    }
-    expect(assessBucket(stats)).toBe('review-recommended')
+  it('should verify roadmap examples correctly', () => {
+    expect(assessBucket({ alpha: 2, beta: 2 })).toBe('uncertain') // width 0.81
+    expect(assessBucket({ alpha: 12, beta: 3 })).toBe('confident') // mean 0.8, width 0.38
+    expect(assessBucket({ alpha: 3, beta: 8 })).toBe('review-recommended') // mean 0.27, width 0.49
   })
 })

@@ -60,7 +60,7 @@ describe('CLI stats options and subcommands', () => {
     expect(stderr.trim()).toBe('')
     expect(stdout).toContain('Bucket')
     expect(stdout).toContain('bun-test|TypeError')
-    expect(stdout).toContain('insufficient data')
+    expect(stdout).toContain('uncertain')
   })
 
   it('should print statistics table via option --stats', async () => {
@@ -101,6 +101,6 @@ describe('CLI stats options and subcommands', () => {
     expect(stderr.trim()).toBe('')
     expect(stdout).toContain('Bucket')
     expect(stdout).toContain('tsc|SyntaxError')
-    expect(stdout).toContain('insufficient data')
+    expect(stdout).toContain('uncertain')
   })
 })

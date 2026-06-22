@@ -70,8 +70,26 @@ describe('Rebuild rules capability', () => {
     timestamp: '2026-06-20T10:10:00Z',
   }
 
+  const mockEpisode3: Episode = {
+    ...mockEpisode1,
+    id: 'ep_0003',
+    timestamp: '2026-06-20T10:20:00Z',
+  }
+
+  const mockEpisode4: Episode = {
+    ...mockEpisode1,
+    id: 'ep_0004',
+    timestamp: '2026-06-20T10:30:00Z',
+  }
+
+  const mockEpisode5: Episode = {
+    ...mockEpisode1,
+    id: 'ep_0005',
+    timestamp: '2026-06-20T10:40:00Z',
+  }
+
   it('should distill and rebuild rules from multiple episodes cleanly', async () => {
-    await appendEpisodes([mockEpisode1, mockEpisode2])
+    await appendEpisodes([mockEpisode1, mockEpisode2, mockEpisode3, mockEpisode4, mockEpisode5])
 
     const mockJson = {
       slug: 'package-json-bug',
@@ -100,11 +118,11 @@ describe('Rebuild rules capability', () => {
       forceDistill: true,
     })
 
-    const allRules = await loadAllRules()
+    const allRules = await loadAllRules(rulesDir)
     expect(allRules.length).toBe(1)
     expect(allRules[0]?.id).toBe('rule-package-json-bug')
-    expect(allRules[0]?.evidence).toEqual(['ep_0001', 'ep_0002'])
-    // Since there are 2 pieces of evidence, it should promote from candidate to active
+    expect(allRules[0]?.evidence).toEqual(['ep_0001', 'ep_0002', 'ep_0003', 'ep_0004', 'ep_0005'])
+    // Since there are 5 pieces of evidence, it should promote from candidate to active
     expect(allRules[0]?.status).toBe('active')
   })
 })

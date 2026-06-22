@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { getMemoryDir } from '../../utils/path.ts'
 import type { RuleFile } from './types.ts'
+import { calculateConfidence } from './types.ts'
 
 export function getRulesDir(): string {
   return path.join(getMemoryDir(), 'rules')
@@ -21,6 +22,8 @@ export function serializeRule(rule: RuleFile): string {
     '  error_signatures:',
     ...rule.triggers.error_signatures.map((s) => `    - ${s}`),
     `scope: ${rule.scope}`,
+    `alpha: ${rule.alpha}`,
+    `beta: ${rule.beta}`,
     `confidence: ${rule.confidence}`,
     'evidence:',
     ...rule.evidence.map((e) => `  - ${e}`),
@@ -112,6 +115,8 @@ export function parseRule(content: string): RuleFile {
       if (rawVal) {
         if (currentKey === 'id') result.id = cleanVal
         else if (currentKey === 'scope') result.scope = cleanVal
+        else if (currentKey === 'alpha') result.alpha = Number.parseInt(cleanVal, 10)
+        else if (currentKey === 'beta') result.beta = Number.parseInt(cleanVal, 10)
         else if (currentKey === 'confidence') result.confidence = Number.parseFloat(cleanVal)
         else if (currentKey === 'hits') result.hits = Number.parseInt(cleanVal, 10)
         else if (currentKey === 'misses') result.misses = Number.parseInt(cleanVal, 10)
@@ -201,14 +206,28 @@ export function parseRule(content: string): RuleFile {
     throw new Error('Invalid user_confirmed value')
   }
 
+  const cleanHits = result.hits ?? 0
+  const cleanMisses = result.misses ?? 0
+  const cleanEvidence = result.evidence ?? []
+
+  const alpha =
+    result.alpha !== undefined && !Number.isNaN(result.alpha)
+      ? result.alpha
+      : 2 + cleanHits + cleanEvidence.length
+  const beta =
+    result.beta !== undefined && !Number.isNaN(result.beta) ? result.beta : 2 + cleanMisses
+  const confidence = calculateConfidence(alpha, beta)
+
   return {
     id: result.id,
     triggers: result.triggers,
     scope: result.scope,
-    confidence: result.confidence,
-    evidence: result.evidence,
-    hits: result.hits,
-    misses: result.misses,
+    alpha,
+    beta,
+    confidence,
+    evidence: cleanEvidence,
+    hits: cleanHits,
+    misses: cleanMisses,
     challenged_by: result.challenged_by,
     anchor: result.anchor,
     status: result.status,

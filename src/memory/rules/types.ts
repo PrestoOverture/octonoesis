@@ -15,6 +15,8 @@ export interface RuleFile {
     error_signatures: string[]
   }
   scope: 'repo' | 'global'
+  alpha: number
+  beta: number
   confidence: number
   evidence: string[] // array of episode IDs
   hits: number
@@ -35,11 +37,9 @@ export interface RuleFile {
 }
 
 /**
- * Calculates rule confidence based on hit/miss rates and evidence counts.
- * Formula: confidence = (hits + 0.5 * evidenceCount + 1) / (hits + misses + 0.5 * evidenceCount + 2)
+ * Calculates rule confidence based on Beta distribution posterior mean.
  */
-export function calculateConfidence(hits: number, misses: number, evidenceCount: number): number {
-  const numerator = hits + 0.5 * evidenceCount + 1
-  const denominator = hits + misses + 0.5 * evidenceCount + 2
-  return Number((numerator / denominator).toFixed(4))
+export function calculateConfidence(alpha: number, beta: number): number {
+  const sum = alpha + beta
+  return sum > 0 ? Number((alpha / sum).toFixed(4)) : 0.5
 }

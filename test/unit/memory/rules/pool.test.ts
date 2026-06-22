@@ -5,6 +5,8 @@ import type { RuleFile } from '../../../../src/memory/rules/types.ts'
 describe('Rule Pool Cap and Eviction', () => {
   const baseRule: Omit<RuleFile, 'id' | 'triggers' | 'created_at' | 'confidence'> = {
     scope: 'repo',
+    alpha: 3,
+    beta: 2,
     evidence: ['ep_0001'],
     hits: 0,
     misses: 0,

@@ -110,14 +110,22 @@ describe('Calibration Stats Module', () => {
     expect(typeErrorStats?.first_attempt_success).toBe(1)
     expect(typeErrorStats?.user_modifications).toBe(3)
     expect(typeErrorStats?.user_reverts).toBe(1)
-    // avg_attempts_to_resolve is average of resolved attempts (sess-1 and sess-2 resolved: (2 + 1) / 2 = 1.5)
-    expect(typeErrorStats?.avg_attempts_to_resolve).toBe(1.5)
+    expect(typeErrorStats?.alpha).toBe(3)
+    expect(typeErrorStats?.beta).toBe(4)
+    expect(typeErrorStats?.posterior_mean).toBeCloseTo(3 / 7, 5)
+    expect(typeErrorStats?.credible_interval).toBeDefined()
+    expect(typeErrorStats?.credible_interval[0]).toBeLessThan(
+      typeErrorStats?.credible_interval[1] ?? 1,
+    )
 
     const syntaxErrorStats = stats.find((s) => s.bucket_key === 'tsc|SyntaxError')
     expect(syntaxErrorStats).toBeDefined()
     expect(syntaxErrorStats?.total_attempts).toBe(1)
     expect(syntaxErrorStats?.first_attempt_success).toBe(1)
-    expect(syntaxErrorStats?.avg_attempts_to_resolve).toBe(1.0)
+    expect(syntaxErrorStats?.alpha).toBe(3)
+    expect(syntaxErrorStats?.beta).toBe(2)
+    expect(syntaxErrorStats?.posterior_mean).toBe(0.6)
+    expect(syntaxErrorStats?.credible_interval).toBeDefined()
   })
 
   it('should rebuild calibration data from journal events', async () => {

@@ -58,6 +58,8 @@ export async function rebuildRules(
     if (existingRebuiltRule) {
       if (!existingRebuiltRule.evidence.includes(episode.id)) {
         existingRebuiltRule.evidence.push(episode.id)
+        existingRebuiltRule.alpha =
+          2 + existingRebuiltRule.hits + existingRebuiltRule.evidence.length
       }
       continue
     }
@@ -70,6 +72,8 @@ export async function rebuildRules(
         evidence: [episode.id],
         last_rebuilt_at: new Date().toISOString(),
       }
+      ruleCopy.alpha = 2 + ruleCopy.hits + ruleCopy.evidence.length
+      ruleCopy.beta = 2 + ruleCopy.misses
       rebuiltRules.push(ruleCopy)
     } else {
       const newRule = await distillEpisode(episode, {
@@ -81,6 +85,8 @@ export async function rebuildRules(
       if (preExistingRule) {
         newRule.hits = preExistingRule.hits
         newRule.misses = preExistingRule.misses
+        newRule.alpha = 2 + newRule.hits + newRule.evidence.length
+        newRule.beta = 2 + newRule.misses
         newRule.challenged_by = preExistingRule.challenged_by
         newRule.user_confirmed = preExistingRule.user_confirmed
         newRule.last_matched_at = preExistingRule.last_matched_at
