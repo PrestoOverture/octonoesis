@@ -1,6 +1,6 @@
 {
   "name": "octonoesis",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "An open-source, lightweight terminal coding agent built on Bun + Ink",
   "license": "MIT",
   "repository": {
