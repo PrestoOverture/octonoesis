@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { Command } from 'commander'
 import { render } from 'ink'
 import React from 'react'
