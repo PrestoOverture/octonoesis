@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import path from 'node:path'
 import { Command } from 'commander'
 import { render } from 'ink'
@@ -9,9 +10,32 @@ import { runQuery } from './query'
 import { App } from './ui/App'
 import { getMemoryDir } from './utils/path.ts'
 
+function checkApiKey(): void {
+  const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
+  if (provider === 'anthropic' && !process.env.ANTHROPIC_API_KEY) {
+    console.error(
+      'Error: ANTHROPIC_API_KEY is not set.\n\n' +
+        'Set it in your environment:\n' +
+        '  export ANTHROPIC_API_KEY=sk-ant-...\n\n' +
+        'Or switch to OpenAI:\n' +
+        '  export LLM_PROVIDER=openai\n' +
+        '  export OPENAI_API_KEY=sk-proj-...',
+    )
+    process.exit(1)
+  }
+  if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
+    console.error(
+      'Error: OPENAI_API_KEY is not set.\n\n' +
+        'Set it in your environment:\n' +
+        '  export OPENAI_API_KEY=sk-proj-...',
+    )
+    process.exit(1)
+  }
+}
+
 const program = new Command()
 
-program.name('octonoesis').description('An open-source terminal coding agent').version('0.0.1')
+program.name('octonoesis').description('An open-source terminal coding agent').version('0.1.0')
 
 program
   .command('rebuild-rules')
@@ -66,6 +90,8 @@ program
   .option('--debug', 'Enable debug logging')
   .argument('[prompt]', 'One-shot prompt to send to the model')
   .action(async (prompt?: string) => {
+    checkApiKey()
+
     if (program.opts().stats) {
       try {
         const { readCalibrationRecords, aggregateCalibrationStats } = await import(
@@ -86,7 +112,6 @@ program
     }
 
     if (!prompt) {
-      // Launch interactive Ink TUI mode
       const { waitUntilExit } = render(<App />, { exitOnCtrlC: false })
       await waitUntilExit()
       return
