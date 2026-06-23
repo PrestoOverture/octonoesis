@@ -12,11 +12,7 @@
   "bin": {
     "octonoesis": "./dist/cli.js"
   },
-  "files": [
-    "dist/cli.js",
-    "LICENSE",
-    "README.md"
-  ],
+  "files": ["dist/cli.js", "LICENSE", "README.md"],
   "scripts": {
     "cli": "bun src/cli.tsx",
     "dev": "bun src/cli.tsx",
