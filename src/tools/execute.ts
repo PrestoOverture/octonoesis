@@ -220,9 +220,11 @@ export async function runTool(
         // 2. Coalesce/determine if it is a verification run
         // biome-ignore lint/suspicious/noExplicitAny: query context bypass
         const anyCtx = ctx as any
-        const isVerificationRun = isVerificationCommand(command, anyCtx.verificationCommand)
+        const isVerificationRun = anyCtx.verificationCommand
+          ? isVerificationCommand(command, anyCtx.verificationCommand)
+          : false
 
-        if (isVerificationRun && !anyCtx.verificationCommand) {
+        if (!anyCtx.verificationCommand && isVerificationCommand(command)) {
           anyCtx.verificationCommand = command
         }
 

@@ -93,6 +93,7 @@ export async function distillEpisode(
   const errorSignatures = Array.isArray(data.triggers?.error_signatures)
     ? data.triggers.error_signatures
     : [episode.failure.signature]
+  const expandedSignatures = expandSignatures(errorSignatures)
   const anchorFile = (data.anchor_file || episode.attribution.primary || '').trim()
   const advice = (data.advice || '').trim()
 
@@ -105,7 +106,7 @@ export async function distillEpisode(
     triggers: {
       tools,
       command_prefix: commandPrefix,
-      error_signatures: errorSignatures,
+      error_signatures: expandedSignatures,
     },
     scope: 'repo',
     alpha,
@@ -128,6 +129,20 @@ export async function distillEpisode(
     last_rebuilt_at: null,
     advice,
   }
+}
+
+function expandSignatures(signatures: string[]): string[] {
+  const expanded = new Set(signatures)
+  for (const sig of signatures) {
+    const parts = sig.split('|')
+    if (parts.length >= 2) {
+      expanded.add(parts.slice(0, 2).join('|'))
+    }
+    if (parts.length >= 3) {
+      expanded.add(parts.slice(0, 3).join('|'))
+    }
+  }
+  return [...expanded]
 }
 
 function cleanJsonString(text: string): string {

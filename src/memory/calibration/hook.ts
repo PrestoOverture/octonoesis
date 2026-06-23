@@ -17,7 +17,10 @@ import {
  *
  * @param sessionId The active session ID to analyze.
  */
-export async function runSessionEndCalibration(sessionId: string): Promise<void> {
+export async function runSessionEndCalibration(
+  sessionId: string,
+  memoryDir?: string,
+): Promise<void> {
   let timeoutId: NodeJS.Timeout | null = null
 
   const timeoutPromise = new Promise<void>((_, reject) => {
@@ -28,8 +31,9 @@ export async function runSessionEndCalibration(sessionId: string): Promise<void>
 
   const workPromise = (async () => {
     try {
-      const memoryDir = getMemoryDir()
-      const journalPath = path.join(memoryDir, 'journal.jsonl')
+      const resolvedMemoryDir = memoryDir ?? getMemoryDir()
+      const journalPath = path.join(resolvedMemoryDir, 'journal.jsonl')
+      const calibrationPath = path.join(resolvedMemoryDir, 'calibration.jsonl')
 
       let fileContent = ''
       try {
@@ -78,7 +82,7 @@ export async function runSessionEndCalibration(sessionId: string): Promise<void>
       const bKey = bucketKey(fingerprints, firstTool)
 
       // 4. Check for duplicate to remain idempotent
-      const existingRecords = await readCalibrationRecords()
+      const existingRecords = await readCalibrationRecords(calibrationPath)
       const alreadyExists = existingRecords.some(
         (r) => r.session_id === sessionId && r.bucket_key === bKey,
       )
@@ -132,7 +136,7 @@ export async function runSessionEndCalibration(sessionId: string): Promise<void>
         resolved,
       }
 
-      await appendCalibrationRecords([record])
+      await appendCalibrationRecords([record], calibrationPath)
     } finally {
       if (timeoutId) {
         clearTimeout(timeoutId)

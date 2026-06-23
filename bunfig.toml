@@ -1,2 +1,2 @@
 [test]
-pathIgnorePatterns = ["**/test/fixtures/**"]
+pathIgnorePatterns = ["**/test/fixtures/buggy-repo/**"]

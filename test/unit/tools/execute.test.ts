@@ -162,7 +162,7 @@ describe('execute pipeline (runTool)', () => {
       }
     })
 
-    it('journals the initial test run as a verification event and sets verificationCommand', async () => {
+    it('records the initial test command without treating it as a verification event', async () => {
       clearRegistry()
       registerTool(bashTool)
 
@@ -175,6 +175,10 @@ describe('execute pipeline (runTool)', () => {
       const result = await runTool('Bash', { command: 'bun test --help' }, localCtx)
       expect(result.ok).toBe(true)
       expect(localCtx.verificationCommand).toBe('bun test --help')
+      expect(localCtx._lastVerifyResultForQuery).toBeUndefined()
+
+      const secondResult = await runTool('Bash', { command: 'bun test --help' }, localCtx)
+      expect(secondResult.ok).toBe(true)
       expect(localCtx._lastVerifyResultForQuery).toBeDefined()
       expect(localCtx._lastVerifyResultForQuery.command).toBe('bun test --help')
     })
@@ -195,7 +199,7 @@ describe('execute pipeline (runTool)', () => {
       expect(localCtx._lastVerifyResultForQuery).toBeUndefined()
     })
 
-    it('journals cd-prefixed verification commands as verification runs', async () => {
+    it('journals repeated cd-prefixed verification commands as verification runs', async () => {
       clearRegistry()
       registerTool(bashTool)
 
@@ -205,15 +209,15 @@ describe('execute pipeline (runTool)', () => {
 
       // biome-ignore lint/suspicious/noExplicitAny: test context
       const localCtx: any = { repoRoot: ctx.repoRoot, messages: [] }
-      const result = await runTool(
-        'Bash',
-        { command: 'cd packages/api && bun test --help' },
-        localCtx,
-      )
+      const result = await runTool('Bash', { command: 'cd . && bun test --help' }, localCtx)
       expect(result.ok).toBe(true)
-      expect(localCtx.verificationCommand).toBe('cd packages/api && bun test --help')
+      expect(localCtx.verificationCommand).toBe('cd . && bun test --help')
+      expect(localCtx._lastVerifyResultForQuery).toBeUndefined()
+
+      const secondResult = await runTool('Bash', { command: 'cd . && bun test --help' }, localCtx)
+      expect(secondResult.ok).toBe(true)
       expect(localCtx._lastVerifyResultForQuery).toBeDefined()
-      expect(localCtx._lastVerifyResultForQuery.command).toBe('cd packages/api && bun test --help')
+      expect(localCtx._lastVerifyResultForQuery.command).toBe('cd . && bun test --help')
     })
   })
 })

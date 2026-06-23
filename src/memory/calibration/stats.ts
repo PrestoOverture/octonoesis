@@ -36,10 +36,9 @@ export interface BucketStats {
 /**
  * Reads all calibration records from calibration.jsonl.
  */
-export async function readCalibrationRecords(): Promise<CalibrationRecord[]> {
-  const memoryDir = getMemoryDir()
-  const filePath = path.join(memoryDir, 'calibration.jsonl')
-
+export async function readCalibrationRecords(
+  filePath: string = path.join(getMemoryDir(), 'calibration.jsonl'),
+): Promise<CalibrationRecord[]> {
   try {
     const fileContent = await fs.readFile(filePath, 'utf8')
     const lines = fileContent.split('\n')
@@ -68,13 +67,13 @@ export async function readCalibrationRecords(): Promise<CalibrationRecord[]> {
 /**
  * Appends calibration records to calibration.jsonl.
  */
-export async function appendCalibrationRecords(records: CalibrationRecord[]): Promise<void> {
+export async function appendCalibrationRecords(
+  records: CalibrationRecord[],
+  filePath: string = path.join(getMemoryDir(), 'calibration.jsonl'),
+): Promise<void> {
   if (records.length === 0) return
 
-  const memoryDir = getMemoryDir()
-  const filePath = path.join(memoryDir, 'calibration.jsonl')
-
-  await fs.mkdir(memoryDir, { recursive: true })
+  await fs.mkdir(path.dirname(filePath), { recursive: true })
 
   const lines = `${records.map((record) => JSON.stringify(record)).join('\n')}\n`
   await fs.appendFile(filePath, lines, 'utf8')

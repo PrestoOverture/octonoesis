@@ -2,7 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getMemoryDir } from '../../utils/path'
 import { type JournalEventWithLine, type StoredJournalEvent, segmentJournal } from './segment'
-import { appendEpisodes, readEpisodes } from './store'
+import { readEpisodes } from './store'
 import type { Episode } from './types'
 
 /**
@@ -48,7 +48,7 @@ function isEpisodeEqual(ep1: Episode, ep2: Episode): boolean {
  * segments them into episodes, and appends new or updated episodes to episodes.jsonl.
  * Enforces a 5-second timeout.
  */
-export async function runSessionEndEpisodes(sessionId: string): Promise<void> {
+export async function runSessionEndEpisodes(sessionId: string, memoryDir?: string): Promise<void> {
   let timeoutId: NodeJS.Timeout | null = null
 
   const timeoutPromise = new Promise<void>((_, reject) => {
@@ -59,8 +59,9 @@ export async function runSessionEndEpisodes(sessionId: string): Promise<void> {
 
   const workPromise = (async () => {
     try {
-      const memoryDir = getMemoryDir()
-      const journalPath = path.join(memoryDir, 'journal.jsonl')
+      const resolvedMemoryDir = memoryDir ?? getMemoryDir()
+      const journalPath = path.join(resolvedMemoryDir, 'journal.jsonl')
+      const episodesPath = path.join(resolvedMemoryDir, 'episodes.jsonl')
 
       let fileContent = ''
       try {
@@ -89,7 +90,7 @@ export async function runSessionEndEpisodes(sessionId: string): Promise<void> {
       }
 
       // Read existing unique episodes from disk
-      const allEpisodes = await readEpisodes()
+      const allEpisodes = await readEpisodes(episodesPath)
 
       // Filter events belonging to the current session
       const sessionEvents = eventsWithLines.filter((item) => item.event.session_id === sessionId)
@@ -142,7 +143,9 @@ export async function runSessionEndEpisodes(sessionId: string): Promise<void> {
 
       // Append new or updated episodes to the file
       if (episodesToAppend.length > 0) {
-        await appendEpisodes(episodesToAppend)
+        await fs.mkdir(resolvedMemoryDir, { recursive: true })
+        const lines = episodesToAppend.map((ep) => `${JSON.stringify(ep)}\n`).join('')
+        await fs.appendFile(episodesPath, lines, 'utf8')
       }
     } finally {
       if (timeoutId) {

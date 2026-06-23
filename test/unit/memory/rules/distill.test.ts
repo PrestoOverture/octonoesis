@@ -86,7 +86,10 @@ describe('Rule Distillation', () => {
     expect(rule.id).toBe('rule-optional-chaining-buggy')
     expect(rule.triggers.tools).toEqual(['Bash'])
     expect(rule.triggers.command_prefix).toEqual(['bun test'])
-    expect(rule.triggers.error_signatures).toEqual(['bash|TypeError|src/buggy.ts'])
+    expect(rule.triggers.error_signatures).toEqual([
+      'bash|TypeError|src/buggy.ts',
+      'bash|TypeError',
+    ])
     expect(rule.anchor.file).toBe('src/buggy.ts')
     expect(rule.advice).toBe(
       'Always use optional chaining when accessing property of potentially null object.',

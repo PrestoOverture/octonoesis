@@ -1,5 +1,11 @@
 import type { Episode } from './types'
 
+const TRANSIENT_ERROR_CLASSES = ['CommandNotFound', 'ENOENT', 'ETIMEDOUT']
+
+function isTransientError(errorClass: string): boolean {
+  return TRANSIENT_ERROR_CLASSES.includes(errorClass)
+}
+
 /**
  * Assigns value scores and exclusions to segmented episodes.
  */
@@ -24,6 +30,10 @@ export function scoreEpisode(
     value_score = 0.0
     is_excluded = true
     exclusion_reason = 'unattributable'
+  } else if (isTransientError(partial.failure.error_class)) {
+    value_score = 0.0
+    is_excluded = true
+    exclusion_reason = 'transient'
   } else {
     // Resolved and has valid candidates
     let baseline = 1.0
