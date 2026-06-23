@@ -1,3 +1,5 @@
+**English** | [简体中文](README.zh-CN.md)
+
 # Octonoesis 🐙
 
 An open-source, lightweight, and lightning-fast terminal coding agent designed to read code, search directories, edit files with unified diff approvals, run tests, and automatically execute commands to fulfill natural-language tasks.
