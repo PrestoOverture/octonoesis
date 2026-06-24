@@ -21,7 +21,7 @@ describe('Performance Latency Verification', () => {
       const end = performance.now()
 
       expect(proc.status).toBe(0)
-      expect(proc.stdout.trim()).toBe('0.0.1')
+      expect(proc.stdout.trim()).toBe('0.1.0')
       durations.push(end - start)
     }
 
