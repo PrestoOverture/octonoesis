@@ -22,6 +22,7 @@ import { grepTool } from './tools/Grep'
 import { readTool } from './tools/Read'
 import { todoWriteTool } from './tools/TodoWrite'
 import { writeTool } from './tools/Write'
+import type { VerifyResult } from './memory/verifier'
 import { runTool } from './tools/execute'
 import { registerTool } from './tools/registry'
 import { getAllTools } from './tools/registry'
@@ -45,11 +46,22 @@ export type StreamEvent =
   | ProviderStreamEvent
   | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error' }
 
+export interface VerifyResultWithRun extends VerifyResult {
+  isVerificationRun: boolean
+}
+
 export interface ToolContext {
   repoRoot: string
   messages?: CanonicalMessage[]
   abortSignal?: AbortSignal
-  [key: string]: unknown
+  sessionId?: string
+  firstTurnDynamicSystem?: string
+  verificationCommand?: string
+  injectedRules?: { rule: RuleFile; fingerprint: Fingerprint }[]
+  recordedRuleOutcomes?: Set<string>
+  _lastVerifyResult?: VerifyResultWithRun
+  _lastVerifyResultForQuery?: VerifyResultWithRun
+  _lastFingerprints?: Fingerprint[]
 }
 
 /**
@@ -116,6 +128,15 @@ export async function* query(
     })
 
     const MAX_TURNS = 50
+    const provider = getProvider()
+    const resolvedModel = getResolvedModel()
+    const activeTools = getAllTools().map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: zodToJsonSchema(tool.inputSchema) as Record<string, unknown>,
+    }))
+    const { system, dynamicSystem } = await buildSystemMessages(ctx, resolvedModel, cumulativeUsage)
+    ctx.firstTurnDynamicSystem = dynamicSystem
 
     while (turn < MAX_TURNS) {
       if (ctx.abortSignal?.aborted) {
@@ -128,7 +149,7 @@ export async function* query(
         return {
           exit_reason: 'user_cancel',
           usage: cumulativeUsage,
-          turns: turn - 1,
+          turns: turn,
           error: 'Query aborted by user',
         }
       }
@@ -145,22 +166,6 @@ export async function* query(
       let finalUsage: Usage | null = null
 
       try {
-        const provider = getProvider()
-        const resolvedModel = getResolvedModel()
-        const activeTools = getAllTools().map((tool) => ({
-          name: tool.name,
-          description: tool.description,
-          inputSchema: zodToJsonSchema(tool.inputSchema) as Record<string, unknown>,
-        }))
-
-        const { system, dynamicSystem } = await buildSystemMessages(ctx, resolvedModel, {
-          ...cumulativeUsage,
-        })
-
-        if (!ctx.firstTurnDynamicSystem) {
-          ctx.firstTurnDynamicSystem = dynamicSystem
-        }
-
         const stream = provider.createMessageStream(ctx.messages, activeTools, {
           model: resolvedModel,
           maxTokens: 4096,
@@ -314,19 +319,14 @@ export async function* query(
         }
 
         // 1. Hit/Miss outcome tracking for injected rules
-        // biome-ignore lint/suspicious/noExplicitAny: verifier types bypass
-        const verifyResult = ctx._lastVerifyResultForQuery as any
+        const verifyResult = ctx._lastVerifyResultForQuery
         if (verifyResult?.isVerificationRun) {
           ctx._lastVerifyResultForQuery = undefined
-          const injectedRulesList = ctx.injectedRules as {
-            rule: RuleFile
-            fingerprint: Fingerprint
-          }[]
-          const recordedOutcomes = ctx.recordedRuleOutcomes as Set<string>
+          const injectedRulesList = ctx.injectedRules
+          const recordedOutcomes = ctx.recordedRuleOutcomes
 
-          if (injectedRulesList && injectedRulesList.length > 0) {
-            const postFingerprints = verifyResult.fingerprints as Fingerprint[]
-            const postSigs = postFingerprints.map((fp) => fp.fine)
+          if (injectedRulesList && injectedRulesList.length > 0 && recordedOutcomes) {
+            const postSigs = verifyResult.fingerprints.map((fp) => fp.fine)
 
             for (const { rule, fingerprint } of injectedRulesList) {
               if (recordedOutcomes.has(rule.id)) {
@@ -360,7 +360,7 @@ export async function* query(
         }
 
         // 2. Post-failure rule matching and injection
-        const lastFingerprints = ctx._lastFingerprints as Fingerprint[] | undefined
+        const lastFingerprints = ctx._lastFingerprints
         if (lastFingerprints) {
           ctx._lastFingerprints = undefined
 
@@ -374,9 +374,8 @@ export async function* query(
             const octoMemoryBlock = `\n\n<octo-memory>\n${adviceBlocks}\n</octo-memory>`
             toolResultContent += octoMemoryBlock
 
-            const injected = ctx.injectedRules as { rule: RuleFile; fingerprint: Fingerprint }[]
             for (const match of matches) {
-              injected.push({
+              ctx.injectedRules!.push({
                 rule: match.rule,
                 fingerprint: match.fingerprint,
               })

@@ -1,5 +1,41 @@
 import { spawnSync } from 'node:child_process'
+import { realpath } from 'node:fs/promises'
 import path from 'node:path'
+import { resolve, sep } from 'node:path'
+
+export type PathGuardResult =
+  | { ok: true; resolvedPath: string; realPath: string }
+  | { ok: false; error: string }
+
+export async function assertInsideRepo(
+  inputPath: string,
+  repoRoot: string,
+): Promise<PathGuardResult> {
+  const resolvedPath = resolve(repoRoot, inputPath)
+
+  if (!resolvedPath.startsWith(repoRoot + sep) && resolvedPath !== repoRoot) {
+    return { ok: false, error: 'path_outside_repo: Resolved path escapes the repository root.' }
+  }
+
+  let realPath: string
+  try {
+    realPath = await realpath(resolvedPath)
+  } catch (err) {
+    if ((err as { code?: string }).code === 'ENOENT') {
+      return { ok: false, error: `file_not_found: File "${inputPath}" does not exist.` }
+    }
+    return { ok: false, error: `path_error: ${(err as Error).message}` }
+  }
+
+  if (!realPath.startsWith(repoRoot + sep) && realPath !== repoRoot) {
+    return {
+      ok: false,
+      error: 'path_outside_repo: Symlink target resolves outside the repository root.',
+    }
+  }
+
+  return { ok: true, resolvedPath, realPath }
+}
 
 let cachedRepoRoot: string | null = null
 

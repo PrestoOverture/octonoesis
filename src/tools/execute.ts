@@ -7,7 +7,8 @@ import { type VerifyResult, verify } from '../memory/verifier'
 import { requestPermission } from '../permissions/confirm'
 import { preToolUseHook } from '../permissions/hooks'
 import { getResolvedModel } from '../providers/index'
-import type { ToolContext, ToolResult } from './Tool'
+import type { ToolContext } from '../query'
+import type { ToolResult } from './Tool'
 import { getTool } from './registry'
 
 /**
@@ -221,14 +222,12 @@ export async function runTool(
         const command = (validatedInput as { command: string }).command
 
         // 2. Coalesce/determine if it is a verification run
-        // biome-ignore lint/suspicious/noExplicitAny: query context bypass
-        const anyCtx = ctx as any
-        const isVerificationRun = anyCtx.verificationCommand
-          ? isVerificationCommand(command, anyCtx.verificationCommand)
+        const isVerificationRun = ctx.verificationCommand
+          ? isVerificationCommand(command, ctx.verificationCommand)
           : false
 
-        if (!anyCtx.verificationCommand && isVerificationCommand(command)) {
-          anyCtx.verificationCommand = command
+        if (!ctx.verificationCommand && isVerificationCommand(command)) {
+          ctx.verificationCommand = command
         }
 
         let toolResult: ToolResult
@@ -293,7 +292,7 @@ export async function runTool(
           }
         }
 
-        anyCtx._lastVerifyResult = verifyResult
+        ctx._lastVerifyResult = verifyResult
 
         return toolResult
       }
@@ -313,18 +312,16 @@ export async function runTool(
   let fingerprints: Fingerprint[] | undefined = undefined
   let exitCode: number | undefined = undefined
   if (name === 'Bash') {
-    // biome-ignore lint/suspicious/noExplicitAny: query context bypass
-    const anyCtx = ctx as any
-    const vr = anyCtx._lastVerifyResult
+    const vr = ctx._lastVerifyResult
     if (vr) {
       exitCode = vr.exit_code
       fingerprints = vr.fingerprints.length > 0 ? vr.fingerprints : undefined
       if (vr.isVerificationRun) {
-        anyCtx._lastVerifyResultForQuery = vr
+        ctx._lastVerifyResultForQuery = vr
       }
-      anyCtx._lastVerifyResult = undefined
+      ctx._lastVerifyResult = undefined
       if (fingerprints) {
-        anyCtx._lastFingerprints = fingerprints
+        ctx._lastFingerprints = fingerprints
       }
     }
   }

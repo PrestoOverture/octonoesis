@@ -1,7 +1,7 @@
-import { readFile as fsReadFile, realpath } from 'node:fs/promises'
-import { resolve, sep } from 'node:path'
+import { readFile as fsReadFile } from 'node:fs/promises'
 import z from 'zod'
 import { recordFileRead } from '../state/fileState'
+import { assertInsideRepo } from '../utils/path'
 import type { Tool, ToolContext, ToolResult } from './Tool'
 
 // Zod schema defining the input argument shape
@@ -25,36 +25,10 @@ class ReadTool implements Tool<ReadInput, string> {
   }
 
   async call(input: ReadInput, ctx: ToolContext): Promise<ToolResult<string>> {
-    // 1. Resolve absolute path relative to repoRoot
-    const targetPath = resolve(ctx.repoRoot, input.path)
+    const guard = await assertInsideRepo(input.path, ctx.repoRoot)
+    if (!guard.ok) return guard
 
-    // 2. Traversal Guard: Ensure path starts with repoRoot + separator
-    const startsWithRoot = targetPath.startsWith(ctx.repoRoot + sep) || targetPath === ctx.repoRoot
-    if (!startsWithRoot) {
-      return { ok: false, error: 'path_outside_repo: Resolved path escapes the repository root.' }
-    }
-
-    // 3. Symlink Guard: Ensure the real absolute path does not resolve outside the repo root
-    let realTargetPath: string
-    try {
-      realTargetPath = await realpath(targetPath)
-    } catch (err) {
-      if ((err as { code?: string }).code === 'ENOENT') {
-        return { ok: false, error: `file_not_found: File "${input.path}" does not exist.` }
-      }
-      return { ok: false, error: `path_error: ${(err as Error).message}` }
-    }
-
-    const realStartsWithRoot =
-      realTargetPath.startsWith(ctx.repoRoot + sep) || realTargetPath === ctx.repoRoot
-    if (!realStartsWithRoot) {
-      return {
-        ok: false,
-        error: 'path_outside_repo: Symlink target resolves outside the repository root.',
-      }
-    }
-
-    // 4. Read the target file
+    const realTargetPath = guard.realPath
     try {
       const content = await fsReadFile(realTargetPath, 'utf-8')
 

@@ -42,7 +42,7 @@ describe('Grep tool', () => {
     const result = await grepTool.call({ pattern: 'test', path: 'nonexistent-folder-abc' }, ctx)
     expect(result.ok).toBe(false)
     if (!result.ok) {
-      expect(result.error).toContain('path_not_found')
+      expect(result.error).toContain('file_not_found')
     }
   })
 

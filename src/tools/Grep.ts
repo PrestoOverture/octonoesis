@@ -1,10 +1,10 @@
 // biome-ignore lint/suspicious/noExplicitAny: global environment type bypass
 declare const Bun: any
 import { spawnSync } from 'node:child_process'
-import { realpath, stat } from 'node:fs/promises'
-import { relative, resolve, sep } from 'node:path'
+import { relative, resolve } from 'node:path'
 import { rgPath } from '@vscode/ripgrep'
 import z from 'zod'
+import { assertInsideRepo } from '../utils/path'
 import type { Tool, ToolContext, ToolResult } from './Tool'
 
 // Input validation schema using Zod
@@ -73,44 +73,10 @@ class GrepTool implements Tool<GrepInput, string> {
    * @returns A promise resolving to the structured tool result containing the search matches.
    */
   async call(input: GrepInput, ctx: ToolContext): Promise<ToolResult<string>> {
-    // 1. Determine target path, resolving relative to repoRoot
-    const targetPath = input.path ? resolve(ctx.repoRoot, input.path) : ctx.repoRoot
+    const guard = await assertInsideRepo(input.path || '.', ctx.repoRoot)
+    if (!guard.ok) return guard
 
-    // 2. Traversal Guard: Ensure targetPath is inside the repository root
-    const startsWithRoot = targetPath.startsWith(ctx.repoRoot + sep) || targetPath === ctx.repoRoot
-    if (!startsWithRoot) {
-      return {
-        ok: false,
-        error: 'path_outside_repo: The specified path escapes the repository root.',
-      }
-    }
-
-    // 3. Symlink Guard: Ensure realTargetPath does not resolve outside the repo root if it exists
-    let realTargetPath = targetPath
-    try {
-      // Check if target path exists and resolve real path
-      await stat(targetPath)
-      realTargetPath = await realpath(targetPath)
-    } catch (err) {
-      if ((err as { code?: string }).code === 'ENOENT') {
-        return {
-          ok: false,
-          error: `path_not_found: The specified path "${input.path || ''}" does not exist.`,
-        }
-      }
-      return { ok: false, error: `path_error: ${(err as Error).message}` }
-    }
-
-    const realStartsWithRoot =
-      realTargetPath.startsWith(ctx.repoRoot + sep) || realTargetPath === ctx.repoRoot
-    if (!realStartsWithRoot) {
-      return {
-        ok: false,
-        error: 'path_outside_repo: Symlink target resolves outside the repository root.',
-      }
-    }
-
-    // 4. Set up ripgrep command arguments
+    const realTargetPath = guard.realPath
     const args = [
       '--json',
       '--hidden',
