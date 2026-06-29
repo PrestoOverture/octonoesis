@@ -11,6 +11,9 @@ export interface RetryOptions {
 /**
  * Wraps an AsyncGenerator-producing function with exponential backoff retry.
  * Only retries if the failure occurs before the first element is yielded.
+ * @param fn The function returning the target AsyncGenerator.
+ * @param opts Optional retry configuration parameters.
+ * @returns An async generator yielding elements from the underlying function.
  */
 export async function* withRetryGenerator<T>(
   fn: () => AsyncGenerator<T, void, undefined>,

@@ -2,12 +2,22 @@ import type { Episode } from './types'
 
 const TRANSIENT_ERROR_CLASSES = ['CommandNotFound', 'ENOENT', 'ETIMEDOUT']
 
+/**
+ * Checks if an error class is classified as a transient error.
+ * @param errorClass The error class string.
+ * @returns True if transient, false otherwise.
+ */
+
 function isTransientError(errorClass: string): boolean {
   return TRANSIENT_ERROR_CLASSES.includes(errorClass)
 }
 
 /**
  * Assigns value scores and exclusions to segmented episodes.
+ * @param partial The partial episode details lacking ID, score, and exclusion info.
+ * @param idIndex The index of the episode to format the ID (e.g. ep_0001).
+ * @param options Optional context details like user permission denials or repetition counts.
+ * @returns The fully scored Episode object.
  */
 export function scoreEpisode(
   partial: Omit<Episode, 'id' | 'value_score' | 'is_excluded' | 'exclusion_reason'>,

@@ -4,7 +4,9 @@ import { getMemoryDir } from '../../utils/path'
 import type { Episode } from './types'
 
 /**
- * Reads all persisted episodes from disk, deduplicating by ID (later lines overwrite earlier ones).
+ * Reads all persisted episodes from disk, deduplicating by ID.
+ * @param episodesPath Optional custom path to the episodes JSONL file.
+ * @returns A promise resolving to an array of loaded Episode objects.
  */
 export async function readEpisodes(
   episodesPath: string = path.join(getMemoryDir(), 'episodes.jsonl'),
@@ -31,6 +33,7 @@ export async function readEpisodes(
 
 /**
  * Determines the next episode index (1-based) by reading the last stored ID.
+ * @returns A promise resolving to the next index number.
  */
 export async function getNextEpisodeIndex(): Promise<number> {
   const episodes = await readEpisodes()
@@ -54,6 +57,7 @@ export async function getNextEpisodeIndex(): Promise<number> {
 
 /**
  * Appends a list of episodes to the persisted log.
+ * @param episodes The array of episodes to append.
  */
 export async function appendEpisodes(episodes: Episode[]): Promise<void> {
   if (episodes.length === 0) return

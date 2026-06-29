@@ -11,6 +11,9 @@ import type { RuleFile } from './types.ts'
 
 /**
  * Rebuilds all rules from episodes.jsonl, preserving metrics & user status modifications.
+ * @param episodesPath Path to the episodes JSONL file.
+ * @param rulesDir Directory path where rule markdown files are stored.
+ * @param ctx The extraction execution context.
  */
 export async function rebuildRules(
   episodesPath: string, // Passed for API compatibility, readEpisodes determines path internally

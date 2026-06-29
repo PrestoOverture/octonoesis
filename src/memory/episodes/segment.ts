@@ -12,6 +12,12 @@ export interface JournalEventWithLine {
   line: number
 }
 
+/**
+ * Retrieves the tool execution signature from a tool event.
+ * @param event The stored tool journal event.
+ * @returns The fine fingerprint signature, or null if none.
+ */
+
 function getToolSignature(event: Extract<StoredJournalEvent, { kind: 'tool' }>): string | null {
   if (event.fingerprints && event.fingerprints.length > 0) {
     return event.fingerprints[0]?.fine || null
@@ -21,6 +27,8 @@ function getToolSignature(event: Extract<StoredJournalEvent, { kind: 'tool' }>):
 
 /**
  * Extracts unique signatures from a verify event.
+ * @param event The stored verify journal event.
+ * @returns An array of fine fingerprint signatures.
  */
 function getVerifySignatures(event: Extract<StoredJournalEvent, { kind: 'verify' }>): string[] {
   if (event.verdict === 'FAIL' || event.verdict === 'PARTIAL') {
@@ -33,6 +41,9 @@ function getVerifySignatures(event: Extract<StoredJournalEvent, { kind: 'verify'
 
 /**
  * Checks if two repository-relative file paths are in the same parent directory.
+ * @param pathA The first file path.
+ * @param pathB The second file path.
+ * @returns True if they are in the same parent directory, false otherwise.
  */
 function isSameParentDirectory(pathA: string, pathB: string): boolean {
   if (!pathA || !pathB) return false
@@ -45,6 +56,9 @@ function isSameParentDirectory(pathA: string, pathB: string): boolean {
 
 /**
  * Deterministic state machine that segments filtered journal events into episodes.
+ * @param events The chronological list of journal events.
+ * @param startEpisodeIndex The starting index for generating episode IDs.
+ * @returns An array of segmented and scored Episode objects.
  */
 export function segmentJournal(events: JournalEventWithLine[], startEpisodeIndex = 1): Episode[] {
   const episodes: Episode[] = []

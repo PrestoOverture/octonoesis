@@ -5,6 +5,7 @@ export interface BetaParams {
 
 /**
  * Creates a weakly informative prior Beta(2, 2).
+ * @returns The initial BetaParams.
  */
 export function createPrior(): BetaParams {
   return { alpha: 2, beta: 2 }
@@ -12,6 +13,9 @@ export function createPrior(): BetaParams {
 
 /**
  * Updates Beta parameters with a hit or miss.
+ * @param prior The current BetaParams.
+ * @param hit Whether the event was a success.
+ * @returns The updated BetaParams.
  */
 export function update(prior: BetaParams, hit: boolean): BetaParams {
   return {
@@ -22,6 +26,8 @@ export function update(prior: BetaParams, hit: boolean): BetaParams {
 
 /**
  * Calculates the posterior mean of the Beta distribution.
+ * @param params The BetaParams.
+ * @returns The computed posterior mean value.
  */
 export function posteriorMean(params: BetaParams): number {
   const sum = params.alpha + params.beta
@@ -30,6 +36,12 @@ export function posteriorMean(params: BetaParams): number {
 
 // Log factorial cache for choosing combinations stably without overflow
 const logFactorialTable: number[] = [0]
+
+/**
+ * Computes the logarithm of the factorial of n.
+ * @param n The input number.
+ * @returns The computed log-factorial value.
+ */
 function logFactorial(n: number): number {
   if (n <= 1) return 0
   while (logFactorialTable.length <= n) {
@@ -38,6 +50,13 @@ function logFactorial(n: number): number {
   }
   return logFactorialTable[n] ?? 0
 }
+
+/**
+ * Computes the logarithm of the binomial coefficient (n choose k).
+ * @param n The total number of items.
+ * @param k The number of items to choose.
+ * @returns The log-binomial value.
+ */
 
 function logChoose(n: number, k: number): number {
   if (k < 0 || k > n) return Number.NEGATIVE_INFINITY
@@ -48,6 +67,10 @@ function logChoose(n: number, k: number): number {
  * Computes the Regularized Incomplete Beta function I_x(a, b) for integers a, b.
  * Uses exact Binomial sum expansion:
  * I_x(a, b) = Sum_{j=a}^{a+b-1} choose(a+b-1, j) * x^j * (1-x)^(a+b-1-j)
+ * @param x The evaluation point.
+ * @param a The alpha integer parameter.
+ * @param b The beta integer parameter.
+ * @returns The regularized incomplete beta value.
  */
 export function betaInc(x: number, a: number, b: number): number {
   if (x <= 0) return 0
@@ -68,6 +91,11 @@ export function betaInc(x: number, a: number, b: number): number {
 /**
  * Computes the inverse CDF (quantile function) of the Beta distribution.
  * Uses bisection search over the regularized incomplete beta function.
+ * @param p The target cumulative probability.
+ * @param a The alpha parameter.
+ * @param b The beta parameter.
+ * @param tolerance The convergence tolerance for the bisection search.
+ * @returns The computed quantile value.
  */
 export function betaQuantile(p: number, a: number, b: number, tolerance = 1e-6): number {
   if (p <= 0) return 0
@@ -94,6 +122,9 @@ export function betaQuantile(p: number, a: number, b: number, tolerance = 1e-6):
 
 /**
  * Computes the credible interval bounds (e.g. 95%) of the Beta distribution.
+ * @param params The BetaParams.
+ * @param level The credible level (e.g. 0.95).
+ * @returns A tuple containing the lower and upper bounds of the interval.
  */
 export function credibleInterval(params: BetaParams, level = 0.95): [number, number] {
   const alpha = Math.round(params.alpha)
@@ -106,6 +137,9 @@ export function credibleInterval(params: BetaParams, level = 0.95): [number, num
 
 /**
  * Computes the width of the credible interval for a Beta distribution.
+ * @param params The BetaParams.
+ * @param level The credible level (e.g. 0.95).
+ * @returns The width of the credible interval.
  */
 export function intervalWidth(params: BetaParams, level = 0.95): number {
   const [lower, upper] = credibleInterval(params, level)

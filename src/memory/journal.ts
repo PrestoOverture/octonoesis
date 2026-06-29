@@ -8,6 +8,7 @@ let writeQueue: Promise<void> = Promise.resolve()
 
 /**
  * Binds the active session ID to attach to upcoming journal events.
+ * @param id The active session ID.
  */
 export function setSessionId(id: string): void {
   activeSessionId = id
@@ -15,6 +16,7 @@ export function setSessionId(id: string): void {
 
 /**
  * Returns the currently active session ID.
+ * @returns The currently active session ID or null if not set.
  */
 export function getSessionId(): string | null {
   return activeSessionId
@@ -25,6 +27,7 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 
 /**
  * Appends a journal event to the log file asynchronously and in order.
+ * @param event The journal event payload (omits metadata ts/session_id but allows optional overrides).
  */
 export function appendJournal(
   event: DistributiveOmit<JournalEvent, 'ts' | 'session_id'> & { ts?: string; session_id?: string },

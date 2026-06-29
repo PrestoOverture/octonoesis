@@ -2,11 +2,8 @@ import type { RuleFile } from './types.ts'
 
 /**
  * Calculates the specificity of a rule based on its error signature.
- * 3 elements (coarse) = 1, 4 elements (medium) = 2, 5+ elements (fine) = 3.
- * Wait, let's count pipe separators:
- * "bun-test|TypeError" has 1 pipe (2 parts) -> coarse -> 1
- * "bun-test|TypeError|src/buggy.ts" has 2 pipes (3 parts) -> medium -> 2
- * "bun-test|TypeError|src/buggy.ts|evaluating 'user.name'" has 3 pipes (4 parts) -> fine -> 3
+ * @param rule The RuleFile object to check.
+ * @returns The specificity score.
  */
 export function getRuleSpecificity(rule: RuleFile): number {
   if (!rule.triggers.error_signatures || rule.triggers.error_signatures.length === 0) {
@@ -23,7 +20,8 @@ export function getRuleSpecificity(rule: RuleFile): number {
 
 /**
  * Enforces the active pool cap of 150 rules.
- * If active rules exceed 150, the lowest scored rules are evicted to 'retired' status.
+ * @param rules The full array of rules.
+ * @returns The updated array of rules with pool cap enforced.
  */
 export function enforcePoolCap(rules: RuleFile[]): RuleFile[] {
   const activeAndCandidates = rules.filter((r) => r.status === 'active' || r.status === 'candidate')

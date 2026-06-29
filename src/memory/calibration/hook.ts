@@ -16,6 +16,7 @@ import {
  * Enforces a 5-second timeout and is idempotent per session/bucket.
  *
  * @param sessionId The active session ID to analyze.
+ * @param memoryDir Optional custom memory directory path.
  */
 export async function runSessionEndCalibration(
   sessionId: string,

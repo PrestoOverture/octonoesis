@@ -39,6 +39,9 @@ export const PROMPT_HASH = createHash('sha256')
 /**
  * Distills a single resolved episode into a RuleFile.
  * Throws if the episode is excluded.
+ * @param episode The resolved episode to distill.
+ * @param ctx The context object containing the model name and extractor version.
+ * @returns A promise resolving to the distilled RuleFile.
  */
 export async function distillEpisode(
   episode: Episode,
@@ -131,6 +134,12 @@ export async function distillEpisode(
   }
 }
 
+/**
+ * Promotes error signatures to coarser categories to align with general repository patterns.
+ * @param signatures The input array of fine signatures.
+ * @returns The array of expanded signatures.
+ */
+
 function expandSignatures(signatures: string[]): string[] {
   const expanded = new Set(signatures)
   for (const sig of signatures) {
@@ -144,6 +153,12 @@ function expandSignatures(signatures: string[]): string[] {
   }
   return [...expanded]
 }
+
+/**
+ * Clean markdown tags and extraneous characters from LLM response to get a valid JSON string.
+ * @param text The raw response text.
+ * @returns The cleaned JSON string.
+ */
 
 function cleanJsonString(text: string): string {
   let cleaned = text.trim()

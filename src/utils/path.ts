@@ -32,6 +32,7 @@ export function getRepoRoot(): string {
 /**
  * Returns the directory path where memory/persistent files should live.
  * Respects OCTONOESIS_MEMORY_DIR env override for testing isolation.
+ * @returns The resolved memory directory path.
  */
 export function getMemoryDir(): string {
   if (process.env.OCTONOESIS_MEMORY_DIR) {

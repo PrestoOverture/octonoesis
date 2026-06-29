@@ -66,6 +66,7 @@ export function getResolvedModel(): string {
 /**
  * Resolves the provider's cheapest available model ID (Haiku-tier/nano-tier).
  * Bypasses general MODEL overrides to enforce cheap distillation context operations.
+ * @returns The cheapest available model ID.
  */
 export function getCheapestModel(): string {
   const providerEnv = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()

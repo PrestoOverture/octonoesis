@@ -35,6 +35,14 @@ const PATH_LINE_REGEX = /(\b[\w\.-]+(?:\/[\w\.-]+)*\.[a-zA-Z0-9]+):(\d+)\b/g
 const LINE_NUMBER_LABEL_REGEX = /\bline\s+(\d+)\b/gi
 const COL_NUMBER_LABEL_REGEX = /\bcol(?:umn)?\s+(\d+)\b/gi
 
+/**
+ * Deterministically normalizes volatile output (ANSI codes, absolute paths,
+ * line/column numbers, timestamps, memory addresses, and durations) without using LLMs.
+ * @param text The raw output text to scrub.
+ * @param repoRoot The repository root path to make absolute paths relative.
+ * @returns The scrubbed and normalized string.
+ */
+
 export function scrub(text: string, repoRoot: string): string {
   if (!text) return ''
 

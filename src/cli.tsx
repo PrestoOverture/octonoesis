@@ -10,6 +10,11 @@ import { runQuery } from './query'
 import { App } from './ui/App'
 import { getMemoryDir } from './utils/path.ts'
 
+/**
+ * Validates that the necessary API key environment variables are set.
+ * Exits the process if the required key for the configured provider is missing.
+ */
+
 function checkApiKey(): void {
   const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
   if (provider === 'anthropic' && !process.env.ANTHROPIC_API_KEY) {

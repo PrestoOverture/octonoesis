@@ -38,6 +38,9 @@ export interface RuleFile {
 
 /**
  * Calculates rule confidence based on Beta distribution posterior mean.
+ * @param alpha The alpha parameter.
+ * @param beta The beta parameter.
+ * @returns The calculated confidence score.
  */
 export function calculateConfidence(alpha: number, beta: number): number {
   const sum = alpha + beta

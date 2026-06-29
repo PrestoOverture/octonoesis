@@ -27,6 +27,7 @@ export type SystemPromptPart = {
 /**
  * Normalizes CanonicalMessages to Anthropic MessageParams at call-time.
  * @param messages The canonical messages to convert.
+ * @param addCacheControl Optional boolean to add cache control headers.
  * @returns The converted Anthropic MessageParam array.
  */
 export function toAnthropicMessages(

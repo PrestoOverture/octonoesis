@@ -50,6 +50,7 @@ export function unregisterPromptHandler(): void {
  * Requests permission from the user to execute a non-read-only tool.
  * @param toolName The name of the tool requesting permission.
  * @param input The validated input payload of the tool.
+ * @param ctx The tool execution context.
  * @returns A promise resolving to the user's permission decision.
  */
 export async function requestPermission(

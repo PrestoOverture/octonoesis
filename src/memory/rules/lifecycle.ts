@@ -6,6 +6,9 @@ import { calculateConfidence } from './types.ts'
 
 /**
  * Checks if the anchor file exists and is a valid file.
+ * @param anchorFile The repository-relative path to the anchor file.
+ * @param repoRoot The absolute path of the repository root.
+ * @returns A promise resolving to true if the anchor file is valid, false otherwise.
  */
 export async function checkAnchorValid(anchorFile: string, repoRoot: string): Promise<boolean> {
   if (!anchorFile) return false
@@ -20,6 +23,9 @@ export async function checkAnchorValid(anchorFile: string, repoRoot: string): Pr
 
 /**
  * Updates the rule's lifecycle status, recomputes confidence, and executes validation checks.
+ * @param rule The RuleFile object to update.
+ * @param repoRoot The absolute path of the repository root.
+ * @returns A promise resolving to the updated RuleFile.
  */
 export async function updateLifecycle(rule: RuleFile, repoRoot: string): Promise<RuleFile> {
   // Re-calculate confidence

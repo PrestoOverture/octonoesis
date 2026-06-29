@@ -21,6 +21,11 @@ export interface VerifyResult {
  * Runs a verification command (such as test or lint commands) in a detached subprocess.
  * Parses stderr/stdout for failure signatures using cached LLM extraction, logs a verify journal event,
  * and returns VerifyResult.
+ * @param command The shell command to execute.
+ * @param repoRoot The absolute path of the repository root.
+ * @param signal Optional abort signal for cancellation.
+ * @param isVerificationRun Whether this is a verification run.
+ * @returns A promise resolving to the VerifyResult.
  */
 export async function verify(
   command: string,

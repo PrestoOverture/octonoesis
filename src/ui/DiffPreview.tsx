@@ -14,7 +14,8 @@ export interface DiffPreviewProps {
  * @param props The props containing the old text, new text, and path of the file.
  * @returns A JSX.Element showing the formatted unified diff.
  */
-export function DiffPreview({ oldText, newText, filePath }: DiffPreviewProps) {
+export function DiffPreview(props: DiffPreviewProps) {
+  const { oldText, newText, filePath } = props
   // Generate unified patch with 3 context lines
   const patch = createPatch(filePath, oldText, newText, undefined, undefined, { context: 3 })
 

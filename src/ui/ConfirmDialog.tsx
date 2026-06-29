@@ -13,7 +13,8 @@ export interface ConfirmDialogProps {
  * @param props The props containing the tool name, tool input parameters, and resolution callback.
  * @returns A JSX.Element rendering the warning dialog and keystroke instructions.
  */
-export function ConfirmDialog({ toolName, input, onResolve }: ConfirmDialogProps) {
+export function ConfirmDialog(props: ConfirmDialogProps) {
+  const { toolName, input, onResolve } = props
   // Listen for keyboard inputs
   useInput((inputStr) => {
     const key = inputStr.toLowerCase()

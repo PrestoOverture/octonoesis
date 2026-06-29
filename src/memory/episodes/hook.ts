@@ -7,6 +7,9 @@ import type { Episode } from './types'
 
 /**
  * Checks if two episodes are equal (ignoring the ID and value_score).
+ * @param ep1 The first episode to compare.
+ * @param ep2 The second episode to compare.
+ * @returns True if the episodes are equal, false otherwise.
  */
 function isEpisodeEqual(ep1: Episode, ep2: Episode): boolean {
   if (ep1.outcome !== ep2.outcome) return false
@@ -47,6 +50,8 @@ function isEpisodeEqual(ep1: Episode, ep2: Episode): boolean {
  * Session-end hook that reads the journal log, extracts this session's events,
  * segments them into episodes, and appends new or updated episodes to episodes.jsonl.
  * Enforces a 5-second timeout.
+ * @param sessionId The active session ID.
+ * @param memoryDir Optional custom memory directory path.
  */
 export async function runSessionEndEpisodes(sessionId: string, memoryDir?: string): Promise<void> {
   let timeoutId: NodeJS.Timeout | null = null

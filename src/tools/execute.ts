@@ -12,6 +12,9 @@ import { getTool } from './registry'
 
 /**
  * Checks if a command matches common verification tool patterns (e.g. test, lint, check, compile).
+ * @param command The shell command to check.
+ * @param verificationCommand Optional specific command string designated for verification.
+ * @returns True if the command is classified as a verification command, false otherwise.
  */
 export function isVerificationCommand(command: string, verificationCommand?: string): boolean {
   if (verificationCommand && command === verificationCommand) {

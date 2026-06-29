@@ -1,5 +1,7 @@
 /**
  * Determines whether a given error is a transient failure that is safe to retry.
+ * @param error The error object or value to inspect.
+ * @returns True if the error is transient and retriable, false otherwise.
  */
 export function isRetriableError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false

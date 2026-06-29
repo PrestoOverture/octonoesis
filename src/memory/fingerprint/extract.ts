@@ -38,6 +38,10 @@ export const PROMPT_HASH = createHash('sha256')
  * Extracts a three-level fingerprint from a scrubbed error output.
  * Queries the LLM provider for structured JSON extraction.
  * Falls back to offline heuristic parsing in case of failures.
+ * @param scrubbed The scrubbed error output.
+ * @param command The failed command that produced the error.
+ * @param ctx The context object containing the model name.
+ * @returns A promise resolving to the extracted Fingerprint object.
  */
 export async function extractFingerprint(
   scrubbed: string,
@@ -90,6 +94,12 @@ export async function extractFingerprint(
   }
 }
 
+/**
+ * Clean markdown tags and extraneous characters from LLM response to get a valid JSON string.
+ * @param text The raw response text.
+ * @returns The cleaned JSON string.
+ */
+
 function cleanJsonString(text: string): string {
   let cleaned = text.trim()
   // Strip markdown block formatting if present
@@ -102,12 +112,25 @@ function cleanJsonString(text: string): string {
   return cleaned
 }
 
+/**
+ * Derives a fallback tool name from the executable part of the command.
+ * @param command The failed shell command.
+ * @returns The extracted fallback tool name.
+ */
+
 function getFallbackTool(command: string): string {
   const parts = command.trim().split(/\s+/)
   if (!parts[0]) return 'bash'
   // Strip relative prefixes like ./bin/
   return parts[0].replace(/^.*\//, '')
 }
+
+/**
+ * Extracts fallback fingerprint details using offline regex pattern matching.
+ * @param scrubbed The scrubbed error output.
+ * @param command The failed shell command.
+ * @returns The parsed fallback Fingerprint.
+ */
 
 export function getFallbackFingerprint(scrubbed: string, command: string): Fingerprint {
   const tool = getFallbackTool(command)
@@ -122,6 +145,15 @@ export function getFallbackFingerprint(scrubbed: string, command: string): Finge
   // Fallback cannot safely parse file and expression without risk of noise, so they are empty.
   return assembleFingerprint(tool, errorClass, '', '')
 }
+
+/**
+ * Assembles a structured Fingerprint object from components, cleaning pipe characters.
+ * @param tool The name of the tool.
+ * @param errorClass The error class or category name.
+ * @param file The file path where the error occurred.
+ * @param expression The specific failing expression or detail.
+ * @returns The assembled Fingerprint object.
+ */
 
 export function assembleFingerprint(
   tool: string,

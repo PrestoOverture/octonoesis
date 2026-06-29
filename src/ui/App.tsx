@@ -21,10 +21,11 @@ export interface AppProps {
 /**
  * MessageList renders the chronological history of user messages and agent turns,
  * rendering tool usages as compact <ToolCard> components.
- *
+ * @param props The props containing the messages list.
  * @returns The rendered Box containing message logs.
  */
-export function MessageList({ messages = [] }: { messages?: CanonicalMessage[] }) {
+export function MessageList(props: { messages?: CanonicalMessage[] }) {
+  const { messages = [] } = props
   return (
     <Box flexDirection="column">
       {messages.map((msg, index) => {
@@ -89,16 +90,14 @@ export function MessageList({ messages = [] }: { messages?: CanonicalMessage[] }
 /**
  * StreamingResponse renders the actively streaming text response and running tools
  * from the current query turn.
- *
+ * @param props The props containing current text and running tool states.
  * @returns The rendered Box containing active streaming logs, or null if empty.
  */
-export function StreamingResponse({
-  text = '',
-  toolUses = [],
-}: {
+export function StreamingResponse(props: {
   text?: string
   toolUses?: { name: string; status: 'running' | 'done' | 'error'; input?: unknown }[]
 }) {
+  const { text = '', toolUses = [] } = props
   if (!text && toolUses.length === 0) return null
 
   return (
@@ -124,22 +123,17 @@ export function StreamingResponse({
 
 /**
  * Input renders the interactive prompt line where user enters message instructions.
- *
+ * @param props The props containing value, handlers, placeholder and disabled state.
  * @returns The rendered Box containing the input field layout.
  */
-export function Input({
-  value,
-  onChange,
-  onSubmit,
-  placeholder = 'Type a message...',
-  isDisabled = false,
-}: {
+export function Input(props: {
   value: string
   onChange: (value: string) => void
   onSubmit: (value: string) => void
   placeholder?: string
   isDisabled?: boolean
 }) {
+  const { value, onChange, onSubmit, placeholder = 'Type a message...', isDisabled = false } = props
   return (
     <Box flexDirection="column" marginTop={0}>
       <Box flexDirection="row">
@@ -163,15 +157,16 @@ export function Input({
  * App is the root React component of the terminal TUI.
  * It coordinates chat history state, input submissions, active streaming generator execution,
  * permission dialog triggers, and layout splitting with the todo sidebar panel.
- *
+ * @param props The initial props for starting the React TUI.
  * @returns The rendered main terminal viewport.
  */
-export function App({
-  messages: initialMessages = [],
-  streamingText: initialStreamingText = '',
-  streamingToolUses: initialStreamingToolUses = [],
-  placeholder = 'Type a message...',
-}: AppProps) {
+export function App(props: AppProps) {
+  const {
+    messages: initialMessages = [],
+    streamingText: initialStreamingText = '',
+    streamingToolUses: initialStreamingToolUses = [],
+    placeholder = 'Type a message...',
+  } = props
   const [ctx] = useState<ToolContext>(() => ({
     repoRoot: getRepoRoot(),
     messages: initialMessages,

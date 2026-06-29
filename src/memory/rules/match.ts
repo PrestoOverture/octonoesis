@@ -12,6 +12,9 @@ export interface MatchResult {
 /**
  * Searches active/candidate rules by error signature in priority order: fine -> medium -> coarse.
  * Returns up to 2 matches.
+ * @param fingerprints The list of error fingerprints to match.
+ * @param rules The pool of rules to search.
+ * @returns An array of matched rule details.
  */
 export function findMatchingRules(fingerprints: Fingerprint[], rules: RuleFile[]): MatchResult[] {
   const matchedRuleIds = new Set<string>()
@@ -58,6 +61,8 @@ export function findMatchingRules(fingerprints: Fingerprint[], rules: RuleFile[]
 
 /**
  * Formats the matched rule's advice text using appropriate confidence framing.
+ * @param match The matched rule outcome.
+ * @returns The formatted advice markdown string.
  */
 export function formatMatchAdvice(match: MatchResult): string {
   if (match.level === 'coarse') {

@@ -35,6 +35,8 @@ export interface BucketStats {
 
 /**
  * Reads all calibration records from calibration.jsonl.
+ * @param filePath The path to the calibration records file.
+ * @returns A promise resolving to an array of calibration records.
  */
 export async function readCalibrationRecords(
   filePath: string = path.join(getMemoryDir(), 'calibration.jsonl'),
@@ -66,6 +68,8 @@ export async function readCalibrationRecords(
 
 /**
  * Appends calibration records to calibration.jsonl.
+ * @param records The calibration records to append.
+ * @param filePath The path to the calibration records file.
  */
 export async function appendCalibrationRecords(
   records: CalibrationRecord[],
@@ -81,6 +85,8 @@ export async function appendCalibrationRecords(
 
 /**
  * Aggregates calibration records per bucket key and model ID.
+ * @param records The array of calibration records to aggregate.
+ * @returns The aggregated bucket stats.
  */
 export function aggregateCalibrationStats(records: CalibrationRecord[]): BucketStats[] {
   const groups = new Map<string, CalibrationRecord[]>()
@@ -133,6 +139,8 @@ export function aggregateCalibrationStats(records: CalibrationRecord[]): BucketS
 
 /**
  * Rebuilds calibration.jsonl by parsing the entire journal.jsonl log.
+ * @param journalPath The path to the journal file.
+ * @param calibrationPath The path to the calibration file.
  */
 export async function rebuildCalibration(
   journalPath: string,

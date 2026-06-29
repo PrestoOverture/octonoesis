@@ -4,12 +4,19 @@ import { getMemoryDir } from '../../utils/path.ts'
 import type { RuleFile } from './types.ts'
 import { calculateConfidence } from './types.ts'
 
+/**
+ * Retrieves the rules storage directory path.
+ * @returns The resolved rules directory path.
+ */
+
 export function getRulesDir(): string {
   return path.join(getMemoryDir(), 'rules')
 }
 
 /**
  * Serializes a RuleFile object to a YAML-frontmatter markdown string.
+ * @param rule The RuleFile object to serialize.
+ * @returns The serialized markdown string with frontmatter.
  */
 export function serializeRule(rule: RuleFile): string {
   const frontmatter = [
@@ -48,6 +55,8 @@ export function serializeRule(rule: RuleFile): string {
 
 /**
  * Parses a YAML-frontmatter markdown string into a RuleFile object.
+ * @param content The raw rule markdown content.
+ * @returns The parsed RuleFile object.
  */
 export function parseRule(content: string): RuleFile {
   const fmRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/
@@ -244,6 +253,8 @@ export function parseRule(content: string): RuleFile {
 
 /**
  * Saves a single rule file to disk.
+ * @param rule The RuleFile object to save.
+ * @param rulesDir Optional custom path to rules directory.
  */
 export async function saveRule(rule: RuleFile, rulesDir: string = getRulesDir()): Promise<void> {
   await mkdir(rulesDir, { recursive: true })
@@ -251,6 +262,13 @@ export async function saveRule(rule: RuleFile, rulesDir: string = getRulesDir())
   const content = serializeRule(rule)
   await writeFile(filePath, content, 'utf-8')
 }
+
+/**
+ * Loads a single rule file by ID from disk.
+ * @param ruleId The ID of the rule.
+ * @param rulesDir Optional custom path to rules directory.
+ * @returns A promise resolving to the loaded RuleFile, or null if not found.
+ */
 
 export async function loadRule(
   ruleId: string,
@@ -272,6 +290,8 @@ export async function loadRule(
 
 /**
  * Loads all rules from the rules directory.
+ * @param rulesDir Optional custom path to rules directory.
+ * @returns A promise resolving to an array of loaded RuleFile objects.
  */
 export async function loadAllRules(rulesDir: string = getRulesDir()): Promise<RuleFile[]> {
   let files: string[]
