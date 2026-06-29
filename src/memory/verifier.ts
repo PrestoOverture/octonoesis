@@ -1,3 +1,4 @@
+import { preToolUseHook } from '../permissions/hooks.ts'
 import { getResolvedModel } from '../providers/index.ts'
 import { bashTool } from '../tools/Bash.ts'
 import { defaultCachedExtractor } from './fingerprint/cache.ts'
@@ -33,9 +34,15 @@ export async function verify(
   signal?: AbortSignal,
   isVerificationRun = true,
 ): Promise<VerifyResult> {
-  // Delegate process spawning, timeout watchdog, abort handling, and safety denylist
-  // to the canonical bashTool implementation.
-  const result = await bashTool.call({ command }, { repoRoot, abortSignal: signal })
+  const hookResult = await preToolUseHook('Bash', { command }, { repoRoot, abortSignal: signal })
+  if (hookResult.action === 'deny') {
+    throw new Error(`permission_denied: ${hookResult.reason ?? 'Pre-tool hook rejected verification command.'}`)
+  }
+  const effectiveCommand = hookResult.action === 'modify' && hookResult.modifiedInput
+    ? (hookResult.modifiedInput as { command: string }).command
+    : command
+
+  const result = await bashTool.call({ command: effectiveCommand }, { repoRoot, abortSignal: signal })
   if (!result.ok) {
     throw new Error(result.error)
   }

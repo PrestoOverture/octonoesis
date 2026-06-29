@@ -11,6 +11,24 @@ const BashInputSchema = z.object({
 
 type BashInput = z.infer<typeof BashInputSchema>
 
+const blockedPatterns: [RegExp, string][] = [
+  [/\brm\s+-\w*r\w*f\w*/, 'rm -rf'],
+  [/\brm\s+-\w*f\w*r\w*/, 'rm -rf'],
+  [/\brm\s.*\s-\w*r\b.*\s-\w*f\b/, 'rm -rf'],
+  [/\brm\s.*\s-\w*f\b.*\s-\w*r\b/, 'rm -rf'],
+  [/\bcurl\b/, 'curl'],
+  [/\bwget\b/, 'wget'],
+  [/\bsudo\b/, 'sudo'],
+]
+
+export function isBlockedCommand(command: string): string | null {
+  const normalized = command.replace(/\s+/g, ' ').trim()
+  for (const [pattern, label] of blockedPatterns) {
+    if (pattern.test(normalized)) return label
+  }
+  return null
+}
+
 class BashTool implements Tool<BashInput, string> {
   name = 'Bash'
   description = 'Execute a shell command in a non-interactive bash session.'
@@ -25,14 +43,11 @@ class BashTool implements Tool<BashInput, string> {
   }
 
   async call(input: BashInput, ctx: ToolContext): Promise<ToolResult<string>> {
-    // 1. Literal denylist validation
-    const blockedKeywords = ['rm -rf', 'curl', 'wget', 'sudo']
-    for (const blocked of blockedKeywords) {
-      if (input.command.includes(blocked)) {
-        return {
-          ok: false,
-          error: `blocked_command: Command contains forbidden operation "${blocked}".`,
-        }
+    const blocked = isBlockedCommand(input.command)
+    if (blocked) {
+      return {
+        ok: false,
+        error: `blocked_command: Command contains forbidden operation "${blocked}".`,
       }
     }
 
