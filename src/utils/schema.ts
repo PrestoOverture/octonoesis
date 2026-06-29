@@ -50,6 +50,12 @@ export function zodToJsonSchema(schema: any): any {
           items: zodToJsonSchema(innerSchema.element),
           description: innerSchema.description ?? undefined,
         }
+      } else if (innerSchema instanceof z.ZodEnum) {
+        properties[key] = {
+          type: 'string',
+          enum: innerSchema.options,
+          description: innerSchema.description ?? undefined,
+        }
       } else {
         // Fallback for any other custom schemas
         properties[key] = {

@@ -1,9 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { getAllTools } from '../tools/registry'
 import { dbg } from '../utils/debug'
 import { getAnthropicKey } from '../utils/env'
 import { withRetryGenerator } from '../utils/retry'
-import { zodToJsonSchema } from '../utils/schema'
 import type {
   CanonicalMessage,
   CanonicalTool,
@@ -34,7 +32,7 @@ export function toAnthropicMessages(
   messages: CanonicalMessage[],
   addCacheControl = false,
 ): Anthropic.MessageParam[] {
-  return messages.map((msg, idx) => {
+  const raw = messages.map((msg, idx) => {
     const isLast = idx === messages.length - 1
     const cacheControl = addCacheControl && isLast ? { type: 'ephemeral' as const } : undefined
 
@@ -89,6 +87,25 @@ export function toAnthropicMessages(
 
     return msg as Anthropic.MessageParam
   })
+
+  // Merge consecutive user messages (multiple tool_result blocks from one turn)
+  const merged: Anthropic.MessageParam[] = []
+  for (const msg of raw) {
+    const prev = merged[merged.length - 1]
+    if (prev && prev.role === 'user' && msg.role === 'user') {
+      const prevContent = Array.isArray(prev.content)
+        ? prev.content
+        : [{ type: 'text' as const, text: prev.content }]
+      const curContent = Array.isArray(msg.content)
+        ? msg.content
+        : [{ type: 'text' as const, text: msg.content }]
+      prev.content = [...prevContent, ...curContent] as Anthropic.MessageParam['content']
+    } else {
+      merged.push(msg)
+    }
+  }
+
+  return merged
 }
 
 /**
@@ -104,29 +121,28 @@ export async function* callAnthropicStream(
   messages: Anthropic.MessageParam[],
   signal?: AbortSignal,
   system?: SystemPromptPart[],
+  opts?: {
+    model?: string
+    maxTokens?: number
+    tools?: Anthropic.Messages.Tool[]
+  },
 ): AsyncGenerator<AnthropicStreamEvent, void, undefined> {
   const client = new Anthropic({ apiKey: getAnthropicKey() })
+  const model = opts?.model ?? DEFAULT_ANTHROPIC_MODEL
+  const maxTokens = opts?.maxTokens ?? 4096
 
   dbg('api', 'streaming request', {
-    model: DEFAULT_ANTHROPIC_MODEL,
+    model,
     messageCount: messages.length,
   })
 
-  // 1. Query registry and dynamically build tool schemas for Claude
-  const activeTools = getAllTools().map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    input_schema: zodToJsonSchema(tool.inputSchema),
-  }))
-
   const makeStream = async function* (): AsyncGenerator<AnthropicStreamEvent, void, undefined> {
-    // 2. Start messages stream
     const stream = client.messages.stream(
       {
-        model: DEFAULT_ANTHROPIC_MODEL,
-        max_tokens: 4096,
+        model,
+        max_tokens: maxTokens,
         messages,
-        tools: activeTools.length > 0 ? activeTools : undefined,
+        tools: opts?.tools && opts.tools.length > 0 ? opts.tools : undefined,
         system,
       },
       {
@@ -204,7 +220,17 @@ export class AnthropicProvider implements LLMProvider {
         ]
       : undefined
 
-    for await (const event of callAnthropicStream(apiMessages, opts.signal, systemParam)) {
+    const anthropicTools: Anthropic.Messages.Tool[] = tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema as Anthropic.Messages.Tool.InputSchema,
+    }))
+
+    for await (const event of callAnthropicStream(apiMessages, opts.signal, systemParam, {
+      model: opts.model,
+      maxTokens: opts.maxTokens,
+      tools: anthropicTools,
+    })) {
       if (event.type === 'text_delta') {
         yield { type: 'text_delta', text: event.text }
       } else if (event.type === 'message_done') {

@@ -133,8 +133,8 @@ export class OpenAIProvider implements LLMProvider {
       for await (const chunk of stream) {
         // Intercept token usage from the final chunks
         if (chunk.usage) {
-          inputTokens = chunk.usage.prompt_tokens || inputTokens
-          outputTokens = chunk.usage.completion_tokens || outputTokens
+          inputTokens = chunk.usage.prompt_tokens ?? inputTokens
+          outputTokens = chunk.usage.completion_tokens ?? outputTokens
         }
 
         const choice = chunk.choices[0]
