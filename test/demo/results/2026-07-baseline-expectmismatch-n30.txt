@@ -1,0 +1,48 @@
+ExpectMismatch run 1/30 ExpectMismatch_A1: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 2/30 ExpectMismatch_A2: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 3/30 ExpectMismatch_A3: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 4/30 ExpectMismatch_B1: control=fail:5 treatment=fail:5 rule=no
+ExpectMismatch run 5/30 ExpectMismatch_B2: control=pass:2 treatment=pass:1 rule=yes
+ExpectMismatch run 6/30 ExpectMismatch_B3: control=fail:5 treatment=fail:5 rule=no
+ExpectMismatch run 7/30 ExpectMismatch_C1: control=pass:2 treatment=fail:1 rule=yes
+ExpectMismatch run 8/30 ExpectMismatch_C2: control=pass:3 treatment=pass:3 rule=yes
+ExpectMismatch run 9/30 ExpectMismatch_D1: control=pass:3 treatment=fail:2 rule=yes
+ExpectMismatch run 10/30 ExpectMismatch_E1: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 11/30 ExpectMismatch_A1: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 12/30 ExpectMismatch_A2: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 13/30 ExpectMismatch_A3: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 14/30 ExpectMismatch_B1: control=fail:5 treatment=fail:5 rule=no
+ExpectMismatch run 15/30 ExpectMismatch_B2: control=pass:2 treatment=pass:2 rule=yes
+ExpectMismatch run 16/30 ExpectMismatch_B3: control=fail:5 treatment=fail:5 rule=no
+ExpectMismatch run 17/30 ExpectMismatch_C1: control=fail:1 treatment=fail:2 rule=no
+ExpectMismatch run 18/30 ExpectMismatch_C2: control=pass:3 treatment=pass:2 rule=yes
+ExpectMismatch run 19/30 ExpectMismatch_D1: control=pass:4 treatment=pass:2 rule=yes
+ExpectMismatch run 20/30 ExpectMismatch_E1: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 21/30 ExpectMismatch_A1: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 22/30 ExpectMismatch_A2: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 23/30 ExpectMismatch_A3: control=pass:1 treatment=pass:1 rule=yes
+ExpectMismatch run 24/30 ExpectMismatch_B1: control=fail:5 treatment=fail:5 rule=no
+ExpectMismatch run 25/30 ExpectMismatch_B2: control=pass:2 treatment=fail:1 rule=yes
+ExpectMismatch run 26/30 ExpectMismatch_B3: control=fail:5 treatment=fail:5 rule=no
+ExpectMismatch run 27/30 ExpectMismatch_C1: control=fail:5 treatment=pass:2 rule=no
+ExpectMismatch run 28/30 ExpectMismatch_C2: control=fail:5 treatment=fail:3 rule=no
+ExpectMismatch run 29/30 ExpectMismatch_D1: control=fail:5 treatment=fail:3 rule=no
+ExpectMismatch run 30/30 ExpectMismatch_E1: control=pass:1 treatment=pass:1 rule=yes
+
+=== ExpectMismatch - 30 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 2.6 ± 1.8     | 2.2 ± 1.6     | -10% ± 30%    |
+| Tokens (input)  | 1405 ± 942    | 1319 ± 774    | +9% ± 35%     |
+| Tokens (output) | 430 ± 443     | 416 ± 338     | +46% ± 103%   |
+| Success rate    | 20/30         | 18/30         | —             |
+
+=== Overall (1 types x 30 runs = 30 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 2.6 ± 1.8     | 2.2 ± 1.6     | -10% ± 30%    | 0.006    |
+| Tokens (input)  | 1405 ± 942    | 1319 ± 774    | +9% ± 35%     | 0.345    |
+| Tokens (output) | 430 ± 443     | 416 ± 338     | +46% ± 103%   | 0.798    |
+| Success rate    | 20/30         | 18/30         | —             | —        |
+
+Completed 30 pairs; API error runs: 0; distillation failures: 0.

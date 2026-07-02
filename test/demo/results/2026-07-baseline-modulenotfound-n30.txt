@@ -1,0 +1,48 @@
+ModuleNotFound run 1/30 ModuleNotFound_A1: control=fail:1 treatment=fail:1 rule=no
+ModuleNotFound run 2/30 ModuleNotFound_A2: control=fail:5 treatment=fail:5 rule=no
+ModuleNotFound run 3/30 ModuleNotFound_A3: control=fail:5 treatment=fail:5 rule=no
+ModuleNotFound run 4/30 ModuleNotFound_B1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 5/30 ModuleNotFound_B2: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 6/30 ModuleNotFound_B3: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 7/30 ModuleNotFound_C1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 8/30 ModuleNotFound_C2: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 9/30 ModuleNotFound_D1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 10/30 ModuleNotFound_E1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 11/30 ModuleNotFound_A1: control=fail:2 treatment=fail:1 rule=no
+ModuleNotFound run 12/30 ModuleNotFound_A2: control=fail:5 treatment=fail:5 rule=no
+ModuleNotFound run 13/30 ModuleNotFound_A3: control=fail:5 treatment=fail:4 rule=no
+ModuleNotFound run 14/30 ModuleNotFound_B1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 15/30 ModuleNotFound_B2: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 16/30 ModuleNotFound_B3: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 17/30 ModuleNotFound_C1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 18/30 ModuleNotFound_C2: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 19/30 ModuleNotFound_D1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 20/30 ModuleNotFound_E1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 21/30 ModuleNotFound_A1: control=fail:4 treatment=pass:1 rule=no
+ModuleNotFound run 22/30 ModuleNotFound_A2: control=fail:5 treatment=fail:5 rule=no
+ModuleNotFound run 23/30 ModuleNotFound_A3: control=fail:2 treatment=fail:2 rule=no
+ModuleNotFound run 24/30 ModuleNotFound_B1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 25/30 ModuleNotFound_B2: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 26/30 ModuleNotFound_B3: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 27/30 ModuleNotFound_C1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 28/30 ModuleNotFound_C2: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 29/30 ModuleNotFound_D1: control=pass:1 treatment=pass:1 rule=yes
+ModuleNotFound run 30/30 ModuleNotFound_E1: control=pass:1 treatment=pass:1 rule=yes
+
+=== ModuleNotFound - 30 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 1.8 ± 1.6     | 1.7 ± 1.4     | -5% ± 16%     |
+| Tokens (input)  | 632 ± 533     | 675 ± 444     | +25% ± 31%    |
+| Tokens (output) | 100 ± 86      | 91 ± 82       | -5% ± 17%     |
+| Success rate    | 21/30         | 22/30         | —             |
+
+=== Overall (1 types x 30 runs = 30 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 1.8 ± 1.6     | 1.7 ± 1.4     | -5% ± 16%     | 0.123    |
+| Tokens (input)  | 632 ± 533     | 675 ± 444     | +25% ± 31%    | 0.349    |
+| Tokens (output) | 100 ± 86      | 91 ± 82       | -5% ± 17%     | 0.163    |
+| Success rate    | 21/30         | 22/30         | —             | —        |
+
+Completed 30 pairs; API error runs: 0; distillation failures: 0.
