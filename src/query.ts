@@ -1,12 +1,10 @@
 import crypto from 'node:crypto'
 import { runSessionEndCalibration } from './memory/calibration/hook'
 import { runSessionEndEpisodes } from './memory/episodes/hook'
-import type { Fingerprint } from './memory/fingerprint/extract'
 import { appendJournal, flushJournal, setSessionId } from './memory/journal'
 import { updateLifecycle } from './memory/rules/lifecycle'
 import { findMatchingRules, formatMatchAdvice } from './memory/rules/match'
 import { loadAllRules, saveRule } from './memory/rules/store'
-import type { RuleFile } from './memory/rules/types'
 import { buildSystemMessages } from './prompts'
 import { getProvider, getResolvedModel } from './providers'
 import type {
@@ -15,14 +13,15 @@ import type {
   StreamEvent as ProviderStreamEvent,
   Usage,
 } from './providers'
+import type { QueryLoopContext } from './query/types'
 import { bashTool } from './tools/Bash'
 import { editTool } from './tools/Edit'
 import { globTool } from './tools/Glob'
 import { grepTool } from './tools/Grep'
 import { readTool } from './tools/Read'
 import { todoWriteTool } from './tools/TodoWrite'
+import type { ToolContext } from './tools/Tool'
 import { writeTool } from './tools/Write'
-import type { VerifyResult } from './memory/verifier'
 import { runTool } from './tools/execute'
 import { registerTool } from './tools/registry'
 import { getAllTools } from './tools/registry'
@@ -40,29 +39,13 @@ registerTool(grepTool)
 registerTool(todoWriteTool)
 
 export type { CanonicalMessage, ContentBlock, Usage }
+export type { ToolContext } from './tools/Tool'
+export type { VerifyResultWithRun } from './query/types'
 export { getRepoRoot }
 
 export type StreamEvent =
   | ProviderStreamEvent
   | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error' }
-
-export interface VerifyResultWithRun extends VerifyResult {
-  isVerificationRun: boolean
-}
-
-export interface ToolContext {
-  repoRoot: string
-  messages?: CanonicalMessage[]
-  abortSignal?: AbortSignal
-  sessionId?: string
-  firstTurnDynamicSystem?: string
-  verificationCommand?: string
-  injectedRules?: { rule: RuleFile; fingerprint: Fingerprint }[]
-  recordedRuleOutcomes?: Set<string>
-  _lastVerifyResult?: VerifyResultWithRun
-  _lastVerifyResultForQuery?: VerifyResultWithRun
-  _lastFingerprints?: Fingerprint[]
-}
 
 /**
  * Normalized multi-turn query engine generator loop matching the PRD contract.
@@ -74,7 +57,7 @@ export interface ToolContext {
  */
 export async function* query(
   input: string,
-  ctx: ToolContext,
+  ctx: QueryLoopContext,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent, QueryResult, undefined> {
   if (!ctx.sessionId) {
@@ -375,7 +358,7 @@ export async function* query(
             toolResultContent += octoMemoryBlock
 
             for (const match of matches) {
-              ctx.injectedRules!.push({
+              ctx.injectedRules?.push({
                 rule: match.rule,
                 fingerprint: match.fingerprint,
               })
