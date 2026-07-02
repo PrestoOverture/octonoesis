@@ -465,9 +465,14 @@ function assertInjectedWith(
   expect(result.injectedRules[0]?.rule.id).toBe(expectedRule.id)
 }
 
+// RepoQuirk fixtures don't follow the legacy A1/A2/B1... ID-suffix convention (each fixture has
+// a bespoke id, e.g. 'RepoQuirk_ImportMap'), so this file's per-type suffix lookups only apply
+// to the legacy 15 scenario types.
+const LEGACY_SCENARIO_TYPES = SCENARIO_TYPES.filter((scenarioType) => scenarioType !== 'RepoQuirk')
+
 function pickIsolationFixture(index: number, source: FixtureDef): FixtureDef {
-  for (let offset = 7; offset < SCENARIO_TYPES.length + 7; offset++) {
-    const scenarioType = SCENARIO_TYPES[(index + offset) % SCENARIO_TYPES.length]
+  for (let offset = 7; offset < LEGACY_SCENARIO_TYPES.length + 7; offset++) {
+    const scenarioType = LEGACY_SCENARIO_TYPES[(index + offset) % LEGACY_SCENARIO_TYPES.length]
     if (!scenarioType) continue
     const fixture = fixtureById(scenarioType, 'A1')
     if (fixture.errorClass !== source.errorClass) {
@@ -506,8 +511,8 @@ afterAll(async () => {
 
 describe('Phase 19.2 — Cross-Pattern Generalization', () => {
   describe('Part A — Within-scenario generalization', () => {
-    for (let i = 0; i < SCENARIO_TYPES.length; i++) {
-      const scenarioType = SCENARIO_TYPES[i]
+    for (let i = 0; i < LEGACY_SCENARIO_TYPES.length; i++) {
+      const scenarioType = LEGACY_SCENARIO_TYPES[i]
       if (!scenarioType) continue
 
       it(`${scenarioType}: creates rule, matches medium/coarse, isolates cross-bucket`, async () => {

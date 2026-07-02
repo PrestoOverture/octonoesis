@@ -23,6 +23,14 @@ export interface FixtureDef {
     new: string
   }
   passingOutput: string
+  /** Repo-relative path the fix actually targets, when different from `file`. */
+  fixFile?: string
+  /** Additional repo-relative files to materialize alongside `file`. A `package.json` key
+   *  replaces the harness's default-generated package.json entirely. */
+  extraFiles?: Record<string, string>
+  /** Overrides the harness's generated test file content (buildTestFile()'s generators do not
+   *  cover RepoQuirk fixtures, which always supply this explicitly). */
+  testContent?: string
 }
 
 export const SCENARIO_TYPES = [
@@ -41,6 +49,7 @@ export const SCENARIO_TYPES = [
   'MissingEnvVar',
   'ConfigInvalid',
   'DeprecatedAPI',
+  'RepoQuirk',
 ] as const
 
 export const ERROR_CLASSES = [
@@ -87,6 +96,9 @@ export const FIXTURE_SCHEMA = z
       new: z.string().min(1),
     }),
     passingOutput: z.string().min(1),
+    fixFile: z.string().optional(),
+    extraFiles: z.record(z.string(), z.string()).optional(),
+    testContent: z.string().optional(),
   })
   .superRefine((fixture, ctx) => {
     if (fixture.extractorResponse.error_class !== fixture.errorClass) {
@@ -105,7 +117,22 @@ export const FIXTURE_SCHEMA = z
       })
     }
 
-    if (!fixture.sourceContent.includes(fixture.fix.old)) {
+    if (fixture.fixFile && fixture.fixFile !== fixture.file) {
+      const fixFileContent = fixture.extraFiles?.[fixture.fixFile]
+      if (fixFileContent === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['extraFiles', fixture.fixFile],
+          message: 'extraFiles must contain the content of fixFile when fixFile differs from file',
+        })
+      } else if (!fixFileContent.includes(fixture.fix.old)) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['fix', 'old'],
+          message: 'fix.old must be present in extraFiles[fixFile]',
+        })
+      }
+    } else if (!fixture.sourceContent.includes(fixture.fix.old)) {
       ctx.addIssue({
         code: 'custom',
         path: ['fix', 'old'],
@@ -3572,6 +3599,123 @@ export const ALL_FIXTURES: FixtureDef[] = [
     },
     passingOutput:
       'bun test v1.2.0\n\nsrc/rate-config.test.ts:\n(pass) ConfigInvalid > ConfigInvalid_E1 passes after fixture fix [0.20ms]\n\n1 pass\n0 fail\n',
+  },
+  // --- RepoQuirk fixtures (appended, not interleaved) ---
+  // Each failure is caused by an arbitrary repo-local convention (import map, test preload,
+  // barrel export, config schema version) that no model can know a priori — it must be
+  // discovered by reading files via the harness's read-action affordance. See
+  // docs/distiller_fix_plan.md Task 4 and test/fixtures/learning-demo/fixtures.test.ts for why
+  // these are exempt from the legacy per-type/per-class cardinality checks.
+  {
+    id: 'RepoQuirk_ImportMap',
+    scenarioType: 'RepoQuirk',
+    errorClass: 'ImportError',
+    file: 'src/label.ts',
+    expression: "import '#lib/format.ts'",
+    sourceContent:
+      "import { formatLabel } from '#lib/format.ts'\n\nexport function handleLabel(raw: string): string {\n  return formatLabel(raw)\n}\n",
+    stderrOutput:
+      'src/label.test.ts:\nImportError: Could not resolve: "#lib/format.ts"\n    at /tmp/octonoesis-demo/src/label.ts:1:29\n    at /tmp/octonoesis-demo/src/label.test.ts:1:1\n(fail) RepoQuirk > RepoQuirk_ImportMap reproduces fixture failure [0.12ms]\n',
+    extractorResponse: {
+      tool: 'bun-test',
+      error_class: 'ImportError',
+      file: 'src/label.ts',
+      expression: "import '#lib/format.ts'",
+    },
+    fix: {
+      old: "import { formatLabel } from '#lib/format.ts'",
+      new: "import { formatLabel } from '#lib/strings.ts'",
+    },
+    passingOutput:
+      'bun test v1.2.0\n\nsrc/label.test.ts:\n(pass) RepoQuirk > RepoQuirk_ImportMap passes after fixture fix [0.14ms]\n\n1 pass\n0 fail\n',
+    extraFiles: {
+      'package.json': JSON.stringify(
+        {
+          name: 'octonoesis-live-ab',
+          type: 'module',
+          private: true,
+          imports: { '#lib/*': './src/lib/*' },
+        },
+        null,
+        2,
+      ),
+      'src/lib/strings.ts':
+        'export function formatLabel(raw: string): string {\n  return raw.trim().toUpperCase()\n}\n',
+    },
+    testContent:
+      "import { describe, expect, it } from 'bun:test'\nimport * as mod from './label'\n\ndescribe('RepoQuirk RepoQuirk_ImportMap', () => {\n  it('formats a label', () => {\n    expect(mod.handleLabel(' hi ')).toBe('HI')\n  })\n})\n",
+  },
+  // RepoQuirk_Preload (bunfig.toml preload wiring) was tried and dropped after live testing:
+  // the underlying Bun mechanism worked correctly (verified manually, broken/fixed states both
+  // behaved as expected), but control only solved it ~3/8 times across two 16-run live batches
+  // with claude-haiku-4-5 (vs. ~100% for the three fixtures kept below) — the model would
+  // repeatedly re-read bunfig.toml instead of committing to the fix, even after a prompt
+  // rewrite that fixed every other RepoQuirk fixture's reliability. Per the plan's "minimum 3,
+  // drop what's flaky" allowance, this fixture was removed rather than forced through. See the
+  // Task 4 implementation report for details.
+  {
+    id: 'RepoQuirk_BarrelExport',
+    scenarioType: 'RepoQuirk',
+    errorClass: 'ImportError',
+    file: 'src/slug.ts',
+    expression: "import { slugify } from './lib'",
+    sourceContent:
+      "import { slugify } from './lib'\n\nexport function handleSlug(raw: string): string {\n  return slugify(raw)\n}\n",
+    stderrOutput:
+      'src/slug.test.ts:\nImportError: Export named "slugify" not found in module "./lib"\n    at /tmp/octonoesis-demo/src/slug.ts:1:1\n    at /tmp/octonoesis-demo/src/slug.test.ts:1:1\n(fail) RepoQuirk > RepoQuirk_BarrelExport reproduces fixture failure [0.11ms]\n',
+    extractorResponse: {
+      tool: 'bun-test',
+      error_class: 'ImportError',
+      file: 'src/slug.ts',
+      expression: "import { slugify } from './lib'",
+    },
+    fix: {
+      old: "export { titleCase } from './helper'",
+      new: "export { titleCase, slugify } from './helper'",
+    },
+    passingOutput:
+      'bun test v1.2.0\n\nsrc/slug.test.ts:\n(pass) RepoQuirk > RepoQuirk_BarrelExport passes after fixture fix [0.16ms]\n\n1 pass\n0 fail\n',
+    fixFile: 'src/lib/index.ts',
+    extraFiles: {
+      'src/lib/helper.ts':
+        "export function slugify(raw: string): string {\n  return raw.trim().toLowerCase().replace(/\\s+/g, '-')\n}\n\nexport function titleCase(raw: string): string {\n  return raw.trim().replace(/\\b\\w/g, (c) => c.toUpperCase())\n}\n",
+      'src/lib/index.ts': "export { titleCase } from './helper'\n",
+    },
+    testContent:
+      "import { describe, expect, it } from 'bun:test'\nimport * as mod from './slug'\n\ndescribe('RepoQuirk RepoQuirk_BarrelExport', () => {\n  it('slugifies a title', () => {\n    expect(mod.handleSlug('Hello World')).toBe('hello-world')\n  })\n})\n",
+  },
+  {
+    id: 'RepoQuirk_SettingsVersion',
+    scenarioType: 'RepoQuirk',
+    errorClass: 'ConfigError',
+    file: 'src/settings.ts',
+    expression: 'validating schema_version',
+    sourceContent:
+      "import { readFileSync } from 'node:fs'\nimport { join } from 'node:path'\n\nexport function handleSettings(): string {\n  const raw = readFileSync(join(import.meta.dir, '..', 'config', 'settings.json'), 'utf8')\n  const parsed = JSON.parse(raw) as { schema_version: number }\n  if (parsed.schema_version !== 2) {\n    throw new Error(`ConfigError: expected schema_version 2, got ${parsed.schema_version}`)\n  }\n  return 'ok'\n}\n",
+    stderrOutput:
+      'src/settings.test.ts:\n7 |   if (parsed.schema_version !== 2) {\n8 |     throw new Error(`ConfigError: expected schema_version 2, got ${parsed.schema_version}`)\n                    ^\nConfigError: expected schema_version 2, got 1\n    at handleSettings (/tmp/octonoesis-demo/src/settings.ts:8:11)\n    at <anonymous> (/tmp/octonoesis-demo/src/settings.test.ts:4:12)\n(fail) RepoQuirk > RepoQuirk_SettingsVersion reproduces fixture failure [0.17ms]\n',
+    extractorResponse: {
+      tool: 'bun-test',
+      error_class: 'ConfigError',
+      file: 'src/settings.ts',
+      expression: 'validating schema_version',
+    },
+    fix: {
+      old: '"schema_version": 1',
+      new: '"schema_version": 2',
+    },
+    passingOutput:
+      'bun test v1.2.0\n\nsrc/settings.test.ts:\n(pass) RepoQuirk > RepoQuirk_SettingsVersion passes after fixture fix [0.18ms]\n\n1 pass\n0 fail\n',
+    fixFile: 'config/settings.json',
+    extraFiles: {
+      'config/settings.json': JSON.stringify(
+        { schema_version: 1, feature_flags: { betaSearch: true } },
+        null,
+        2,
+      ),
+    },
+    testContent:
+      "import { describe, it } from 'bun:test'\nimport * as mod from './settings'\n\ndescribe('RepoQuirk RepoQuirk_SettingsVersion', () => {\n  it('validates settings schema version', () => {\n    mod.handleSettings()\n  })\n})\n",
   },
 ]
 

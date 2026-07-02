@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { Episode } from '../../src/memory/episodes/types.ts'
@@ -8,6 +8,7 @@ import { formatMatchAdvice } from '../../src/memory/rules/match.ts'
 import type { RuleFile } from '../../src/memory/rules/types.ts'
 import { getCheapestModel, getProvider } from '../../src/providers/index.ts'
 import type { CanonicalMessage, Usage } from '../../src/providers/types.ts'
+import { assertInsideRepo } from '../../src/utils/path.ts'
 import {
   ALL_FIXTURES,
   type FixtureDef,
@@ -42,11 +43,19 @@ type BunSpawn = (options: {
   stderr: ReadableStream<Uint8Array> | null
 }
 
-type FixEdit = {
+export type FixEdit = {
   file: string
   old: string
   new: string
 }
+
+type ReadResult = {
+  file: string
+  content?: string
+  error?: string
+}
+
+export type FixResponse = { kind: 'read'; file: string } | { kind: 'edit'; edit: FixEdit }
 
 type SessionResult = {
   turns: number
@@ -86,13 +95,40 @@ const DEFAULT_TYPES: ScenarioType[] = [
   'ExpectMismatch',
   'UndefinedRef',
 ]
+const SUPPORTED_TYPES: ScenarioType[] = [...DEFAULT_TYPES, 'RepoQuirk']
 const EXTRACTOR_VERSION = '0.3.0'
 const MAX_TURNS = 5
 const realSpawn = (globalThis as typeof globalThis & { Bun: { spawn: BunSpawn } }).Bun.spawn
-const FIX_SYSTEM_PROMPT = `You are a coding agent. Your job is to fix a failing test by editing a source file.
-You MUST respond with ONLY a JSON object, no other text:
+const FIX_SYSTEM_PROMPT = `You are a coding agent fixing a failing test, one turn at a time, over a plain text
+back-and-forth (there is no tool-calling API here — just you writing raw JSON text and a human
+pasting the next prompt back to you). You are given a repo file tree and may read files to
+investigate before fixing.
+
+STRICT OUTPUT FORMAT — read carefully, this is not a tool-use API:
+- Your ENTIRE response must be raw text containing EXACTLY ONE JSON object and nothing else.
+- Do NOT wrap it in <function_calls> tags, markdown code fences, arrays, or any other syntax.
+- Do NOT emit more than one JSON object. Do NOT emit multiple candidate actions "just in case."
+- Do NOT narrate, explain, or think out loud before or after the JSON. Output only the object.
+- A "read" response gets you the file's content on your NEXT turn, in a fresh prompt — you will
+  NOT see the result within this same response, so never chain multiple reads in one reply.
+
+There are exactly two valid JSON shapes. Pick ONE per response:
+
+1. Read a file to investigate (does not fix anything; you get the content back next turn):
+{"action": "read", "file": "<repo-relative path>"}
+
+2. Apply a fix:
 {"file": "<repo-relative path>", "old": "<exact substring to replace>", "new": "<replacement>"}
-The "old" value must be an exact substring of the current source file contents.`
+The "old" value must be an exact substring of the current contents of the target file.
+The target file does not have to be the file shown to you initially — it can be any file in the
+repo file tree (e.g. a config file or barrel export) if that is where the actual fix belongs.
+Do not include an "action" key when applying a fix.
+
+If you are not yet sure what the correct fix is, respond with a single read action instead of
+guessing — you have several turns available. Investigate first, then fix once you know the
+answer with confidence.
+
+Respond with ONLY that one JSON object now. No other text.`
 
 const EXPECTED_BY_FIXTURE: Record<string, string> = {
   ExpectMismatch_A1: '6',
@@ -173,8 +209,8 @@ function parseArgs(argv: string[]): CliOptions {
 
 function parseScenarioType(value: string): ScenarioType {
   const trimmed = value.trim()
-  if (!DEFAULT_TYPES.includes(trimmed as ScenarioType)) {
-    throw new Error(`Unsupported type "${trimmed}". Supported: ${DEFAULT_TYPES.join(', ')}`)
+  if (!SUPPORTED_TYPES.includes(trimmed as ScenarioType)) {
+    throw new Error(`Unsupported type "${trimmed}". Supported: ${SUPPORTED_TYPES.join(', ')}`)
   }
   return trimmed as ScenarioType
 }
@@ -187,16 +223,26 @@ function fixturesForType(type: ScenarioType): FixtureDef[] {
   return fixtures
 }
 
-async function setupEnv(
+export async function setupEnv(
   fixture: FixtureDef,
   label: string,
 ): Promise<{ repoRoot: string; testFile: string }> {
-  const repoRoot = await mkdtemp(path.join(os.tmpdir(), `octonoesis-live-ab-${label}-`))
-  await writeFile(
-    path.join(repoRoot, 'package.json'),
-    JSON.stringify({ name: 'octonoesis-live-ab', type: 'module', private: true }, null, 2),
-    'utf8',
+  // realpath() immediately: os.tmpdir() resolves through a symlink on macOS (/tmp ->
+  // /private/tmp), and assertInsideRepo() (used for every read-action path guard) does its own
+  // realpath check on the requested path. If repoRoot itself were left un-resolved, every
+  // legitimately-inside-the-repo read request would be rejected as "escaping the repo root"
+  // because the two realpath'd prefixes wouldn't match.
+  const repoRoot = await realpath(
+    await mkdtemp(path.join(os.tmpdir(), `octonoesis-live-ab-${label}-`)),
   )
+  const hasPackageJsonOverride = Object.hasOwn(fixture.extraFiles ?? {}, 'package.json')
+  if (!hasPackageJsonOverride) {
+    await writeFile(
+      path.join(repoRoot, 'package.json'),
+      JSON.stringify({ name: 'octonoesis-live-ab', type: 'module', private: true }, null, 2),
+      'utf8',
+    )
+  }
   await writeFile(
     path.join(repoRoot, 'tsconfig.json'),
     JSON.stringify(
@@ -219,10 +265,16 @@ async function setupEnv(
   await writeFile(sourcePath, fixture.sourceContent, 'utf8')
   await writeModuleForFixedImport(repoRoot, fixture)
 
+  for (const [relativePath, content] of Object.entries(fixture.extraFiles ?? {})) {
+    const targetPath = path.join(repoRoot, relativePath)
+    await mkdir(path.dirname(targetPath), { recursive: true })
+    await writeFile(targetPath, content, 'utf8')
+  }
+
   const testFile = fixture.file.replace(/\.ts$/, '.test.ts')
   const testPath = path.join(repoRoot, testFile)
   await mkdir(path.dirname(testPath), { recursive: true })
-  await writeFile(testPath, buildTestFile(fixture), 'utf8')
+  await writeFile(testPath, fixture.testContent ?? buildTestFile(fixture), 'utf8')
 
   return { repoRoot, testFile }
 }
@@ -242,6 +294,27 @@ async function writeModuleForFixedImport(repoRoot: string, fixture: FixtureDef):
     `export function ${exportedName}(raw = 'ok'): string {\n  return raw\n}\n`,
     'utf8',
   )
+}
+
+/**
+ * Lists repo-relative file paths under repoRoot (files only, excludes .git), one per line,
+ * for inclusion in the solver prompt as a discovery affordance.
+ */
+async function buildFileTree(repoRoot: string): Promise<string> {
+  const entries = await readdir(repoRoot, { recursive: true, withFileTypes: true })
+  const files = entries
+    .filter((entry) => entry.isFile())
+    .filter((entry) => {
+      const parentPath = (entry as { parentPath?: string; path?: string }).parentPath ?? repoRoot
+      const relativeDir = path.relative(repoRoot, parentPath)
+      return relativeDir !== '.git' && !relativeDir.startsWith(`.git${path.sep}`)
+    })
+    .map((entry) => {
+      const parentPath = (entry as { parentPath?: string; path?: string }).parentPath ?? repoRoot
+      return path.relative(repoRoot, path.join(parentPath, entry.name.toString()))
+    })
+    .sort()
+  return files.join('\n')
 }
 
 function buildTestFile(fixture: FixtureDef): string {
@@ -375,6 +448,7 @@ async function runSession(
   solverModel: string,
 ): Promise<SessionResult> {
   const sourcePath = path.join(repoRoot, fixture.file)
+  const fileTree = await buildFileTree(repoRoot)
   let testRun = await runBunTest(repoRoot, testFile)
   let stderr = testRun.stderr || testRun.stdout
   const initialStderr = stderr
@@ -383,6 +457,7 @@ async function runSession(
   let outputTokens = 0
   let apiError = false
   let lastEdit: FixEdit | undefined
+  const reads: ReadResult[] = []
 
   while (turns < MAX_TURNS) {
     if (testRun.exitCode === 0) {
@@ -400,7 +475,7 @@ async function runSession(
     turns++
     const sourceContent = await readFile(sourcePath, 'utf8')
     const response = await callFixLLM(
-      buildFixPrompt(stderr, sourceContent, fixture, ruleAdvice),
+      buildFixPrompt(stderr, sourceContent, fixture, ruleAdvice, fileTree, reads),
       solverModel,
     )
     if (!response.ok) {
@@ -417,13 +492,35 @@ async function runSession(
 
     inputTokens += response.usage.input_tokens
     outputTokens += response.usage.output_tokens
-    const fix = parseFixResponse(response.text, sourceContent, fixture)
-    if (!fix) {
+    const parsed = parseFixResponse(response.text, sourceContent, fixture)
+    if (!parsed) {
       return { turns, inputTokens, outputTokens, success: false, apiError, initialStderr }
     }
 
+    if (parsed.kind === 'read') {
+      const guard = await assertInsideRepo(parsed.file, repoRoot)
+      if (!guard.ok) {
+        reads.push({ file: parsed.file, error: guard.error })
+      } else {
+        try {
+          const content = await readFile(guard.realPath, 'utf8')
+          reads.push({ file: parsed.file, content })
+        } catch (error) {
+          reads.push({
+            file: parsed.file,
+            error: `read_error: ${error instanceof Error ? error.message : String(error)}`,
+          })
+        }
+      }
+      continue
+    }
+
+    const fix = parsed.edit
+    const targetPath = path.join(repoRoot, fix.file)
+    const targetContent =
+      fix.file === fixture.file ? sourceContent : await readFile(targetPath, 'utf8')
     lastEdit = fix
-    await writeFile(sourcePath, sourceContent.replace(fix.old, fix.new), 'utf8')
+    await writeFile(targetPath, targetContent.replace(fix.old, fix.new), 'utf8')
     testRun = await runBunTest(repoRoot, testFile)
     stderr = testRun.stderr || testRun.stdout
   }
@@ -436,6 +533,8 @@ function buildFixPrompt(
   sourceContent: string,
   fixture: FixtureDef,
   ruleAdvice: string | null,
+  fileTree: string,
+  reads: ReadResult[],
 ): string {
   const ruleBlock = ruleAdvice
     ? `
@@ -446,7 +545,28 @@ ${ruleAdvice}
 `
     : ''
 
-  return `Test failure output:
+  const readsBlock =
+    reads.length > 0
+      ? `
+Files you have read so far:
+---
+${reads
+  .map((read) =>
+    read.error !== undefined
+      ? `${read.file}: ERROR: ${read.error}`
+      : `${read.file}:\n${read.content}`,
+  )
+  .join('\n---\n')}
+---
+`
+      : ''
+
+  return `Repo file tree:
+---
+${fileTree}
+---
+
+Test failure output:
 ---
 ${stderr}
 ---
@@ -455,8 +575,8 @@ Source file (${fixture.file}):
 ---
 ${sourceContent}
 ---
-${ruleBlock}
-Fix the bug. Respond with ONLY the JSON edit object.`
+${readsBlock}${ruleBlock}
+Fix the bug, or read another file first if you need to investigate. Respond with ONLY the JSON object.`
 }
 
 async function callFixLLM(
@@ -501,11 +621,11 @@ async function retryOnce<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-function parseFixResponse(
+export function parseFixResponse(
   text: string,
   sourceContent: string,
   fixture: FixtureDef,
-): FixEdit | null {
+): FixResponse | null {
   let cleaned = text.trim()
   cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '')
   const start = cleaned.indexOf('{')
@@ -514,14 +634,24 @@ function parseFixResponse(
   cleaned = cleaned.slice(start, end + 1)
 
   try {
-    const parsed = JSON.parse(cleaned) as Partial<FixEdit>
+    const parsed = JSON.parse(cleaned) as Partial<FixEdit> & { action?: unknown }
+
+    if (parsed.action === 'read') {
+      const file = typeof parsed.file === 'string' ? parsed.file.replace(/^\.\//, '') : ''
+      if (!file) return null
+      return { kind: 'read', file }
+    }
+
+    const expectedFile = fixture.fixFile ?? fixture.file
     const file = typeof parsed.file === 'string' ? parsed.file.replace(/^\.\//, '') : ''
     const oldValue = typeof parsed.old === 'string' ? parsed.old : ''
     const newValue = typeof parsed.new === 'string' ? parsed.new : ''
-    if (file !== fixture.file) return null
-    if (!oldValue || !sourceContent.includes(oldValue)) return null
+    if (file !== expectedFile) return null
+    const targetContent = file === fixture.file ? sourceContent : null
+    if (!oldValue) return null
+    if (targetContent !== null && !targetContent.includes(oldValue)) return null
     if (oldValue === newValue) return null
-    return { file, old: oldValue, new: newValue }
+    return { kind: 'edit', edit: { file, old: oldValue, new: newValue } }
   } catch {
     return null
   }
@@ -621,12 +751,16 @@ function buildEpisode(
     fix_candidates: [
       {
         tool: 'Edit',
-        path: fixture.file,
+        path: fixture.fixFile ?? fixture.file,
         summary: `Fix ${fixture.errorClass}`,
         role: 'direct',
       },
     ],
-    attribution: { status: 'single_direct', primary: fixture.file, confidence: 1.0 },
+    attribution: {
+      status: 'single_direct',
+      primary: fixture.fixFile ?? fixture.file,
+      confidence: 1.0,
+    },
     verification: { cmd: `bun test ${testFile}`, exit_code: control.success ? 0 : 1 },
     outcome: control.success ? 'resolved' : 'abandoned',
     journal_line_range: { start: 1, end: 1 },
@@ -780,7 +914,9 @@ async function main(): Promise<void> {
   const resolvedProvider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
   if (resolvedProvider === 'openai') {
     if (!process.env.OPENAI_API_KEY) {
-      console.error('OPENAI_API_KEY is required to run live A/B demo sessions with LLM_PROVIDER=openai.')
+      console.error(
+        'OPENAI_API_KEY is required to run live A/B demo sessions with LLM_PROVIDER=openai.',
+      )
       process.exitCode = 1
       return
     }
@@ -830,7 +966,13 @@ async function main(): Promise<void> {
   )
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.stack || error.message : String(error))
-  process.exitCode = 1
-})
+// Only run main() when this file is executed directly (e.g. `bun run test/demo/live-ab.ts`),
+// not when its functions are imported by unit tests — otherwise every import would trigger a
+// real, costly live A/B benchmark session as a side effect (test/unit/demo/live-ab.test.ts
+// imports setupEnv/parseFixResponse for direct testing).
+if (import.meta.main) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.stack || error.message : String(error))
+    process.exitCode = 1
+  })
+}
