@@ -21,6 +21,8 @@ type CliOptions = {
   types: ScenarioType[]
   verbose: boolean
   help: boolean
+  model: string | null
+  distillModel: string | null
 }
 
 type TestRun = {
@@ -109,10 +111,15 @@ function printHelp(): void {
   console.log(`Usage: bun run test/demo/live-ab.ts [options]
 
 Options:
-  --runs N    Number of runs per bug type (default: 10, minimum: 2)
-  --types T   Comma-separated bug types (default: all 5)
-  --verbose   Print per-run details
-  --help      Show this help`)
+  --runs N            Number of runs per bug type (default: 10, minimum: 2)
+  --types T           Comma-separated bug types (default: all 5)
+  --verbose           Print per-run details
+  --model ID          Solver model used to attempt fixes (default: cheapest model for
+                       the resolved provider, i.e. getCheapestModel())
+  --distill-model ID  Distiller model used to write rules from resolved episodes
+                       (default: cheapest model for the resolved provider, i.e.
+                       getCheapestModel())
+  --help              Show this help`)
 }
 
 function parseArgs(argv: string[]): CliOptions {
@@ -121,6 +128,8 @@ function parseArgs(argv: string[]): CliOptions {
     types: DEFAULT_TYPES,
     verbose: false,
     help: false,
+    model: null,
+    distillModel: null,
   }
 
   for (let i = 0; i < argv.length; i++) {
@@ -142,6 +151,18 @@ function parseArgs(argv: string[]): CliOptions {
         throw new Error('--types requires a comma-separated value')
       }
       options.types = value.split(',').map(parseScenarioType)
+    } else if (arg === '--model') {
+      const value = argv[++i]
+      if (!value) {
+        throw new Error('--model requires a value')
+      }
+      options.model = value
+    } else if (arg === '--distill-model') {
+      const value = argv[++i]
+      if (!value) {
+        throw new Error('--distill-model requires a value')
+      }
+      options.distillModel = value
     } else {
       throw new Error(`Unknown option: ${arg}`)
     }
@@ -351,6 +372,7 @@ async function runSession(
   testFile: string,
   fixture: FixtureDef,
   ruleAdvice: string | null,
+  solverModel: string,
 ): Promise<SessionResult> {
   const sourcePath = path.join(repoRoot, fixture.file)
   let testRun = await runBunTest(repoRoot, testFile)
@@ -377,7 +399,10 @@ async function runSession(
 
     turns++
     const sourceContent = await readFile(sourcePath, 'utf8')
-    const response = await callFixLLM(buildFixPrompt(stderr, sourceContent, fixture, ruleAdvice))
+    const response = await callFixLLM(
+      buildFixPrompt(stderr, sourceContent, fixture, ruleAdvice),
+      solverModel,
+    )
     if (!response.ok) {
       apiError = true
       return {
@@ -436,13 +461,14 @@ Fix the bug. Respond with ONLY the JSON edit object.`
 
 async function callFixLLM(
   prompt: string,
+  solverModel: string,
 ): Promise<{ ok: true; text: string; usage: Usage } | { ok: false }> {
   try {
     return await retryOnce(async () => {
       const provider = getProvider()
       const messages: CanonicalMessage[] = [{ role: 'user', content: prompt }]
       const stream = provider.createMessageStream(messages, [], {
-        model: getCheapestModel(),
+        model: solverModel,
         maxTokens: 1200,
         signal: new AbortController().signal,
         system: FIX_SYSTEM_PROMPT,
@@ -501,7 +527,13 @@ function parseFixResponse(
   }
 }
 
-async function runPair(type: ScenarioType, run: number, fixture: FixtureDef): Promise<PairResult> {
+async function runPair(
+  type: ScenarioType,
+  run: number,
+  fixture: FixtureDef,
+  solverModel: string,
+  distillModel: string,
+): Promise<PairResult> {
   let controlEnv: { repoRoot: string; testFile: string } | null = null
   let treatmentEnv: { repoRoot: string; testFile: string } | null = null
   let rule: RuleFile | null = null
@@ -509,7 +541,13 @@ async function runPair(type: ScenarioType, run: number, fixture: FixtureDef): Pr
 
   try {
     controlEnv = await setupEnv(fixture, `${type}-${run}-control`)
-    const control = await runSession(controlEnv.repoRoot, controlEnv.testFile, fixture, null)
+    const control = await runSession(
+      controlEnv.repoRoot,
+      controlEnv.testFile,
+      fixture,
+      null,
+      solverModel,
+    )
 
     if (control.success) {
       try {
@@ -522,7 +560,7 @@ async function runPair(type: ScenarioType, run: number, fixture: FixtureDef): Pr
         rule = await distillEpisode(
           buildEpisode(type, run, fixture, control, controlEnv.testFile),
           {
-            model: getCheapestModel(),
+            model: distillModel,
             extractorVersion: EXTRACTOR_VERSION,
             ...(evidence ? { evidence } : {}),
           },
@@ -543,6 +581,7 @@ async function runPair(type: ScenarioType, run: number, fixture: FixtureDef): Pr
       treatmentEnv.testFile,
       fixture,
       advice,
+      solverModel,
     )
 
     return {
@@ -738,13 +777,27 @@ async function main(): Promise<void> {
     return
   }
 
-  if (!process.env.ANTHROPIC_API_KEY) {
-    console.error('ANTHROPIC_API_KEY is required to run live A/B demo sessions.')
-    process.exitCode = 1
-    return
+  const resolvedProvider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
+  if (resolvedProvider === 'openai') {
+    if (!process.env.OPENAI_API_KEY) {
+      console.error('OPENAI_API_KEY is required to run live A/B demo sessions with LLM_PROVIDER=openai.')
+      process.exitCode = 1
+      return
+    }
+  } else {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error('ANTHROPIC_API_KEY is required to run live A/B demo sessions.')
+      process.exitCode = 1
+      return
+    }
   }
 
   getProvider()
+  const solverModel = options.model ?? getCheapestModel()
+  const distillModel = options.distillModel ?? getCheapestModel()
+  console.log(
+    `Provider: ${resolvedProvider} | Solver model: ${solverModel} | Distill model: ${distillModel}`,
+  )
   const allResults: PairResult[] = []
   let apiErrorRuns = 0
   let distillFailures = 0
@@ -757,7 +810,7 @@ async function main(): Promise<void> {
       if (!fixture) {
         throw new Error(`No fixture selected for ${type} run ${run}`)
       }
-      const result = await runPair(type, run, fixture)
+      const result = await runPair(type, run, fixture, solverModel, distillModel)
       typeResults.push(result)
       allResults.push(result)
       if (result.control.apiError || result.treatment.apiError) apiErrorRuns++
