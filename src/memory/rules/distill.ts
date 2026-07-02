@@ -16,6 +16,14 @@ Resolved Episode Details:
 - Error signature: {SIGNATURE}
 - Resolution candidates:
 {FIX_CANDIDATES}
+- Actual error output (may be truncated):
+{ERROR_EXCERPT}
+- Actual fix applied (old -> new):
+{FIX_DIFF}
+
+Generalization requirement: Your advice must remain correct if all file names, module paths, identifiers, and literal values were different. Describe (a) how to diagnose the root cause and (b) the general fix pattern. Never place instance-specific paths, identifiers, or values in an imperative sentence — cite them only as a parenthetical example.
+Don't (instance-specific instruction): "Change \`./config-loader\` to \`./config\`."
+Do (diagnostic strategy): "When an import specifier fails to resolve, list the files actually present next to the importing module and compare against the specifier (e.g., the fix here was changing \`./config-loader\` to \`./config\`)."
 
 You MUST output a single, valid JSON object matching the schema below. Do not include markdown code block syntax (like \`\`\`json), trailing commas, or any conversational text.
 
@@ -28,7 +36,7 @@ Schema:
     "error_signatures": ["the exact error signature string to match: '{SIGNATURE}'"]
   },
   "anchor_file": "the repo-relative file path that was edited to resolve the error (typically from the direct fix candidates)",
-  "advice": "Markdown formatted description of the rule. Keep it brief (1-3 paragraphs). State clearly under what trigger condition it applies, what the common root cause is, and what the clean resolution is. Do not use placeholders or write speculative advice."
+  "advice": "Markdown formatted description of the rule. Keep it brief (1-3 paragraphs). State clearly under what trigger condition it applies, what the common root cause is, and what the clean resolution is. Do not use placeholders or write speculative advice. Follow the generalization requirement above."
 }`
 
 export const PROMPT_HASH = createHash('sha256')
@@ -36,16 +44,33 @@ export const PROMPT_HASH = createHash('sha256')
   .digest('hex')
   .slice(0, 8)
 
+const ERROR_EXCERPT_MAX_CHARS = 600
+const NOT_CAPTURED = '(not captured)'
+
+/**
+ * Truncates an error excerpt to a bounded length, appending an ellipsis marker when cut.
+ * @param text The raw error excerpt text.
+ * @returns The truncated text, or the original text if within bounds.
+ */
+function truncateErrorExcerpt(text: string): string {
+  if (text.length <= ERROR_EXCERPT_MAX_CHARS) return text
+  return `${text.slice(0, ERROR_EXCERPT_MAX_CHARS)}...`
+}
+
 /**
  * Distills a single resolved episode into a RuleFile.
  * Throws if the episode is excluded.
  * @param episode The resolved episode to distill.
- * @param ctx The context object containing the model name and extractor version.
+ * @param ctx The context object containing the model name, extractor version, and optional evidence.
  * @returns A promise resolving to the distilled RuleFile.
  */
 export async function distillEpisode(
   episode: Episode,
-  ctx: { model: string; extractorVersion: string },
+  ctx: {
+    model: string
+    extractorVersion: string
+    evidence?: { errorExcerpt?: string; fixDiff?: string }
+  },
 ): Promise<RuleFile> {
   if (episode.is_excluded) {
     throw new Error(`Cannot distill excluded episode: ${episode.exclusion_reason}`)
@@ -57,11 +82,18 @@ export async function distillEpisode(
     .map((c) => `- File: ${c.path} (Role: ${c.role}, Summary: ${c.summary})`)
     .join('\n')
 
+  const errorExcerptText = ctx.evidence?.errorExcerpt
+    ? truncateErrorExcerpt(ctx.evidence.errorExcerpt)
+    : NOT_CAPTURED
+  const fixDiffText = ctx.evidence?.fixDiff ? ctx.evidence.fixDiff : NOT_CAPTURED
+
   const userContent = DISTILL_PROMPT_TEMPLATE.replace('{TASK}', episode.task_digest)
     .replace('{CMD}', episode.failure.cmd)
     .replace('{ERROR_CLASS}', episode.failure.error_class)
     .replace(/{SIGNATURE}/g, episode.failure.signature)
     .replace('{FIX_CANDIDATES}', candidatesText)
+    .replace('{ERROR_EXCERPT}', errorExcerptText)
+    .replace('{FIX_DIFF}', fixDiffText)
 
   const messages: CanonicalMessage[] = [
     { role: 'user', content: [{ type: 'text', text: userContent }] },

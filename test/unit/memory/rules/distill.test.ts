@@ -1,6 +1,10 @@
 import { afterEach, describe, expect, it } from 'bun:test'
 import type { Episode } from '../../../../src/memory/episodes/types.ts'
-import { PROMPT_HASH, distillEpisode } from '../../../../src/memory/rules/distill.ts'
+import {
+  DISTILL_PROMPT_TEMPLATE,
+  PROMPT_HASH,
+  distillEpisode,
+} from '../../../../src/memory/rules/distill.ts'
 import { setProvider } from '../../../../src/providers/index.ts'
 import type { LLMProvider } from '../../../../src/providers/types.ts'
 
@@ -100,5 +104,101 @@ describe('Rule Distillation', () => {
     expect(rule.extractor_version).toBe('0.2.0')
     expect(rule.model_id).toBe('mock-model')
     expect(rule.prompt_hash).toBe(PROMPT_HASH)
+  })
+
+  it('should render evidence into the prompt when present', async () => {
+    const mockJson = {
+      slug: 'optional-chaining-buggy',
+      triggers: {
+        tools: ['Bash'],
+        command_prefix: ['bun test'],
+        error_signatures: ['bash|TypeError|src/buggy.ts'],
+      },
+      anchor_file: 'src/buggy.ts',
+      advice: 'Always use optional chaining when accessing property of potentially null object.',
+    }
+
+    let capturedPrompt = ''
+    const mockProvider: LLMProvider = {
+      name: 'anthropic',
+      createMessageStream: async function* (messages) {
+        const first = messages[0]
+        const content = first?.content
+        if (typeof content === 'string') {
+          capturedPrompt = content
+        } else if (Array.isArray(content)) {
+          const textPart = content.find(
+            (part): part is { type: 'text'; text: string } => part.type === 'text',
+          )
+          capturedPrompt = textPart?.text ?? ''
+        }
+        yield { type: 'text_delta', text: JSON.stringify(mockJson) }
+      },
+    }
+
+    setProvider(mockProvider)
+
+    await distillEpisode(mockEpisode, {
+      model: 'mock-model',
+      extractorVersion: '0.2.0',
+      evidence: {
+        errorExcerpt: 'TypeError: Cannot read properties of null (reading \'foo\')',
+        fixDiff: 'obj.foo -> obj?.foo',
+      },
+    })
+
+    expect(capturedPrompt).toContain(
+      "TypeError: Cannot read properties of null (reading 'foo')",
+    )
+    expect(capturedPrompt).toContain('obj.foo -> obj?.foo')
+  })
+
+  it('should render (not captured) fallback when evidence is absent', async () => {
+    const mockJson = {
+      slug: 'optional-chaining-buggy',
+      triggers: {
+        tools: ['Bash'],
+        command_prefix: ['bun test'],
+        error_signatures: ['bash|TypeError|src/buggy.ts'],
+      },
+      anchor_file: 'src/buggy.ts',
+      advice: 'Always use optional chaining when accessing property of potentially null object.',
+    }
+
+    let capturedPrompt = ''
+    const mockProvider: LLMProvider = {
+      name: 'anthropic',
+      createMessageStream: async function* (messages) {
+        const first = messages[0]
+        const content = first?.content
+        if (typeof content === 'string') {
+          capturedPrompt = content
+        } else if (Array.isArray(content)) {
+          const textPart = content.find(
+            (part): part is { type: 'text'; text: string } => part.type === 'text',
+          )
+          capturedPrompt = textPart?.text ?? ''
+        }
+        yield { type: 'text_delta', text: JSON.stringify(mockJson) }
+      },
+    }
+
+    setProvider(mockProvider)
+
+    await expect(
+      distillEpisode(mockEpisode, {
+        model: 'mock-model',
+        extractorVersion: '0.2.0',
+      }),
+    ).resolves.toBeDefined()
+
+    const notCapturedCount = capturedPrompt.split('(not captured)').length - 1
+    expect(notCapturedCount).toBe(2)
+  })
+
+  it('should include the generalization requirement in the prompt template', () => {
+    expect(DISTILL_PROMPT_TEMPLATE).toContain(
+      'Your advice must remain correct if all file names, module paths, identifiers, and literal values were different.',
+    )
   })
 })

@@ -53,6 +53,7 @@ type SessionResult = {
   success: boolean
   apiError: boolean
   initialStderr: string
+  successfulEdit?: FixEdit
 }
 
 type PairResult = {
@@ -83,7 +84,7 @@ const DEFAULT_TYPES: ScenarioType[] = [
   'ExpectMismatch',
   'UndefinedRef',
 ]
-const EXTRACTOR_VERSION = '0.2.0'
+const EXTRACTOR_VERSION = '0.3.0'
 const MAX_TURNS = 5
 const realSpawn = (globalThis as typeof globalThis & { Bun: { spawn: BunSpawn } }).Bun.spawn
 const FIX_SYSTEM_PROMPT = `You are a coding agent. Your job is to fix a failing test by editing a source file.
@@ -359,10 +360,19 @@ async function runSession(
   let inputTokens = 0
   let outputTokens = 0
   let apiError = false
+  let lastEdit: FixEdit | undefined
 
   while (turns < MAX_TURNS) {
     if (testRun.exitCode === 0) {
-      return { turns, inputTokens, outputTokens, success: true, apiError, initialStderr }
+      return {
+        turns,
+        inputTokens,
+        outputTokens,
+        success: true,
+        apiError,
+        initialStderr,
+        successfulEdit: lastEdit,
+      }
     }
 
     turns++
@@ -387,6 +397,7 @@ async function runSession(
       return { turns, inputTokens, outputTokens, success: false, apiError, initialStderr }
     }
 
+    lastEdit = fix
     await writeFile(sourcePath, sourceContent.replace(fix.old, fix.new), 'utf8')
     testRun = await runBunTest(repoRoot, testFile)
     stderr = testRun.stderr || testRun.stdout
@@ -502,11 +513,18 @@ async function runPair(type: ScenarioType, run: number, fixture: FixtureDef): Pr
 
     if (control.success) {
       try {
+        const evidence = control.successfulEdit
+          ? {
+              errorExcerpt: control.initialStderr,
+              fixDiff: `${control.successfulEdit.old} -> ${control.successfulEdit.new}`,
+            }
+          : undefined
         rule = await distillEpisode(
           buildEpisode(type, run, fixture, control, controlEnv.testFile),
           {
             model: getCheapestModel(),
             extractorVersion: EXTRACTOR_VERSION,
+            ...(evidence ? { evidence } : {}),
           },
         )
       } catch (error) {
