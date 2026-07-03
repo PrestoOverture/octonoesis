@@ -1,0 +1,21 @@
+Provider: anthropic | Solver model: claude-haiku-4-5-20251001 | Distill model: claude-haiku-4-5-20251001
+RepoQuirk run 1/2 RepoQuirk_ImportMap: control=pass:2 treatment=pass:4 rule=yes
+RepoQuirk run 2/2 RepoQuirk_BarrelExport: control=pass:3 treatment=pass:3 rule=yes
+
+=== RepoQuirk - 2 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 2.5 ± 0.7     | 3.5 ± 0.7     | +50% ± 71%    |
+| Tokens (input)  | 1934 ± 607    | 3653 ± 849    | +106% ± 109%  |
+| Tokens (output) | 98 ± 0        | 99 ± 8        | +1% ± 9%      |
+| Success rate    | 2/2           | 2/2           | —             |
+
+=== Overall (1 types x 2 runs = 2 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 2.5 ± 0.7     | 3.5 ± 0.7     | +50% ± 71%    | 0.317    |
+| Tokens (input)  | 1934 ± 607    | 3653 ± 849    | +106% ± 109%  | 0.095    |
+| Tokens (output) | 98 ± 0        | 99 ± 8        | +1% ± 9%      | 0.868    |
+| Success rate    | 2/2           | 2/2           | —             | —        |
+
+Completed 2 pairs; API error runs: 0; distillation failures: 0.

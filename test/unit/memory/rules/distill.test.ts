@@ -198,7 +198,12 @@ describe('Rule Distillation', () => {
 
   it('should include the generalization requirement in the prompt template', () => {
     expect(DISTILL_PROMPT_TEMPLATE).toContain(
-      'Your advice must remain correct if all file names, module paths, identifiers, and literal values were different.',
+      'Your advice must help with a FUTURE occurrence of this error class, not just restate this one instance.',
     )
+  })
+
+  it('should distinguish stable repo facts from one-off instance detail in the prompt template', () => {
+    expect(DISTILL_PROMPT_TEMPLATE).toContain('Stable repo-structural fact revealed by the evidence')
+    expect(DISTILL_PROMPT_TEMPLATE).toContain('One-off instance detail with no stable fact behind it')
   })
 })

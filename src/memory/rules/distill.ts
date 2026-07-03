@@ -21,9 +21,12 @@ Resolved Episode Details:
 - Actual fix applied (old -> new):
 {FIX_DIFF}
 
-Generalization requirement: Your advice must remain correct if all file names, module paths, identifiers, and literal values were different. Describe (a) how to diagnose the root cause and (b) the general fix pattern. Never place instance-specific paths, identifiers, or values in an imperative sentence — cite them only as a parenthetical example.
-Don't (instance-specific instruction): "Change \`./config-loader\` to \`./config\`."
-Do (diagnostic strategy): "When an import specifier fails to resolve, list the files actually present next to the importing module and compare against the specifier (e.g., the fix here was changing \`./config-loader\` to \`./config\`)."
+Generalization requirement: Your advice must help with a FUTURE occurrence of this error class, not just restate this one instance. Two different kinds of detail need different treatment:
+- One-off instance detail with no stable fact behind it (a particular filename, a coincidental typo, a literal value specific to this occurrence): generalize it away. Describe the diagnostic strategy and the general fix pattern; cite the instance only as a parenthetical example. Never phrase a one-off value as an imperative instruction.
+- Stable repo-structural fact revealed by the evidence (a configured path alias/import map, a fixed directory or barrel-export convention, a config schema field/expected value): state it directly as fact, grounded only in what the evidence actually shows. It stays true for every future occurrence of this error class in this repo — routing it back through "go read files to rediscover this" defeats the purpose of writing the rule down. Do not invent repo facts beyond what the evidence shows; fall back to pure diagnostic strategy when the evidence doesn't reveal a stable fact.
+Don't (one-off instance, no stable fact behind it): "Change \`./config-loader\` to \`./config\`."
+Do (diagnostic strategy — no stable repo fact evident): "When an import specifier fails to resolve, list the files actually present next to the importing module and compare against the specifier (e.g., the fix here was changing \`./config-loader\` to \`./config\`)."
+Do (stated repo fact — evidence shows one): "This repo uses a \`#lib/*\` import alias; the fix diff confirms the correct target for this symbol is \`#lib/strings.ts\`, not \`#lib/format.ts\` — when a \`#lib/...\` import fails to resolve, check what actually exists under that alias's target directory rather than assuming the specifier's suffix is correct."
 
 You MUST output a single, valid JSON object matching the schema below. Do not include markdown code block syntax (like \`\`\`json), trailing commas, or any conversational text.
 
