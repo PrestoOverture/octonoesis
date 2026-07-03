@@ -1,0 +1,150 @@
+Provider: anthropic | Solver model: claude-haiku-4-5-20251001 | Distill model: claude-haiku-4-5-20251001
+RepoQuirk run 1/6 RepoQuirk_ImportMap: control=pass:2 treatment=pass:1 rule=yes
+  control turn 1: read src/lib/strings.ts [exit=null]
+  control turn 2: edit src/label.ts [exit=0]
+  treatment turn 1: edit src/label.ts [exit=0]
+  evidence fixDiff: import { formatLabel } from '#lib/format.ts' -> import { formatLabel } from '#lib/strings.ts'
+  evidence errorExcerptSnippet: 
+src/label.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '#lib/format.ts' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesi
+  treatment advice:
+*The following rule matched your current error signature:*
+
+**Trigger:** ImportError on a `#lib/*` aliased import that cannot be resolved.
+
+**Root cause:** This repo uses a `#lib/*` import alias. The specifier in the import statement does not match an actual file in the target directory of that alias. The alias is correctly configured and resolves to a real directory, but the filename suffix in the import is incorrect.
+
+**Resolution:** When a `#lib/*` import fails to resolve, verify that the file referenced by the specifier actually exists in the alias target directory. List the files present in that directory and compare them against the import specifier's filename. Update the import to reference the correct existing file (in this case, the symbol `formatLabel` existed in `#lib/strings.ts`, not `#lib/format.ts`). Do not assume the suffix in the failing specifier is correct.
+RepoQuirk run 2/6 RepoQuirk_BarrelExport: control=fail:5 treatment=fail:2 rule=no
+  control turn 1: read src/lib/index.ts [exit=null]
+  control turn 2: edit src/lib/index.ts [exit=1]
+  control turn 3: read src/lib/helper.ts [exit=null]
+  control turn 4: edit src/lib/index.ts [exit=1]
+  control turn 5: edit src/lib/index.ts [exit=1]
+  treatment turn 1: read src/lib/index.ts [exit=null]
+RepoQuirk run 3/6 RepoQuirk_SettingsVersion: control=pass:2 treatment=pass:2 rule=yes
+  control turn 1: read config/settings.json [exit=null]
+  control turn 2: edit config/settings.json [exit=0]
+  treatment turn 1: read config/settings.json [exit=null]
+  treatment turn 2: edit config/settings.json [exit=0]
+  evidence fixDiff: {
+  "schema_version": 1,
+  "feature_flags": {
+    "betaSearch": true
+  }
+} -> {
+  "schema_version": 2,
+  "feature_flags": {
+    "betaSearch": true
+  }
+}
+  evidence errorExcerptSnippet: 
+src/settings.test.ts:
+3 | 
+4 | export function handleSettings(): string {
+5 |   const raw = readFileSync(join(import.meta.dir, '..', 'config', 'settings.json'), 'utf8')
+6 |   const parsed = JSON.pars
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a ConfigError is thrown during schema validation with a message like `expected schema_version 2, got [X]`, the root cause is that the configuration file's schema version field does not match the version the code is expecting.
+
+Diagnose by:
+1. Locate the schema validation logic in the source file (e.g., `src/settings.ts`) and identify the expected schema version constant or literal (e.g., `schema_version !== 2`).
+2. Open the configuration file being read (typically `config/settings.json` based on the import path in the source) and check its `schema_version` field.
+3. If the values do not match, update the configuration file's `schema_version` field to the expected value.
+
+This error commonly arises after code changes that introduce a new schema version without updating the corresponding configuration file, or when restoring a stale configuration file.
+RepoQuirk run 4/6 RepoQuirk_ImportMap: control=pass:2 treatment=pass:4 rule=yes
+  control turn 1: read src/lib/strings.ts [exit=null]
+  control turn 2: edit src/label.ts [exit=0]
+  treatment turn 1: read tsconfig.json [exit=null]
+  treatment turn 2: read tsconfig.json [exit=null]
+  treatment turn 3: read src/lib/strings.ts [exit=null]
+  treatment turn 4: edit src/label.ts [exit=0]
+  evidence fixDiff: import { formatLabel } from '#lib/format.ts' -> import { formatLabel } from '#lib/strings.ts'
+  evidence errorExcerptSnippet: 
+src/label.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '#lib/format.ts' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesi
+  treatment advice:
+*The following rule matched your current error signature:*
+
+This repo uses a `#lib/*` import alias that maps to a specific directory. When a `#lib/...` import fails to resolve, the issue is typically a mismatch between the specifier name and the actual filename that exists under the alias target.
+
+The error indicates the module cannot be found, but the fix is not to change the alias itself—it is configured correctly. Instead, verify what files actually exist in the directory the alias points to, and correct the filename suffix in the import specifier to match (for example, `#lib/format.ts` may need to be `#lib/strings.ts` if that is the actual exported module).
+
+Check the alias configuration to locate its target directory, list the files there, and update the import to use the correct filename that exports the symbol you need.
+RepoQuirk run 5/6 RepoQuirk_BarrelExport: control=pass:2 treatment=pass:3 rule=yes
+  control turn 1: read src/lib/index.ts [exit=null]
+  control turn 2: edit src/lib/index.ts [exit=0]
+  treatment turn 1: read src/lib/index.ts [exit=null]
+  treatment turn 2: read src/lib/helper.ts [exit=null]
+  treatment turn 3: edit src/lib/index.ts [exit=0]
+  evidence fixDiff: export { titleCase } from './helper' -> export { titleCase } from './helper'
+export { slugify } from './helper'
+  evidence errorExcerptSnippet: 
+src/slug.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+SyntaxError: Export named 'slugify' not found in module '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/oc
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test or source file fails with `SyntaxError: Export named '...' not found in module '...'`, the importing module is trying to import a named export that the target module does not actually export.
+
+This repo uses barrel exports via `src/lib/index.ts`. Verify that the symbol being imported (e.g., `slugify`) is actually exported from the barrel file. Check the source files it re-exports from (e.g., `./helper.ts`) to confirm the symbol exists there, then add the missing named export statement to the barrel file (e.g., `export { slugify } from './helper'`).
+
+The root cause is typically a mismatch between what the importer expects and what the barrel file currently re-exports—not a missing source file.
+RepoQuirk run 6/6 RepoQuirk_SettingsVersion: control=pass:2 treatment=pass:2 rule=yes
+  control turn 1: read config/settings.json [exit=null]
+  control turn 2: edit config/settings.json [exit=0]
+  treatment turn 1: read config/settings.json [exit=null]
+  treatment turn 2: edit config/settings.json [exit=0]
+  evidence fixDiff: {
+  "schema_version": 1,
+  "feature_flags": {
+    "betaSearch": true
+  }
+} -> {
+  "schema_version": 2,
+  "feature_flags": {
+    "betaSearch": true
+  }
+}
+  evidence errorExcerptSnippet: 
+src/settings.test.ts:
+3 | 
+4 | export function handleSettings(): string {
+5 |   const raw = readFileSync(join(import.meta.dir, '..', 'config', 'settings.json'), 'utf8')
+6 |   const parsed = JSON.pars
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a `ConfigError` fires during schema validation in `src/settings.ts`, the root cause is typically a mismatch between the expected and actual value of a versioned schema field in `config/settings.json`. The code enforces a specific schema version (in this case, version 2), but the configuration file may contain an outdated version number.
+
+Diagnose by examining the error message to identify which schema field failed validation and what value was expected. Then inspect `config/settings.json` and update the mismatched field to the version the code requires. This is a configuration synchronization issue: the code's schema contract and the config file's actual values must stay aligned as the schema evolves.
+
+=== RepoQuirk - 6 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 2.5 ± 1.2     | 2.3 ± 1.0     | +7% ± 61%     |
+| Tokens (input)  | 2315 ± 1015   | 2610 ± 1174   | +32% ± 84%    |
+| Tokens (output) | 119 ± 62      | 87 ± 28       | -16% ± 42%    |
+| Success rate    | 5/6           | 5/6           | —             |
+
+=== Overall (1 types x 6 runs = 6 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 2.5 ± 1.2     | 2.3 ± 1.0     | +7% ± 61%     | 0.813    |
+| Tokens (input)  | 2315 ± 1015   | 2610 ± 1174   | +32% ± 84%    | 0.693    |
+| Tokens (output) | 119 ± 62      | 87 ± 28       | -16% ± 42%    | 0.152    |
+| Success rate    | 5/6           | 5/6           | —             | —        |
+
+Completed 6 pairs; API error runs: 0; distillation failures: 0.
