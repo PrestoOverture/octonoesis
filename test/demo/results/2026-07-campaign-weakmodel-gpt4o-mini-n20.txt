@@ -1,0 +1,730 @@
+Provider: openai | Solver model: gpt-4o-mini | Distill model: gpt-5-nano | Solver maxTokens: 4000
+Distillation failed for NullAccess_A1: JSON Parse error: Unexpected EOF
+NullAccess run 1/20 NullAccess_A1: control=pass:1 treatment=pass:2 rule=no
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=1]
+  treatment turn 2: edit src/user.ts [exit=0]
+  evidence fixDiff: const normalized = user.name.trim() -> if (!user) return 'User: Anonymous'; const normalized = user.name.trim()
+  evidence errorExcerptSnippet: 
+src/user.test.ts:
+3 |   name: string
+4 |   email?: string
+5 | } | null
+6 | 
+7 | export function displayUser(user: User): string {
+8 |   const normalized = user.name.trim()
+                         ^
+
+Distillation failed for NullAccess_A2: JSON Parse error: Unexpected EOF
+NullAccess run 2/20 NullAccess_A2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  evidence fixDiff: const value = user.email.trim() -> const value = user ? user.email.trim() : 'Unknown email'
+  evidence errorExcerptSnippet: 
+src/user.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleUser2(user: MaybeRecord): string {
+4 |   const value = user.email.trim()
+                    ^
+TypeE
+Distillation failed for NullAccess_A3: JSON Parse error: Unexpected EOF
+NullAccess run 3/20 NullAccess_A3: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  evidence fixDiff: user.avatarUrl.trim() -> user?.avatarUrl?.trim()
+  evidence errorExcerptSnippet: 
+src/user.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleUser3(user: MaybeRecord): string {
+4 |   const value = user.avatarUrl.trim()
+                    ^
+T
+Distillation failed for NullAccess_B1: JSON Parse error: Unexpected EOF
+NullAccess run 4/20 NullAccess_B1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  evidence fixDiff: const value = account.planName.trim() -> const value = account ? account.planName.trim() : 'free'
+  evidence errorExcerptSnippet: 
+src/account.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleAccount4(account: MaybeRecord): string {
+4 |   const value = account.planName.trim()
+            
+Distillation failed for NullAccess_B2: JSON Parse error: Unexpected EOF
+NullAccess run 5/20 NullAccess_B2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  evidence fixDiff: const value = account.status.trim() -> const value = account ? account.status.trim() : 'inactive'
+  evidence errorExcerptSnippet: 
+src/account.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleAccount5(account: MaybeRecord): string {
+4 |   const value = account.status.trim()
+              
+Distillation failed for NullAccess_B3: JSON Parse error: Unexpected EOF
+NullAccess run 6/20 NullAccess_B3: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  evidence fixDiff: const value = account.ownerName.trim() -> const value = account ? account.ownerName.trim() : ''
+  evidence errorExcerptSnippet: 
+src/account.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleAccount6(account: MaybeRecord): string {
+4 |   const value = account.ownerName.trim()
+           
+Distillation failed for NullAccess_C1: JSON Parse error: Unexpected EOF
+NullAccess run 7/20 NullAccess_C1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/profile.ts [exit=0]
+  treatment turn 1: edit src/profile.ts [exit=0]
+  evidence fixDiff: const value = profile.bio.trim() -> const value = profile ? profile.bio.trim() : ''
+  evidence errorExcerptSnippet: 
+src/profile.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleProfile7(profile: MaybeRecord): string {
+4 |   const value = profile.bio.trim()
+                 
+Distillation failed for NullAccess_C2: JSON Parse error: Unexpected EOF
+NullAccess run 8/20 NullAccess_C2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/profile.ts [exit=0]
+  treatment turn 1: edit src/profile.ts [exit=0]
+  evidence fixDiff: const value = profile.displayName.trim() -> const value = profile?.displayName?.trim()
+  evidence errorExcerptSnippet: 
+src/profile.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleProfile8(profile: MaybeRecord): string {
+4 |   const value = profile.displayName.trim()
+         
+Distillation failed for NullAccess_D1: JSON Parse error: Unexpected EOF
+NullAccess run 9/20 NullAccess_D1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/session.ts [exit=0]
+  treatment turn 1: edit src/session.ts [exit=0]
+  evidence fixDiff: const value = session.token.trim() -> const value = session ? session.token.trim() : ''
+  evidence errorExcerptSnippet: 
+src/session.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleSession9(session: MaybeRecord): string {
+4 |   const value = session.token.trim()
+               
+Distillation failed for NullAccess_E1: JSON Parse error: Unexpected EOF
+NullAccess run 10/20 NullAccess_E1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/auth.ts [exit=0]
+  treatment turn 1: edit src/auth.ts [exit=0]
+  evidence fixDiff: const value = authState.provider.trim() -> const value = authState?.provider?.trim()
+  evidence errorExcerptSnippet: 
+src/auth.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleAuth10(authState: MaybeRecord): string {
+4 |   const value = authState.provider.trim()
+             
+Distillation failed for NullAccess_A1: JSON Parse error: Unexpected EOF
+NullAccess run 11/20 NullAccess_A1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  evidence fixDiff: const normalized = user.name.trim() -> if (!user) return 'User: Anonymous'; const normalized = user.name.trim()
+  evidence errorExcerptSnippet: 
+src/user.test.ts:
+3 |   name: string
+4 |   email?: string
+5 | } | null
+6 | 
+7 | export function displayUser(user: User): string {
+8 |   const normalized = user.name.trim()
+                         ^
+
+Distillation failed for NullAccess_A2: JSON Parse error: Unexpected EOF
+NullAccess run 12/20 NullAccess_A2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  evidence fixDiff: const value = user.email.trim() -> const value = user ? user.email.trim() : 'Unknown email'
+  evidence errorExcerptSnippet: 
+src/user.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleUser2(user: MaybeRecord): string {
+4 |   const value = user.email.trim()
+                    ^
+TypeE
+Distillation failed for NullAccess_A3: JSON Parse error: Unexpected EOF
+NullAccess run 13/20 NullAccess_A3: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  evidence fixDiff: const value = user.avatarUrl.trim() -> const value = user?.avatarUrl?.trim()
+  evidence errorExcerptSnippet: 
+src/user.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleUser3(user: MaybeRecord): string {
+4 |   const value = user.avatarUrl.trim()
+                    ^
+T
+Distillation failed for NullAccess_B1: JSON Parse error: Unexpected EOF
+NullAccess run 14/20 NullAccess_B1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  evidence fixDiff: const value = account.planName.trim() -> const value = account?.planName?.trim()
+  evidence errorExcerptSnippet: 
+src/account.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleAccount4(account: MaybeRecord): string {
+4 |   const value = account.planName.trim()
+            
+Distillation failed for NullAccess_B2: JSON Parse error: Unexpected EOF
+NullAccess run 15/20 NullAccess_B2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  evidence fixDiff: const value = account.status.trim() -> const value = account?.status?.trim()
+  evidence errorExcerptSnippet: 
+src/account.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleAccount5(account: MaybeRecord): string {
+4 |   const value = account.status.trim()
+              
+Distillation failed for NullAccess_B3: JSON Parse error: Unexpected EOF
+NullAccess run 16/20 NullAccess_B3: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  evidence fixDiff: const value = account.ownerName.trim() -> const value = account ? account.ownerName.trim() : ""
+  evidence errorExcerptSnippet: 
+src/account.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleAccount6(account: MaybeRecord): string {
+4 |   const value = account.ownerName.trim()
+           
+Distillation failed for NullAccess_C1: JSON Parse error: Unexpected EOF
+NullAccess run 17/20 NullAccess_C1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/profile.ts [exit=0]
+  treatment turn 1: edit src/profile.ts [exit=0]
+  evidence fixDiff: const value = profile.bio.trim() -> const value = profile ? profile.bio.trim() : ""
+  evidence errorExcerptSnippet: 
+src/profile.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleProfile7(profile: MaybeRecord): string {
+4 |   const value = profile.bio.trim()
+                 
+Distillation failed for NullAccess_C2: JSON Parse error: Unexpected EOF
+NullAccess run 18/20 NullAccess_C2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/profile.ts [exit=0]
+  treatment turn 1: edit src/profile.ts [exit=0]
+  evidence fixDiff: const value = profile.displayName.trim() -> const value = profile ? profile.displayName.trim() : 'Guest'
+  evidence errorExcerptSnippet: 
+src/profile.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleProfile8(profile: MaybeRecord): string {
+4 |   const value = profile.displayName.trim()
+         
+Distillation failed for NullAccess_D1: JSON Parse error: Unexpected EOF
+NullAccess run 19/20 NullAccess_D1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/session.ts [exit=0]
+  treatment turn 1: edit src/session.ts [exit=0]
+  evidence fixDiff: const value = session.token.trim() -> const value = session ? session.token.trim() : ''
+  evidence errorExcerptSnippet: 
+src/session.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleSession9(session: MaybeRecord): string {
+4 |   const value = session.token.trim()
+               
+Distillation failed for NullAccess_E1: JSON Parse error: Unexpected EOF
+NullAccess run 20/20 NullAccess_E1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/auth.ts [exit=0]
+  treatment turn 1: edit src/auth.ts [exit=0]
+  evidence fixDiff: const value = authState.provider.trim() -> const value = authState?.provider?.trim()
+  evidence errorExcerptSnippet: 
+src/auth.test.ts:
+1 | type MaybeRecord = Record<string, any> | null
+2 | 
+3 | export function handleAuth10(authState: MaybeRecord): string {
+4 |   const value = authState.provider.trim()
+             
+
+=== NullAccess - 20 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 1.0 ± 0.0     | 1.1 ± 0.2     | +5% ± 22%     |
+| Tokens (input)  | 866 ± 8       | 911 ± 207     | +5% ± 23%     |
+| Tokens (output) | 32 ± 3        | 34 ± 6        | +4% ± 14%     |
+| Success rate    | 20/20         | 20/20         | —             |
+ParseError run 1/20 ParseError_A1: control=fail:1 treatment=fail:3 rule=no
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=1]
+Distillation failed for ParseError_A2: JSON Parse error: Unexpected EOF
+ParseError run 2/20 ParseError_A2: control=pass:4 treatment=fail:1 rule=no
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=0]
+  evidence fixDiff: return raw.trim(); -> return raw.trim();
+}
+  evidence errorExcerptSnippet: 
+src/parser.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+10 | // The fix payload intentionally changes only the targeted line.
+                                            
+ParseError run 3/20 ParseError_A3: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=0]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=1]
+  treatment turn 3: edit src/parser.ts [exit=1]
+  treatment turn 4: edit src/parser.ts [exit=1]
+ParseError run 4/20 ParseError_B1: control=fail:5 treatment=pass:4 rule=no
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: edit src/tokenizer.ts [exit=1]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=1]
+  treatment turn 3: edit src/tokenizer.ts [exit=1]
+  treatment turn 4: edit src/tokenizer.ts [exit=0]
+ParseError run 5/20 ParseError_B2: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: read src/tokenizer.ts [exit=null]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: edit src/tokenizer.ts [exit=0]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=1]
+  treatment turn 3: edit src/tokenizer.ts [exit=1]
+  treatment turn 4: edit src/tokenizer.ts [exit=1]
+  treatment turn 5: edit src/tokenizer.ts [exit=1]
+Distillation failed for ParseError_B3: JSON Parse error: Unexpected EOF
+ParseError run 6/20 ParseError_B3: control=pass:4 treatment=fail:5 rule=no
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=0]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=1]
+  treatment turn 3: edit src/tokenizer.ts [exit=1]
+  treatment turn 4: edit src/tokenizer.ts [exit=1]
+  treatment turn 5: read src/tokenizer.ts [exit=null]
+  evidence fixDiff: return raw.trim(); -> return raw.trim();
+    }
+  evidence errorExcerptSnippet: 
+src/tokenizer.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+10 | // The fix payload intentionally changes only the targeted line.
+                                         
+ParseError run 7/20 ParseError_C1: control=fail:1 treatment=fail:5 rule=no
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment turn 2: edit src/compiler.ts [exit=1]
+  treatment turn 3: edit src/compiler.ts [exit=1]
+  treatment turn 4: edit src/compiler.ts [exit=1]
+  treatment turn 5: edit src/compiler.ts [exit=1]
+ParseError run 8/20 ParseError_C2: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/compiler.ts [exit=1]
+  control turn 2: edit src/compiler.ts [exit=1]
+  control turn 3: edit src/compiler.ts [exit=1]
+  control turn 4: edit src/compiler.ts [exit=1]
+  control turn 5: read src/compiler.ts [exit=null]
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment turn 2: edit src/compiler.ts [exit=1]
+  treatment turn 3: edit src/compiler.ts [exit=1]
+  treatment turn 4: edit src/compiler.ts [exit=1]
+ParseError run 9/20 ParseError_D1: control=fail:5 treatment=pass:4 rule=no
+  control turn 1: edit src/template.ts [exit=1]
+  control turn 2: edit src/template.ts [exit=1]
+  control turn 3: edit src/template.ts [exit=1]
+  control turn 4: edit src/template.ts [exit=1]
+  control turn 5: edit src/template.ts [exit=1]
+  treatment turn 1: edit src/template.ts [exit=1]
+  treatment turn 2: edit src/template.ts [exit=1]
+  treatment turn 3: edit src/template.ts [exit=1]
+  treatment turn 4: edit src/template.ts [exit=0]
+ParseError run 10/20 ParseError_E1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/evaluator.ts [exit=1]
+  control turn 2: edit src/evaluator.ts [exit=1]
+  control turn 3: edit src/evaluator.ts [exit=1]
+  control turn 4: edit src/evaluator.ts [exit=1]
+  control turn 5: edit src/evaluator.ts [exit=1]
+  treatment turn 1: edit src/evaluator.ts [exit=1]
+  treatment turn 2: edit src/evaluator.ts [exit=1]
+  treatment turn 3: edit src/evaluator.ts [exit=1]
+  treatment turn 4: edit src/evaluator.ts [exit=1]
+  treatment turn 5: edit src/evaluator.ts [exit=0]
+ParseError run 11/20 ParseError_A1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=1]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=1]
+  treatment turn 3: edit src/parser.ts [exit=1]
+  treatment turn 4: edit src/parser.ts [exit=1]
+  treatment turn 5: edit src/parser.ts [exit=1]
+ParseError run 12/20 ParseError_A2: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=1]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=1]
+  treatment turn 3: edit src/parser.ts [exit=1]
+  treatment turn 4: edit src/parser.ts [exit=1]
+  treatment turn 5: edit src/parser.ts [exit=1]
+ParseError run 13/20 ParseError_A3: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=1]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=1]
+  treatment turn 3: edit src/parser.ts [exit=1]
+  treatment turn 4: edit src/parser.ts [exit=1]
+  treatment turn 5: edit src/parser.ts [exit=1]
+ParseError run 14/20 ParseError_B1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=1]
+  treatment turn 3: edit src/tokenizer.ts [exit=1]
+  treatment turn 4: edit src/tokenizer.ts [exit=1]
+  treatment turn 5: read src/tokenizer.ts [exit=null]
+Distillation failed for ParseError_B2: JSON Parse error: Unexpected EOF
+ParseError run 15/20 ParseError_B2: control=pass:4 treatment=fail:5 rule=no
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=0]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=1]
+  treatment turn 3: edit src/tokenizer.ts [exit=1]
+  treatment turn 4: edit src/tokenizer.ts [exit=1]
+  treatment turn 5: read src/tokenizer.ts [exit=null]
+  evidence fixDiff: return raw.trim(); -> return raw.trim();
+}
+  evidence errorExcerptSnippet: 
+src/tokenizer.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+10 | // The fix payload intentionally changes only the targeted line.
+                                         
+ParseError run 16/20 ParseError_B3: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: edit src/tokenizer.ts [exit=1]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=1]
+  treatment turn 3: edit src/tokenizer.ts [exit=1]
+  treatment turn 4: edit src/tokenizer.ts [exit=1]
+  treatment turn 5: edit src/tokenizer.ts [exit=1]
+ParseError run 17/20 ParseError_C1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/compiler.ts [exit=1]
+  control turn 2: edit src/compiler.ts [exit=1]
+  control turn 3: edit src/compiler.ts [exit=1]
+  control turn 4: edit src/compiler.ts [exit=1]
+  control turn 5: edit src/compiler.ts [exit=1]
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment turn 2: edit src/compiler.ts [exit=1]
+  treatment turn 3: edit src/compiler.ts [exit=1]
+  treatment turn 4: edit src/compiler.ts [exit=1]
+  treatment turn 5: edit src/compiler.ts [exit=0]
+ParseError run 18/20 ParseError_C2: control=fail:5 treatment=fail:1 rule=no
+  control turn 1: edit src/compiler.ts [exit=1]
+  control turn 2: edit src/compiler.ts [exit=1]
+  control turn 3: edit src/compiler.ts [exit=1]
+  control turn 4: edit src/compiler.ts [exit=1]
+  control turn 5: edit src/compiler.ts [exit=0]
+ParseError run 19/20 ParseError_D1: control=fail:1 treatment=fail:1 rule=no
+Distillation failed for ParseError_E1: JSON Parse error: Unexpected EOF
+ParseError run 20/20 ParseError_E1: control=pass:4 treatment=fail:5 rule=no
+  control turn 1: edit src/evaluator.ts [exit=1]
+  control turn 2: edit src/evaluator.ts [exit=1]
+  control turn 3: edit src/evaluator.ts [exit=1]
+  control turn 4: edit src/evaluator.ts [exit=0]
+  treatment turn 1: edit src/evaluator.ts [exit=1]
+  treatment turn 2: edit src/evaluator.ts [exit=1]
+  treatment turn 3: edit src/evaluator.ts [exit=1]
+  treatment turn 4: edit src/evaluator.ts [exit=1]
+  treatment turn 5: edit src/evaluator.ts [exit=1]
+  evidence fixDiff: return raw.trim(); -> return raw.trim();
+}
+  evidence errorExcerptSnippet: 
+src/evaluator.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+10 | // The fix payload intentionally changes only the targeted line.
+                                         
+
+=== ParseError - 20 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 4.2 ± 1.4     | 4.2 ± 1.5     | +24% ± 103%   |
+| Tokens (input)  | 3320 ± 1142   | 3309 ± 1153   | +24% ± 103%   |
+| Tokens (output) | 107 ± 43      | 101 ± 33      | +15% ± 80%    |
+| Success rate    | 4/20          | 2/20          | —             |
+Distillation failed for UndefinedRef_A1: JSON Parse error: Unexpected EOF
+UndefinedRef run 1/20 UndefinedRef_A1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/scope.ts [exit=0]
+  treatment turn 1: edit src/scope.ts [exit=0]
+  evidence fixDiff: currentUserId -> ''
+  evidence errorExcerptSnippet: 
+src/scope.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleScope1(scopeValue: string, context: Context): string {
+4 |   return currentUserId + ':' + scopeValue
+      
+Distillation failed for UndefinedRef_A2: JSON Parse error: Unexpected EOF
+UndefinedRef run 2/20 UndefinedRef_A2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/scope.ts [exit=0]
+  treatment turn 1: edit src/scope.ts [exit=0]
+  evidence fixDiff: activeScopeName -> 'defaultScope'
+  evidence errorExcerptSnippet: 
+src/scope.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleScope2(scopeLabel: string, context: Context): string {
+4 |   return activeScopeName + ':' + scopeLabel
+    
+Distillation failed for UndefinedRef_A3: JSON Parse error: Unexpected EOF
+UndefinedRef run 3/20 UndefinedRef_A3: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/scope.ts [exit=0]
+  treatment turn 1: edit src/scope.ts [exit=0]
+  evidence fixDiff: requestTraceId -> ''
+  evidence errorExcerptSnippet: 
+src/scope.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleScope3(contextValue: string, context: Context): string {
+4 |   return requestTraceId + ':' + contextValue
+ 
+Distillation failed for UndefinedRef_B1: JSON Parse error: Unexpected EOF
+UndefinedRef run 4/20 UndefinedRef_B1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/context.ts [exit=0]
+  treatment turn 1: edit src/context.ts [exit=0]
+  evidence fixDiff: sessionRoleName -> ''
+  evidence errorExcerptSnippet: 
+src/context.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleContext4(contextRole: string, context: Context): string {
+4 |   return sessionRoleName + ':' + contextRol
+Distillation failed for UndefinedRef_B2: JSON Parse error: Unexpected EOF
+UndefinedRef run 5/20 UndefinedRef_B2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/context.ts [exit=0]
+  treatment turn 1: edit src/context.ts [exit=0]
+  evidence fixDiff: tenantRegion -> ''
+  evidence errorExcerptSnippet: 
+src/context.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleContext5(contextTenant: string, context: Context): string {
+4 |   return tenantRegion + ':' + contextTena
+Distillation failed for UndefinedRef_B3: JSON Parse error: Unexpected EOF
+UndefinedRef run 6/20 UndefinedRef_B3: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/context.ts [exit=0]
+  treatment turn 1: edit src/context.ts [exit=0]
+  evidence fixDiff: resolvedModuleName -> ''
+  evidence errorExcerptSnippet: 
+src/context.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleContext6(resolverTarget: string, context: Context): string {
+4 |   return resolvedModuleName + ':' + reso
+Distillation failed for UndefinedRef_C1: JSON Parse error: Unexpected EOF
+UndefinedRef run 7/20 UndefinedRef_C1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/resolver.ts [exit=0]
+  treatment turn 1: edit src/resolver.ts [exit=0]
+  evidence fixDiff: entryAlias -> context[resolverEntry]
+  evidence errorExcerptSnippet: 
+src/resolver.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleResolver7(resolverEntry: string, context: Context): string {
+4 |   return entryAlias + ':' + resolverEnt
+Distillation failed for UndefinedRef_C2: JSON Parse error: Unexpected EOF
+UndefinedRef run 8/20 UndefinedRef_C2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/resolver.ts [exit=0]
+  treatment turn 1: edit src/resolver.ts [exit=0]
+  evidence fixDiff: boundServiceName -> context[bindingName]
+  evidence errorExcerptSnippet: 
+src/resolver.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleResolver8(bindingName: string, context: Context): string {
+4 |   return boundServiceName + ':' + binding
+Distillation failed for UndefinedRef_D1: JSON Parse error: Unexpected EOF
+UndefinedRef run 9/20 UndefinedRef_D1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/binding.ts [exit=0]
+  treatment turn 1: edit src/binding.ts [exit=0]
+  evidence fixDiff: injectedSecretToken -> ''
+  evidence errorExcerptSnippet: 
+src/binding.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleBinding9(injectorToken: string, context: Context): string {
+4 |   return injectedSecretToken + ':' + inje
+Distillation failed for UndefinedRef_E1: JSON Parse error: Unexpected EOF
+UndefinedRef run 10/20 UndefinedRef_E1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/injector.ts [exit=0]
+  treatment turn 1: edit src/injector.ts [exit=0]
+  evidence fixDiff: dependencyPath -> ''
+  evidence errorExcerptSnippet: 
+src/injector.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleInjector10(injectorPath: string, context: Context): string {
+4 |   return dependencyPath + ':' + injecto
+Distillation failed for UndefinedRef_A1: JSON Parse error: Unexpected EOF
+UndefinedRef run 11/20 UndefinedRef_A1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/scope.ts [exit=0]
+  treatment turn 1: edit src/scope.ts [exit=0]
+  evidence fixDiff: currentUserId -> ''
+  evidence errorExcerptSnippet: 
+src/scope.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleScope1(scopeValue: string, context: Context): string {
+4 |   return currentUserId + ':' + scopeValue
+      
+Distillation failed for UndefinedRef_A2: JSON Parse error: Unexpected EOF
+UndefinedRef run 12/20 UndefinedRef_A2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/scope.ts [exit=0]
+  treatment turn 1: edit src/scope.ts [exit=0]
+  evidence fixDiff: activeScopeName -> ''
+  evidence errorExcerptSnippet: 
+src/scope.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleScope2(scopeLabel: string, context: Context): string {
+4 |   return activeScopeName + ':' + scopeLabel
+    
+Distillation failed for UndefinedRef_A3: JSON Parse error: Unexpected EOF
+UndefinedRef run 13/20 UndefinedRef_A3: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/scope.ts [exit=0]
+  treatment turn 1: edit src/scope.ts [exit=0]
+  evidence fixDiff: requestTraceId -> ''
+  evidence errorExcerptSnippet: 
+src/scope.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleScope3(contextValue: string, context: Context): string {
+4 |   return requestTraceId + ':' + contextValue
+ 
+Distillation failed for UndefinedRef_B1: JSON Parse error: Unexpected EOF
+UndefinedRef run 14/20 UndefinedRef_B1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/context.ts [exit=0]
+  treatment turn 1: edit src/context.ts [exit=0]
+  evidence fixDiff: sessionRoleName -> "defaultSessionRole"
+  evidence errorExcerptSnippet: 
+src/context.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleContext4(contextRole: string, context: Context): string {
+4 |   return sessionRoleName + ':' + contextRol
+Distillation failed for UndefinedRef_B2: JSON Parse error: Unexpected EOF
+UndefinedRef run 15/20 UndefinedRef_B2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/context.ts [exit=0]
+  treatment turn 1: edit src/context.ts [exit=0]
+  evidence fixDiff: tenantRegion -> ''
+  evidence errorExcerptSnippet: 
+src/context.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleContext5(contextTenant: string, context: Context): string {
+4 |   return tenantRegion + ':' + contextTena
+Distillation failed for UndefinedRef_B3: JSON Parse error: Unexpected EOF
+UndefinedRef run 16/20 UndefinedRef_B3: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/context.ts [exit=0]
+  treatment turn 1: edit src/context.ts [exit=0]
+  evidence fixDiff: resolvedModuleName -> ''
+  evidence errorExcerptSnippet: 
+src/context.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleContext6(resolverTarget: string, context: Context): string {
+4 |   return resolvedModuleName + ':' + reso
+Distillation failed for UndefinedRef_C1: JSON Parse error: Unexpected EOF
+UndefinedRef run 17/20 UndefinedRef_C1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/resolver.ts [exit=0]
+  treatment turn 1: edit src/resolver.ts [exit=0]
+  evidence fixDiff: entryAlias -> context[resolverEntry]
+  evidence errorExcerptSnippet: 
+src/resolver.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleResolver7(resolverEntry: string, context: Context): string {
+4 |   return entryAlias + ':' + resolverEnt
+Distillation failed for UndefinedRef_C2: JSON Parse error: Unexpected EOF
+UndefinedRef run 18/20 UndefinedRef_C2: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/resolver.ts [exit=0]
+  treatment turn 1: edit src/resolver.ts [exit=0]
+  evidence fixDiff: boundServiceName -> ''
+  evidence errorExcerptSnippet: 
+src/resolver.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleResolver8(bindingName: string, context: Context): string {
+4 |   return boundServiceName + ':' + binding
+Distillation failed for UndefinedRef_D1: JSON Parse error: Unexpected EOF
+UndefinedRef run 19/20 UndefinedRef_D1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/binding.ts [exit=0]
+  treatment turn 1: edit src/binding.ts [exit=0]
+  evidence fixDiff: injectedSecretToken -> ''
+  evidence errorExcerptSnippet: 
+src/binding.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleBinding9(injectorToken: string, context: Context): string {
+4 |   return injectedSecretToken + ':' + inje
+Distillation failed for UndefinedRef_E1: JSON Parse error: Unexpected EOF
+UndefinedRef run 20/20 UndefinedRef_E1: control=pass:1 treatment=pass:1 rule=no
+  control turn 1: edit src/injector.ts [exit=0]
+  treatment turn 1: edit src/injector.ts [exit=0]
+  evidence fixDiff: dependencyPath -> ''
+  evidence errorExcerptSnippet: 
+src/injector.test.ts:
+1 | type Context = Record<string, string>
+2 | 
+3 | export function handleInjector10(injectorPath: string, context: Context): string {
+4 |   return dependencyPath + ':' + injecto
+
+=== UndefinedRef - 20 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 1.0 ± 0.0     | 1.0 ± 0.0     | +0% ± 0%      |
+| Tokens (input)  | 879 ± 5       | 879 ± 5       | -0% ± 0%      |
+| Tokens (output) | 19 ± 2        | 19 ± 4        | +4% ± 15%     |
+| Success rate    | 20/20         | 20/20         | —             |
+
+=== Overall (3 types x 20 runs = 60 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 2.1 ± 1.7     | 2.1 ± 1.7     | +10% ± 61%    | 0.890    |
+| Tokens (input)  | 1688 ± 1332   | 1700 ± 1326   | +10% ± 61%    | 0.903    |
+| Tokens (output) | 53 ± 46       | 51 ± 41       | +8% ± 48%     | 0.582    |
+| Success rate    | 44/60         | 42/60         | —             | 0.688    |
+
+Completed 60 pairs; API error runs: 0; distillation failures: 44.

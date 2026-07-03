@@ -1,0 +1,537 @@
+Provider: anthropic | Solver model: claude-haiku-4-5-20251001 | Distill model: claude-haiku-4-5-20251001 | Solver maxTokens: 4000
+ModuleNotFound run 1/30 ModuleNotFound_A1: control=pass:2 treatment=pass:1 rule=yes
+  control turn 1: read src/config.ts [exit=null]
+  control turn 2: edit src/loader.ts [exit=0]
+  treatment turn 1: edit src/loader.ts [exit=0]
+  evidence fixDiff: import { loadConfig } from './config-loader' -> import { loadConfig } from './config'
+  evidence errorExcerptSnippet: 
+src/loader.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './config-loader' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoe
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a relative import fails with 'Cannot find module', the import specifier does not match an actual file in the target directory. List files adjacent to the importing module and verify the import path references one that exists. The error may indicate a filename mismatch (e.g., the file is named `config.ts` but the import uses `./config-loader`) or an extension mismatch (e.g., the file is `config.ts` but the import omits the extension—Bun's module resolution may or may not auto-resolve this depending on configuration). Cross-check the specifier against the actual filesystem and update the import to match a file that exists in the same directory.
+ModuleNotFound run 2/30 ModuleNotFound_A2: control=pass:2 treatment=pass:2 rule=yes
+  control turn 1: read src/reader.ts [exit=null]
+  control turn 2: edit src/loader.ts [exit=0]
+  treatment turn 1: read src/reader.ts [exit=null]
+  treatment turn 2: edit src/loader.ts [exit=0]
+  evidence fixDiff: import { load2 } from './file-reader' -> import { load2 } from './reader'
+  evidence errorExcerptSnippet: 
+src/loader.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './file-reader' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesi
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a relative import specifier fails to resolve with "Cannot find module", the most likely cause is a mismatch between the import path written in the code and the actual filename on disk.
+
+**Root cause:** The import statement references a module name or path that does not exist at that location. For example, importing `'./file-reader'` when the actual file is named `reader.ts` (not `file-reader.ts`).
+
+**Resolution:** List the files actually present in the directory where the import is made (e.g., `src/`), compare the filenames against the import specifier, and correct the specifier to match the real filename. Pay close attention to naming conventions used in the repository—check whether files use compound names like `file-reader` or single words like `reader`, and update the import statement accordingly.
+ModuleNotFound run 3/30 ModuleNotFound_A3: control=pass:2 treatment=pass:1 rule=yes
+  control turn 1: read src/env.ts [exit=null]
+  control turn 2: edit src/loader.ts [exit=0]
+  treatment turn 1: edit src/loader.ts [exit=0]
+  evidence fixDiff: import { load3 } from './env-reader' -> import { load3 } from './env'
+  evidence errorExcerptSnippet: 
+src/loader.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './env-reader' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesis
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an ImportError occurs for a relative import (e.g., `import { load3 } from './env-reader'`), the specified module file does not exist at that path. The error message includes the absolute path where the resolution attempt failed; this reveals the directory where the search occurred.
+
+Diagnose by listing files actually present in the importing module's directory and comparing their names against the import specifier's suffix. The specifier may reference a non-existent filename (e.g., `./env-reader` when only `env.ts` exists), a wrong extension, or an incorrect relative path. Correct the specifier to match an existing file.
+
+Verify the fix by re-running the test and confirming the module resolves without errors.
+ModuleNotFound run 4/30 ModuleNotFound_B1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/plugin.ts [exit=0]
+  treatment turn 1: edit src/plugin.ts [exit=0]
+  evidence fixDiff: import { load4 } from './plugin-regsitry' -> import { load4 } from './plugin-registry'
+  evidence errorExcerptSnippet: 
+src/plugin.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './plugin-regsitry' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octon
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an ImportError occurs with a 'Cannot find module' message in a relative import path, the most common cause is a typo in the import specifier itself rather than a missing or misconfigured file. The error output identifies both the importing file and the failed specifier string.
+
+To resolve: first, list the files actually present in the directory containing the importing module and compare their names character-by-character against the import specifier. Check for common typos such as letter transpositions, missing or doubled characters, or incorrect suffixes. The fix here involved correcting a misspelled module name in the specifier (`./plugin-regsitry` → `./plugin-registry`).
+
+Before assuming the file doesn't exist, verify the spelling of the target module name matches what is actually on disk.
+ModuleNotFound run 5/30 ModuleNotFound_B2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/plugin.ts [exit=0]
+  treatment turn 1: edit src/plugin.ts [exit=0]
+  evidence fixDiff: import { load5 } from './hook-loder' -> import { load5 } from './hook-loader'
+  evidence errorExcerptSnippet: 
+src/plugin.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './hook-loder' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesis
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When `bun test` reports an ImportError for a relative import that cannot be found, the import specifier path likely contains a typo or misspelling of the actual filename.
+
+**Root cause:** The module resolver cannot locate a file matching the import path. Relative imports like `'./hook-loder'` are matched against files that actually exist in the filesystem—typos in the path (such as `loder` instead of `loader`) will cause resolution to fail.
+
+**Resolution:** List the files present in the directory adjacent to the importing module and compare filenames character-by-character against the import specifier. Correct any spelling discrepancies in the import path. In this case, the actual file was `hook-loader.ts`, not `hook-loder.ts`, so the import was updated to match the real filename.
+ModuleNotFound run 6/30 ModuleNotFound_B3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/plugin.ts [exit=0]
+  treatment turn 1: edit src/plugin.ts [exit=0]
+  evidence fixDiff: import { load6 } from './plugin-manfiest' -> import { load6 } from './plugin-manifest'
+  evidence errorExcerptSnippet: 
+src/plugin.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './plugin-manfiest' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octon
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When `bun test` reports an ImportError for a relative import that cannot be resolved, the import specifier likely contains a typo in the filename. The module bundler cannot find a file matching the given path, even though a similarly-named file exists in the same directory.
+
+Diagnose by listing the files actually present in the directory containing the importing module and comparing their names character-by-character against the import specifier. Common sources of mismatch are transposed letters, dropped or added characters, or phonetic misspellings (e.g., `./plugin-manfiest` should be `./plugin-manifest`). Correct the specifier to match the actual filename exactly, including extension.
+ModuleNotFound run 7/30 ModuleNotFound_C1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/registry.ts [exit=0]
+  treatment turn 1: edit src/registry.ts [exit=0]
+  evidence fixDiff: import { load7 } from './regsitry-store' -> import { load7 } from './registry-store'
+  evidence errorExcerptSnippet: 
+src/registry.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './regsitry-store' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octo
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When `bun test` reports an ImportError with 'Cannot find module' for a relative import specifier, the module file likely exists but the specifier contains a typo in the filename.
+
+**Root cause:** Relative import paths are matched exactly against filenames on disk. A single character substitution or transposition (e.g., `regsitry-store` instead of `registry-store`) will fail to resolve, even if a similarly-named file exists nearby.
+
+**Resolution:** List files in the directory containing the importing module and compare each filename character-by-character against the import specifier. Look for off-by-one substitutions, transpositions, or missing/extra characters. Correct the specifier to match the actual filename exactly.
+ModuleNotFound run 8/30 ModuleNotFound_C2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/registry.ts [exit=0]
+  treatment turn 1: edit src/registry.ts [exit=0]
+  evidence fixDiff: import { load8 } from './registry-adpater' -> import { load8 } from './registry-adapter'
+  evidence errorExcerptSnippet: 
+src/registry.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './registry-adpater' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/oc
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a relative import fails with "Cannot find module" error, verify that the import specifier matches the actual filename in the target directory. Import resolution is case-sensitive and character-exact; a single typo in the module name will prevent resolution.
+
+Diagnostic: List files in the directory adjacent to the importing module and compare each filename character-by-character against the import specifier. Look for common misspellings—particularly transposed or doubled letters (e.g., `registry-adpater` vs. `registry-adapter`).
+
+Fix: Correct the import specifier to match the actual filename exactly. The error output already identifies the failed specifier; use it as the starting point for the comparison.
+ModuleNotFound run 9/30 ModuleNotFound_D1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/bootstrap.ts [exit=0]
+  treatment turn 1: edit src/bootstrap.ts [exit=0]
+  evidence fixDiff: import { load9 } from './bootstarp-env' -> import { load9 } from './bootstrap-env'
+  evidence errorExcerptSnippet: 
+src/bootstrap.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './bootstarp-env' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octo
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an ImportError reports that a relative module cannot be found during test execution, the import specifier itself may contain a typo rather than the file being genuinely absent. Compare the import path character-by-character against the actual filename in the same directory.
+
+In this case, the specifier `'./bootstarp-env'` did not match the actual file `bootstrap-env.ts` — a single character transposition (`bootstarp` vs `bootstrap`). List files in the importing module's directory and verify the correct spelling before assuming the module structure is wrong or that a re-export barrel is missing.
+ModuleNotFound run 10/30 ModuleNotFound_E1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/init.ts [exit=0]
+  treatment turn 1: edit src/init.ts [exit=0]
+  evidence fixDiff: import { load10 } from './inti-config' -> import { load10 } from './init-config'
+  evidence errorExcerptSnippet: 
+src/init.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './inti-config' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesis-
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a module import fails with "Cannot find module" pointing to a relative path specifier (e.g., `./inti-config`), the most common cause is a typo in the import path itself rather than a missing file. Before investigating file structure or configuration, verify that the import specifier's spelling exactly matches the actual filename in the same directory.
+
+Diagnostic approach: List the files present in the directory containing the importing module and compare the import specifier character-by-character against the actual filename. Look for transposed letters, dropped characters, or altered prefixes (in this case, `./inti-config` should have been `./init-config`—a transposition of 't' and 'i').
+
+Once the correct filename is identified, update the import statement to match exactly.
+ModuleNotFound run 11/30 ModuleNotFound_A1: control=pass:2 treatment=pass:2 rule=yes
+  control turn 1: read src/config.ts [exit=null]
+  control turn 2: edit src/loader.ts [exit=0]
+  treatment turn 1: read src/config.ts [exit=null]
+  treatment turn 2: edit src/loader.ts [exit=0]
+  evidence fixDiff: import { loadConfig } from './config-loader' -> import { loadConfig } from './config'
+  evidence errorExcerptSnippet: 
+src/loader.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './config-loader' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoe
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an ImportError reports that a relative import cannot be resolved, the specified module file may not exist at the declared path. Verify the actual filename in the directory containing the importing module—the import specifier's suffix may not match the real file (e.g., importing `./config-loader` when the actual file is `./config.ts` or `./config/index.ts`).
+
+Diagnose by listing files in the same directory as the failing import statement and comparing their names against the specifier. If a file exists with a shorter or different name than specified, update the import path to match the actual filename. This is a path mismatch, not a missing module—the export target exists, but under a different name than declared.
+ModuleNotFound run 12/30 ModuleNotFound_A2: control=pass:2 treatment=pass:1 rule=yes
+  control turn 1: read src/reader.ts [exit=null]
+  control turn 2: edit src/loader.ts [exit=0]
+  treatment turn 1: edit src/loader.ts [exit=0]
+  evidence fixDiff: import { load2 } from './file-reader' -> import { load2 } from './reader'
+  evidence errorExcerptSnippet: 
+src/loader.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './file-reader' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesi
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a relative import fails with 'Cannot find module' in a test run, the import specifier does not match an actual file in the same directory. The error message identifies the module path that failed to resolve; compare the specifier against files actually present in the importing module's directory.
+
+The root cause is typically a mismatch between the intended filename and the specifier used—either the file was renamed after the import was written, or the specifier contains an incorrect or outdated name. List the files in the source directory alongside the importing module and verify the correct filename matches the import path (e.g., the specifier `'./file-reader'` did not match any file; the actual file was `reader.ts`, so the import was corrected to `'./reader'`).
+
+Resolve by updating the import specifier to match the actual filename in that directory.
+ModuleNotFound run 13/30 ModuleNotFound_A3: control=pass:2 treatment=pass:3 rule=yes
+  control turn 1: read src/env.ts [exit=null]
+  control turn 2: edit src/loader.ts [exit=0]
+  treatment turn 1: read src [exit=null]
+  treatment turn 2: read src/env.ts [exit=null]
+  treatment turn 3: edit src/loader.ts [exit=0]
+  evidence fixDiff: import { load3 } from './env-reader' -> import { load3 } from './env'
+  evidence errorExcerptSnippet: 
+src/loader.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './env-reader' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesis
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a relative import fails to resolve at test runtime with "Cannot find module", the specifier name may not match the actual filename in the target directory. Before assuming the module does not exist, verify that the filename in the import statement matches exactly what is present on disk.
+
+The most common root cause is a mismatch between the import specifier suffix and the actual file basename — for example, importing `./env-reader` when the file is actually named `env.ts` or `env/index.ts`. Use `ls` or your file explorer to confirm the exact filename, then update the import specifier to match the file that actually exists in the same directory.
+ModuleNotFound run 14/30 ModuleNotFound_B1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/plugin.ts [exit=0]
+  treatment turn 1: edit src/plugin.ts [exit=0]
+  evidence fixDiff: import { load4 } from './plugin-regsitry' -> import { load4 } from './plugin-registry'
+  evidence errorExcerptSnippet: 
+src/plugin.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './plugin-regsitry' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octon
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an ImportError reports that a relative module cannot be found, the import specifier itself is likely misspelled. List the files actually present in the same directory as the importing module and compare their names character-by-character against the specifier used in the import statement. Common mistakes include transposed characters or phonetic misspellings (in this case, `./plugin-regsitry` should have been `./plugin-registry`). Correct the specifier to match the actual filename.
+ModuleNotFound run 15/30 ModuleNotFound_B2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/plugin.ts [exit=0]
+  treatment turn 1: edit src/plugin.ts [exit=0]
+  evidence fixDiff: import { load5 } from './hook-loder' -> import { load5 } from './hook-loader'
+  evidence errorExcerptSnippet: 
+src/plugin.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './hook-loder' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesis
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a module import fails with `Cannot find module` for a relative path (e.g., `./hook-loder`), the first diagnostic step is to list the actual files present in the importing module's directory and compare their names against the import specifier character-by-character. Typos in filenames are a common cause—particularly transposed or omitted characters in the final segment (the fix here involved a transposition: `hook-loder` → `hook-loader`). Verify the exact filename on disk matches the import path, accounting for case sensitivity and file extensions. This is often faster than scanning for import alias misconfiguration when relative paths are used.
+ModuleNotFound run 16/30 ModuleNotFound_B3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/plugin.ts [exit=0]
+  treatment turn 1: edit src/plugin.ts [exit=0]
+  evidence fixDiff: import { load6 } from './plugin-manfiest' -> import { load6 } from './plugin-manifest'
+  evidence errorExcerptSnippet: 
+src/plugin.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './plugin-manfiest' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octon
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a module import fails with 'Cannot find module' during test execution, the import specifier path may contain a spelling error or typo that does not match the actual filename in the filesystem.
+
+Diagnose by listing the files present in the directory containing the importing module and comparing their actual names character-by-character against the import specifier. Common issues include transposed characters, missing letters, or phonetic misspellings (in this case, `./plugin-manfiest` should have been `./plugin-manifest`).
+
+Correct the import specifier to match the actual filename exactly, including case sensitivity.
+ModuleNotFound run 17/30 ModuleNotFound_C1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/registry.ts [exit=0]
+  treatment turn 1: edit src/registry.ts [exit=0]
+  evidence fixDiff: import { load7 } from './regsitry-store' -> import { load7 } from './registry-store'
+  evidence errorExcerptSnippet: 
+src/registry.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './regsitry-store' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octo
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a module import fails with a "Cannot find module" error, the import specifier itself may contain a typo. Check the import statement character-by-character against the actual filename in the same directory.
+
+The resolver reports the missing module path exactly as written in the import statement. If the file exists nearby but the error persists, compare the specifier and filename side by side for transposed letters, doubled characters, or other typos (e.g., `./regsitry-store` vs. the actual file `./registry-store`). Fix the import statement to match the actual filename.
+ModuleNotFound run 18/30 ModuleNotFound_C2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/registry.ts [exit=0]
+  treatment turn 1: edit src/registry.ts [exit=0]
+  evidence fixDiff: import { load8 } from './registry-adpater' -> import { load8 } from './registry-adapter'
+  evidence errorExcerptSnippet: 
+src/registry.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './registry-adpater' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/oc
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a module import fails with `Cannot find module` and the specifier uses a relative path (e.g., `./registry-adpater`), the import string likely contains a typo that does not match any file actually present in the target directory.
+
+**Root cause:** Relative import specifiers are resolved as-is against the filesystem. A misspelled module name (e.g., `registry-adpater` instead of `registry-adapter`) will fail to match the actual file.
+
+**Resolution:** List the files present in the directory containing the importing module and compare their names character-by-character against the import specifier. Correct any spelling mismatches in the import statement to match the actual filename.
+ModuleNotFound run 19/30 ModuleNotFound_D1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/bootstrap.ts [exit=0]
+  treatment turn 1: edit src/bootstrap.ts [exit=0]
+  evidence fixDiff: import { load9 } from './bootstarp-env' -> import { load9 } from './bootstrap-env'
+  evidence errorExcerptSnippet: 
+src/bootstrap.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './bootstarp-env' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octo
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an ImportError occurs reporting that a module cannot be found, the import specifier itself may contain a typo rather than the target file being genuinely absent. Before creating new files or modifying build configuration, list the files actually present in the same directory as the importing module and compare their names character-by-character against the import specifier (e.g., `./bootstarp-env` vs. `./bootstrap-env` — missing the first 's'). Module resolution is strict and will not fuzzy-match or auto-correct specifiers; a single character difference will cause the lookup to fail. Fix the specifier to match the actual filename exactly.
+ModuleNotFound run 20/30 ModuleNotFound_E1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/init.ts [exit=0]
+  treatment turn 1: edit src/init.ts [exit=0]
+  evidence fixDiff: import { load10 } from './inti-config' -> import { load10 } from './init-config'
+  evidence errorExcerptSnippet: 
+src/init.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './inti-config' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesis-
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an `ImportError` occurs because a module cannot be found, the import specifier path may contain a typo. Check the actual filenames in the directory containing the importing module and compare them character-by-character against the import specifier. Common sources of mismatch include transposed characters (e.g., `./inti-config` instead of `./init-config`), reversed or misspelled segments, or incorrect hyphens vs underscores.
+
+List the files actually present next to the importing module using `ls` or your file browser. For relative imports starting with `./`, verify the target file exists with the exact spelling used in the import statement. If the file exists but the specifier doesn't match it exactly, update the import path to match the actual filename.
+ModuleNotFound run 21/30 ModuleNotFound_A1: control=pass:2 treatment=pass:3 rule=yes
+  control turn 1: read src/config.ts [exit=null]
+  control turn 2: edit src/loader.ts [exit=0]
+  treatment turn 1: read src [exit=null]
+  treatment turn 2: read src/config.ts [exit=null]
+  treatment turn 3: edit src/loader.ts [exit=0]
+  evidence fixDiff: import { loadConfig } from './config-loader' -> import { loadConfig } from './config'
+  evidence errorExcerptSnippet: 
+src/loader.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './config-loader' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoe
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a module import fails with `Cannot find module` at runtime, the import specifier may not match the actual filename in the repository. This typically occurs when the imported filename has been renamed or refactored but the import statement was not updated accordingly.
+
+To resolve: List the files actually present in the same directory as the importing module. Compare the names against the import specifier path. If the expected file does not exist but a similarly-named file does (e.g., `./config` exists but the import requests `./config-loader`), update the import specifier to match the actual filename.
+
+This is distinct from missing dependencies or misconfigured module resolution—the module system cannot locate the target because the path literal in the import statement does not correspond to any file on disk.
+ModuleNotFound run 22/30 ModuleNotFound_A2: control=pass:2 treatment=pass:2 rule=yes
+  control turn 1: read src/reader.ts [exit=null]
+  control turn 2: edit src/loader.ts [exit=0]
+  treatment turn 1: read src/reader.ts [exit=null]
+  treatment turn 2: edit src/loader.ts [exit=0]
+  evidence fixDiff: import { load2 } from './file-reader' -> import { load2 } from './reader'
+  evidence errorExcerptSnippet: 
+src/loader.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './file-reader' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesi
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a relative import fails with 'Cannot find module' in a test run, the imported file path does not exist at the location specified in the import statement. This typically occurs when the actual filename differs from what the import specifier claims (e.g., importing `'./file-reader'` when the file is actually named `reader.ts`).
+
+To resolve: (1) List the files present in the same directory as the importing module. (2) Compare the import specifier against the actual filenames, accounting for both the base name and extension. (3) Update the import specifier to match the actual filename that exports the needed symbols.
+
+This is not a module resolution configuration issue but a straightforward path mismatch; verify the file exists before investigating deeper aliasing or path-mapping rules.
+ModuleNotFound run 23/30 ModuleNotFound_A3: control=pass:2 treatment=pass:3 rule=yes
+  control turn 1: read src/env.ts [exit=null]
+  control turn 2: edit src/loader.ts [exit=0]
+  treatment turn 1: read src [exit=null]
+  treatment turn 2: read src/env.ts [exit=null]
+  treatment turn 3: edit src/loader.ts [exit=0]
+  evidence fixDiff: import { load3 } from './env-reader' -> import { load3 } from './env'
+  evidence errorExcerptSnippet: 
+src/loader.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './env-reader' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesis
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a relative import fails with `Cannot find module` during test execution, the specified module file does not exist at the path given in the import statement. Verify the actual filename in the source directory matches the import specifier exactly—file extensions, naming conventions, and suffixes must all align.
+
+The common root cause is a mismatch between what the import statement requests (e.g., `./env-reader`) and what actually exists on disk (e.g., `./env.ts`). Rather than assuming the import path is correct, list the files present in the directory containing the import and compare them against the specifier. Update the import to reference the file that actually exists.
+
+This is particularly common when refactoring or renaming files—the import statement may reference an old or incorrect name while the actual file has a different name or location.
+ModuleNotFound run 24/30 ModuleNotFound_B1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/plugin.ts [exit=0]
+  treatment turn 1: edit src/plugin.ts [exit=0]
+  evidence fixDiff: import { load4 } from './plugin-regsitry' -> import { load4 } from './plugin-registry'
+  evidence errorExcerptSnippet: 
+src/plugin.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './plugin-regsitry' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octon
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an ImportError reports that a module cannot be found from a relative import specifier, the most likely cause is a typo in the module path itself rather than a missing file or misconfigured alias. Verify the import specifier against the actual filename in the source directory by listing files adjacent to the importing module.
+
+Compare the import path character-by-character to the actual filename present on disk. Common typo patterns include character transposition (e.g., `plugin-regsitry` instead of `plugin-registry`), single-character omissions, or swapped letter sequences. Correct the specifier to match the actual filename exactly, including case sensitivity on case-sensitive filesystems.
+
+This diagnostic applies when the error message clearly indicates a module path resolution failure and no import alias or barrel-export configuration is involved.
+ModuleNotFound run 25/30 ModuleNotFound_B2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/plugin.ts [exit=0]
+  treatment turn 1: edit src/plugin.ts [exit=0]
+  evidence fixDiff: import { load5 } from './hook-loder' -> import { load5 } from './hook-loader'
+  evidence errorExcerptSnippet: 
+src/plugin.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './hook-loder' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesis
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a relative import fails with `Cannot find module` in bun test, the specifier path may contain a spelling error in the filename itself. Check the import statement character-by-character against the actual files present in the same directory as the importing module. Common errors include single-letter transpositions or phonetic misspellings (e.g., `./hook-loder` when the file is actually `./hook-loader`). Use `ls -la` or your file explorer to list the directory contents and verify the exact filename before correcting the import path.
+ModuleNotFound run 26/30 ModuleNotFound_B3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/plugin.ts [exit=0]
+  treatment turn 1: edit src/plugin.ts [exit=0]
+  evidence fixDiff: import { load6 } from './plugin-manfiest' -> import { load6 } from './plugin-manifest'
+  evidence errorExcerptSnippet: 
+src/plugin.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './plugin-manfiest' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octon
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a relative import path fails to resolve with a ModuleNotFound error, the specifier itself may contain a typo. Check the exact spelling of the filename being imported against the files actually present in the target directory. List the directory contents and compare character-by-character against the import specifier — common errors include transposed letters or omitted characters (e.g., `./plugin-manfiest` should be `./plugin-manifest`). Correct the specifier to match the actual filename, accounting for case sensitivity and file extensions.
+ModuleNotFound run 27/30 ModuleNotFound_C1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/registry.ts [exit=0]
+  treatment turn 1: edit src/registry.ts [exit=0]
+  evidence fixDiff: import { load7 } from './regsitry-store' -> import { load7 } from './registry-store'
+  evidence errorExcerptSnippet: 
+src/registry.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './regsitry-store' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octo
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a module-not-found ImportError occurs on a relative import path, the most common cause is a typo in the import specifier itself rather than a missing or misconfigured file. Before investigating path aliases, configuration, or file structure, list the files actually present in the same directory as the importing module and compare them character-by-character against the import specifier. Look especially for character transpositions, omissions, or case differences (e.g., `regsitry-store` vs. `registry-store`). The fix is to correct the specifier to match the actual filename.
+ModuleNotFound run 28/30 ModuleNotFound_C2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/registry.ts [exit=0]
+  treatment turn 1: edit src/registry.ts [exit=0]
+  evidence fixDiff: import { load8 } from './registry-adpater' -> import { load8 } from './registry-adapter'
+  evidence errorExcerptSnippet: 
+src/registry.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './registry-adpater' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/oc
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a relative import path fails to resolve with a ModuleNotFound error, the most common cause is a typo in the import specifier itself rather than a broken module structure. The error message will indicate which file cannot be found; compare the specifier in the error against the actual filenames present in the target directory.
+
+Diagnostic approach: List files in the directory relative to the importing module. Examine the import specifier character-by-character against the actual filename—common mistakes include single-character transpositions (e.g., `registry-adpater` vs. `registry-adapter`), missing or extra characters, or case mismatches. Correct the specifier to match the actual filename exactly.
+
+This is distinct from missing files or misconfigured path aliases; those errors would show different file paths or alias patterns. Focus on character-level accuracy when the target directory is correctly referenced.
+ModuleNotFound run 29/30 ModuleNotFound_D1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/bootstrap.ts [exit=0]
+  treatment turn 1: edit src/bootstrap.ts [exit=0]
+  evidence fixDiff: import { load9 } from './bootstarp-env' -> import { load9 } from './bootstrap-env'
+  evidence errorExcerptSnippet: 
+src/bootstrap.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './bootstarp-env' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octo
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a module import fails with `Cannot find module` in a relative import path, the import specifier itself is likely misspelled. Compare the specifier in the import statement character-by-character against the actual filename present in the same directory.
+
+The root cause is typically a typo in the relative path string (e.g., `./bootstarp-env` vs. the actual file `./bootstrap-env`). List the files actually present next to the importing module and verify the specifier matches exactly. Fix by correcting the specifier to match the actual filename.
+
+This class of error is distinct from missing dependencies or misconfigured path aliases—it signals a local filesystem mismatch that a quick directory listing will expose.
+ModuleNotFound run 30/30 ModuleNotFound_E1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/init.ts [exit=0]
+  treatment turn 1: edit src/init.ts [exit=0]
+  evidence fixDiff: import { load10 } from './inti-config' -> import { load10 } from './init-config'
+  evidence errorExcerptSnippet: 
+src/init.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module './inti-config' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesis-
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an ImportError reports that a module cannot be found from a relative import path, the most common cause is a typo in the import specifier itself rather than a missing file. Check the actual filename in the filesystem against the characters in the import path—character substitutions and transpositions are easy to overlook in code review.
+
+Diagnostic: List all files in the directory containing the importing module. Compare each filename directly against the import specifier, paying close attention to letter order and spelling. The fix is typically a one-character or one-word correction to match the actual filename (e.g., changing `./inti-config` to `./init-config`).
+
+This rule applies to relative imports specifically; absolute or aliased imports may fail to resolve for different reasons and should be debugged separately.
+
+=== ModuleNotFound - 30 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 1.3 ± 0.5     | 1.3 ± 0.7     | +0% ± 23%     |
+| Tokens (input)  | 1115 ± 416    | 1351 ± 711    | +21% ± 28%    |
+| Tokens (output) | 61 ± 12       | 57 ± 11       | -4% ± 15%     |
+| Success rate    | 30/30         | 30/30         | —             |
+
+=== Overall (1 types x 30 runs = 30 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 1.3 ± 0.5     | 1.3 ± 0.7     | +0% ± 23%     | 1.000    |
+| Tokens (input)  | 1115 ± 416    | 1351 ± 711    | +21% ± 28%    | 0.010    |
+| Tokens (output) | 61 ± 12       | 57 ± 11       | -4% ± 15%     | 0.157    |
+| Success rate    | 30/30         | 30/30         | —             | 1.000    |
+
+Completed 30 pairs; API error runs: 0; distillation failures: 0.

@@ -1,0 +1,514 @@
+Provider: anthropic | Solver model: claude-haiku-4-5-20251001 | Distill model: claude-haiku-4-5-20251001 | Solver maxTokens: 4000
+ExpectMismatch run 1/30 ExpectMismatch_A1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  evidence fixDiff: export function sumTotal(a: number, b: number): number | string {
+  return a + b - 1
+} -> export function sumTotal(a: number, b: number): number | string {
+  return a + b
+}
+  evidence errorExcerptSnippet: 
+src/calc.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(gl
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with `Expected: X, Received: Y` where Y is consistently off by a small constant (commonly ±1), the root cause is usually an extraneous arithmetic operator in the calculation logic. Verify the function's implementation against the test's expected behavior by tracing through the computation step-by-step. In this instance, `sumTotal()` was subtracting 1 from the result unnecessarily — removing the erroneous operator brought the output into agreement with the expected value. Check for unintended additions, subtractions, or other arithmetic operations that may have been added during development or refactoring but do not match the function's intended contract.
+ExpectMismatch run 2/30 ExpectMismatch_A2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  evidence fixDiff: export function discountTotal(a: number, b: number): number | string {
+  return total - discount + 1
+} -> export function discountTotal(a: number, b: number): number | string {
+  return a - b
+}
+  evidence errorExcerptSnippet: 
+src/calc.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(gl
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with an unexpected value, verify that the function being tested actually uses its declared parameters. A common cause is that the function body references undefined variables (such as `total` and `discount` in the example) instead of operating on the function's parameters. This produces incorrect results that fail assertions.
+
+Diagnosis: Check whether the function returns a hardcoded expression or uses undefined names rather than the parameters passed in. The test will reveal the wrong output value in the assertion error message.
+
+Resolution: Replace all undefined variable references with the correct parameter names. Ensure the function body only depends on its declared parameters and returns the result of applying the intended operation to them (e.g., `return a - b` instead of `return total - discount + 1`).
+ExpectMismatch run 3/30 ExpectMismatch_A3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  evidence fixDiff: export function formatTitle(a: number, b: number): number | string {
+  return title.toLowerCase()
+} -> export function formatTitle(a: number, b: number): number | string {
+  return 'TITLE'
+}
+  evidence errorExcerptSnippet: 
+src/calc.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(gl
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an AssertionError reports `Expected: "TITLE"` but `Received: "title"` (or similar case mismatch), the function is returning a transformed version of a string instead of a literal constant. Inspect the function body to verify it is not calling `.toLowerCase()`, `.toUpperCase()`, or other case-transformation methods on an intermediate variable. The fix is to return the literal expected value directly (e.g., `return 'TITLE'` instead of `return title.toLowerCase()`). This commonly occurs when a function was initially written to transform input and the return statement was not updated after the logic was simplified or refactored.
+ExpectMismatch run 4/30 ExpectMismatch_B1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=1]
+  treatment turn 3: edit src/formatter.ts [exit=1]
+  treatment turn 4: edit src/formatter.ts [exit=1]
+  treatment turn 5: edit src/formatter.ts [exit=1]
+ExpectMismatch run 5/30 ExpectMismatch_B2: control=pass:2 treatment=pass:3 rule=yes
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=0]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: read src/formatter.test.ts [exit=null]
+  treatment turn 3: edit src/formatter.ts [exit=0]
+  evidence fixDiff: export function handleFormatter5(): number | string {
+  return formatPadding(4, 2)
+} -> export function handleFormatter5(): number | string {
+  return formatPadding(5, 2)
+}
+  evidence errorExcerptSnippet: 
+src/formatter.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |    
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with an expected vs. received mismatch in a formatter or utility function, verify that the function is using the correct input values from the test setup context. The test may set up multiple related values (e.g., `celsius`, `base`, `bonus`, `correct`) as preconditions, and the function under test must use the semantically correct one for its operation.
+
+In this case, the test expected `formatPadding(5, 2)` to produce `'007'`, but the implementation was calling `formatPadding(4, 2)` instead. The value `5` came from the `correct` variable set in the test setup, not from `base` (which was `4`). Always cross-reference which test variable should logically flow into the function call based on the test's semantic intent, rather than assuming a nearby or similarly-named variable is correct.
+ExpectMismatch run 6/30 ExpectMismatch_B3: control=fail:5 treatment=pass:4 rule=no
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=1]
+  treatment turn 3: edit src/formatter.ts [exit=1]
+  treatment turn 4: edit src/formatter.ts [exit=0]
+ExpectMismatch run 7/30 ExpectMismatch_C1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/converter.ts [exit=1]
+  control turn 2: edit src/converter.ts [exit=1]
+  control turn 3: edit src/converter.ts [exit=1]
+  control turn 4: edit src/converter.ts [exit=1]
+  control turn 5: edit src/converter.ts [exit=1]
+  treatment turn 1: edit src/converter.ts [exit=1]
+  treatment turn 2: edit src/converter.ts [exit=1]
+  treatment turn 3: edit src/converter.ts [exit=1]
+  treatment turn 4: edit src/converter.ts [exit=1]
+  treatment turn 5: edit src/converter.ts [exit=1]
+ExpectMismatch run 8/30 ExpectMismatch_C2: control=fail:5 treatment=pass:4 rule=no
+  control turn 1: edit src/converter.ts [exit=1]
+  control turn 2: edit src/converter.ts [exit=1]
+  control turn 3: edit src/converter.ts [exit=1]
+  control turn 4: edit src/converter.ts [exit=1]
+  control turn 5: edit src/converter.ts [exit=1]
+  treatment turn 1: edit src/converter.ts [exit=1]
+  treatment turn 2: edit src/converter.ts [exit=1]
+  treatment turn 3: edit src/converter.ts [exit=1]
+  treatment turn 4: edit src/converter.ts [exit=0]
+ExpectMismatch run 9/30 ExpectMismatch_D1: control=fail:5 treatment=pass:2 rule=no
+  control turn 1: edit src/aggregator.ts [exit=1]
+  control turn 2: edit src/aggregator.ts [exit=1]
+  control turn 3: edit src/aggregator.ts [exit=1]
+  control turn 4: edit src/aggregator.ts [exit=1]
+  control turn 5: edit src/aggregator.ts [exit=1]
+  treatment turn 1: edit src/aggregator.ts [exit=1]
+  treatment turn 2: edit src/aggregator.ts [exit=0]
+ExpectMismatch run 10/30 ExpectMismatch_E1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/scorer.ts [exit=0]
+  treatment turn 1: edit src/scorer.ts [exit=0]
+  evidence fixDiff: export function scoreBonus(a: number, b: number): number | string {
+  return base + bonus - 1
+} -> export function scoreBonus(a: number, b: number): number | string {
+  return a + b
+}
+  evidence errorExcerptSnippet: 
+src/scorer.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a function receives named parameters but the implementation references undeclared identifiers instead, the function will silently use global scope values rather than the passed arguments. This causes test assertions to fail when the globals happen to differ from the test's expected computation.
+
+Diagnosis: Compare the function signature against its body. If the body references variables that match globals injected by the test harness (e.g., `base`, `bonus`) but the function accepts parameters with different names (e.g., `a`, `b`), the implementation is ignoring its own parameters.
+
+Resolution: Replace all references to global-scope variable names with the corresponding parameter names. The function should use only its declared parameters to compute its result, not reach into global scope. (In this case, `scoreBonus(a, b)` was using `base + bonus - 1` instead of `a + b`.)
+ExpectMismatch run 11/30 ExpectMismatch_A1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  evidence fixDiff: export function sumTotal(a: number, b: number): number | string {
+  return a + b - 1
+} -> export function sumTotal(a: number, b: number): number | string {
+  return a + b
+}
+  evidence errorExcerptSnippet: 
+src/calc.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(gl
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with an output that is consistently off by a small integer delta (e.g., expected 6 but received 5), check for arithmetic operations in the implementation that apply unnecessary constant adjustments. The root cause is typically an extra operation added during development or debugging—such as subtracting 1 from a sum, adding an unintended offset, or applying a modifier that was never meant to be permanent.
+
+Diagnosis: Compare the expected value against the received value to identify the delta. Trace through the calculation function step-by-step with the test inputs to locate where that delta is introduced. In this case, the function was returning `a + b - 1` when it should have returned `a + b`—the subtraction of 1 was an extraneous operation.
+
+Fix: Remove the unnecessary arithmetic modifier from the calculation. Verify the corrected logic produces the expected result by re-running the test.
+ExpectMismatch run 12/30 ExpectMismatch_A2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  evidence fixDiff: export function discountTotal(a: number, b: number): number | string {
+  return total - discount + 1
+} -> export function discountTotal(a: number, b: number): number | string {
+  return a - b
+}
+  evidence errorExcerptSnippet: 
+src/calc.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(gl
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with an unexpected numeric result, verify that the function under test is actually using its declared parameters rather than relying on closure variables or module-scoped state.
+
+The root cause here was that `discountTotal(a, b)` was declared with two parameters but its implementation referenced `total` and `discount` — variables from outer scope that were not the function's inputs. This created a silent contract violation: callers expected the function to operate on the provided arguments, but it ignored them entirely.
+
+The fix is to audit the function body: ensure every value used in the calculation comes from the parameter list or is legitimately part of the function's own scope. In this case, the correct implementation was to use the parameters directly (`return a - b`), making the function's contract explicit and testable.
+ExpectMismatch run 13/30 ExpectMismatch_A3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  evidence fixDiff: export function formatTitle(a: number, b: number): number | string {
+  return title.toLowerCase()
+} -> export function formatTitle(a: number, b: number): number | string {
+  return 'TITLE'
+}
+  evidence errorExcerptSnippet: 
+src/calc.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(gl
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with an expected/received mismatch showing identical strings in different cases (e.g., expected `"TITLE"` but received `"title"`), check the implementation function's return statement first.
+
+The root cause is typically that the function is transforming the return value when it should return it as-is. Common transformations include `.toLowerCase()`, `.toUpperCase()`, or other string mutations applied to a value that should be returned in its original or literal form.
+
+Review the function body to ensure it returns the correct literal value or preserves the casing of any computed result, rather than applying case-conversion methods that contradict the test's expectation.
+ExpectMismatch run 14/30 ExpectMismatch_B1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=1]
+  treatment turn 3: edit src/formatter.ts [exit=1]
+  treatment turn 4: edit src/formatter.ts [exit=1]
+  treatment turn 5: edit src/formatter.ts [exit=1]
+ExpectMismatch run 15/30 ExpectMismatch_B2: control=pass:2 treatment=pass:3 rule=yes
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=0]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: read src/formatter.test.ts [exit=null]
+  treatment turn 3: edit src/formatter.ts [exit=0]
+  evidence fixDiff: export function handleFormatter5(): number | string {
+  return formatPadding(4, 2)
+} -> export function handleFormatter5(): number | string {
+  return formatPadding(5, 2)
+}
+  evidence errorExcerptSnippet: 
+src/formatter.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |    
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with a mismatch between expected and received values (e.g., expected "007" but received "07"), first verify that the function under test is using the correct input values. The test setup may define global state or fixtures that represent the 'correct' or 'expected' reference values. Compare the actual parameters passed to helper functions in the implementation against those reference values from the test setup. In this case, the test established `correct = 5` as the expected reference value, but `handleFormatter5()` was calling `formatPadding(4, 2)` instead of `formatPadding(5, 2)`. The fix is to align the function's hardcoded or computed argument with the reference value established in the test setup, not to change the expected output string.
+ExpectMismatch run 16/30 ExpectMismatch_B3: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=1]
+  treatment turn 3: edit src/formatter.ts [exit=1]
+  treatment turn 4: edit src/formatter.ts [exit=1]
+  treatment turn 5: edit src/formatter.ts [exit=0]
+ExpectMismatch run 17/30 ExpectMismatch_C1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/converter.ts [exit=1]
+  control turn 2: edit src/converter.ts [exit=1]
+  control turn 3: edit src/converter.ts [exit=1]
+  control turn 4: read src/converter.test.ts [exit=null]
+  control turn 5: edit src/converter.ts [exit=1]
+  treatment turn 1: edit src/converter.ts [exit=1]
+  treatment turn 2: edit src/converter.ts [exit=1]
+  treatment turn 3: edit src/converter.ts [exit=1]
+  treatment turn 4: edit src/converter.ts [exit=1]
+  treatment turn 5: edit src/converter.ts [exit=1]
+ExpectMismatch run 18/30 ExpectMismatch_C2: control=fail:5 treatment=pass:4 rule=no
+  control turn 1: edit src/converter.ts [exit=1]
+  control turn 2: edit src/converter.ts [exit=1]
+  control turn 3: edit src/converter.ts [exit=1]
+  control turn 4: edit src/converter.ts [exit=1]
+  control turn 5: edit src/converter.ts [exit=1]
+  treatment turn 1: edit src/converter.ts [exit=1]
+  treatment turn 2: edit src/converter.ts [exit=1]
+  treatment turn 3: edit src/converter.ts [exit=1]
+  treatment turn 4: edit src/converter.ts [exit=0]
+ExpectMismatch run 19/30 ExpectMismatch_D1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/aggregator.ts [exit=1]
+  control turn 2: edit src/aggregator.ts [exit=1]
+  control turn 3: edit src/aggregator.ts [exit=1]
+  control turn 4: edit src/aggregator.ts [exit=1]
+  control turn 5: edit src/aggregator.ts [exit=0]
+  treatment turn 1: edit src/aggregator.ts [exit=1]
+  treatment turn 2: edit src/aggregator.ts [exit=1]
+  treatment turn 3: edit src/aggregator.ts [exit=1]
+  treatment turn 4: edit src/aggregator.ts [exit=1]
+  treatment turn 5: edit src/aggregator.ts [exit=1]
+ExpectMismatch run 20/30 ExpectMismatch_E1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/scorer.ts [exit=0]
+  treatment turn 1: edit src/scorer.ts [exit=0]
+  evidence fixDiff: export function scoreBonus(a: number, b: number): number | string {
+  return base + bonus - 1
+} -> export function scoreBonus(a: number, b: number): number | string {
+  return a + b
+}
+  evidence errorExcerptSnippet: 
+src/scorer.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a function with parameters produces an incorrect assertion result, verify that the function body actually uses the declared parameters rather than accidentally referencing global variables or constants with similar names.
+
+In this case, `scoreBonus(a: number, b: number)` was declared with two parameters but the implementation referenced `base` and `bonus` instead—global variables set in the test setup. The function signature promised to use the parameters `a` and `b`, so the fix is to use them: return `a + b` instead of `base + bonus - 1`.
+
+This pattern commonly occurs when refactoring: parameters are added or renamed, but the function body is not updated to match. Always ensure parameter names in the signature correspond to the names actually used in the implementation.
+ExpectMismatch run 21/30 ExpectMismatch_A1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  evidence fixDiff: export function sumTotal(a: number, b: number): number | string {
+  return a + b - 1
+} -> export function sumTotal(a: number, b: number): number | string {
+  return a + b
+}
+  evidence errorExcerptSnippet: 
+src/calc.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(gl
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test fails with an AssertionError where the received value is consistently off from the expected value by a small constant (e.g., expected 6 but received 5), suspect an unintended arithmetic operation in the calculation function.
+
+Inspect the function body for any extraneous arithmetic operations applied to the final result—such as subtracting 1, adding 1, or other constant adjustments—that were not part of the original requirement. These often appear as leftovers from debugging, incomplete refactoring, or misunderstanding the specification.
+
+Remove the extraneous operation so that the function returns only the intended computation (in this case, returning `a + b` rather than `a + b - 1`).
+ExpectMismatch run 22/30 ExpectMismatch_A2: control=pass:1 treatment=pass:2 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=1]
+  treatment turn 2: edit src/calc.ts [exit=0]
+  evidence fixDiff: export function discountTotal(a: number, b: number): number | string {
+  return total - discount + 1
+} -> export function discountTotal(a: number, b: number): number | string {
+  return (globalThis as any).base - (globalThis as any).bonus
+}
+  evidence errorExcerptSnippet: 
+src/calc.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(gl
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a function assertion fails with an unexpected value, inspect the function body to verify it actually uses its declared parameters. A common cause of assertion mismatches is that the function body references out-of-scope variables (e.g., module-level globals or lexically unavailable identifiers) instead of using the values passed in as arguments.
+
+In this case, `discountTotal(a: number, b: number)` was returning `total - discount + 1`, where neither `total` nor `discount` were defined in scope—only `a` and `b` were available. The test was providing specific parameter values expecting the function to compute against them, but the function ignored them entirely. The fix is to replace references to undefined variables with the correct parameter names or with globals that the test has explicitly set up (e.g., `(globalThis as any).base` and `(globalThis as any).bonus` when those are the intended inputs).
+
+Always cross-check function implementations against their test setup to confirm inputs are actually consumed, not shadowed by accident.
+ExpectMismatch run 23/30 ExpectMismatch_A3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  evidence fixDiff: export function formatTitle(a: number, b: number): number | string {
+  return title.toLowerCase()
+} -> export function formatTitle(a: number, b: number): number | string {
+  return 'TITLE'
+}
+  evidence errorExcerptSnippet: 
+src/calc.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(gl
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an AssertionError reports a case-sensitivity mismatch between expected and received string values (e.g., expected `"TITLE"` but received `"title"`), the root cause is typically a function returning a transformed or computed string value instead of the literal expected value.
+
+Inspect the function body for operations that modify the return value's case, such as `.toLowerCase()`, `.toUpperCase()`, or conditional transformations. The fix is to return the correct literal string that matches the test's expectation, or to ensure the function's logic produces the intended case without unintended transformations.
+
+Verify that the function's parameters and logic genuinely require case modification; if not, replace the transformation with the expected literal value or correct the underlying logic.
+ExpectMismatch run 24/30 ExpectMismatch_B1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=1]
+  treatment turn 3: edit src/formatter.ts [exit=1]
+  treatment turn 4: edit src/formatter.ts [exit=1]
+  treatment turn 5: edit src/formatter.ts [exit=1]
+ExpectMismatch run 25/30 ExpectMismatch_B2: control=fail:5 treatment=pass:2 rule=no
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=0]
+ExpectMismatch run 26/30 ExpectMismatch_B3: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=0]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=1]
+  treatment turn 3: edit src/formatter.ts [exit=1]
+  treatment turn 4: edit src/formatter.ts [exit=1]
+  treatment turn 5: edit src/formatter.ts [exit=0]
+ExpectMismatch run 27/30 ExpectMismatch_C1: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/converter.ts [exit=1]
+  control turn 2: edit src/converter.ts [exit=1]
+  control turn 3: edit src/converter.ts [exit=1]
+  control turn 4: edit src/converter.ts [exit=1]
+  control turn 5: edit src/converter.ts [exit=0]
+  treatment turn 1: edit src/converter.ts [exit=1]
+  treatment turn 2: edit src/converter.ts [exit=1]
+  treatment turn 3: edit src/converter.ts [exit=1]
+  treatment turn 4: edit src/converter.ts [exit=1]
+  treatment turn 5: edit src/converter.ts [exit=1]
+ExpectMismatch run 28/30 ExpectMismatch_C2: control=fail:5 treatment=fail:5 rule=no
+  control turn 1: edit src/converter.ts [exit=1]
+  control turn 2: edit src/converter.ts [exit=1]
+  control turn 3: edit src/converter.ts [exit=1]
+  control turn 4: edit src/converter.ts [exit=1]
+  control turn 5: edit src/converter.ts [exit=0]
+  treatment turn 1: edit src/converter.ts [exit=1]
+  treatment turn 2: edit src/converter.ts [exit=1]
+  treatment turn 3: edit src/converter.ts [exit=1]
+  treatment turn 4: edit src/converter.ts [exit=1]
+  treatment turn 5: edit src/converter.ts [exit=1]
+ExpectMismatch run 29/30 ExpectMismatch_D1: control=pass:2 treatment=fail:5 rule=yes
+  control turn 1: edit src/aggregator.ts [exit=1]
+  control turn 2: edit src/aggregator.ts [exit=0]
+  treatment turn 1: edit src/aggregator.ts [exit=1]
+  treatment turn 2: edit src/aggregator.ts [exit=1]
+  treatment turn 3: edit src/aggregator.ts [exit=1]
+  treatment turn 4: edit src/aggregator.ts [exit=1]
+  treatment turn 5: edit src/aggregator.ts [exit=1]
+  evidence fixDiff: export function handleAggregator9(): number | string {
+  return scorePercent(4, 2)
+} -> export function handleAggregator9(): number | string {
+  return scorePercent(5, 0)
+}
+  evidence errorExcerptSnippet: 
+src/aggregator.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |   
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with an Expected vs. Received mismatch (e.g., expected 50, received 0.5), verify that the function under test is calling the helper function with the correct arguments, not placeholder or default values. The test setup establishes meaningful global state (celsius, items, correct, base, bonus) to validate the calculation logic. If the function returns a wrong result, check that it is actually using the test-provided values in the correct order and roles when invoking downstream functions. In this instance, the function was calling `scorePercent(4, 2)` (using base and bonus directly) instead of the expected inputs `scorePercent(5, 0)` (using correct and 0). The fix is to ensure the function passes the semantically correct arguments based on the test's intent, not arbitrary or default values.
+ExpectMismatch run 30/30 ExpectMismatch_E1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/scorer.ts [exit=0]
+  treatment turn 1: edit src/scorer.ts [exit=0]
+  evidence fixDiff: export function scoreBonus(a: number, b: number): number | string {
+  return base + bonus - 1
+} -> export function scoreBonus(a: number, b: number): number | string {
+  return a + b
+}
+  evidence errorExcerptSnippet: 
+src/scorer.test.ts:
+12 |     ;(globalThis as any).celsius = 4
+13 |     ;(globalThis as any).items = [1, 2]
+14 |     ;(globalThis as any).correct = 5
+15 |     ;(globalThis as any).base = 4
+16 |     ;(
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a function receives parameters but the test output suggests those parameters are being ignored in favor of global state, check whether the function body is accidentally referencing global variables instead of using its declared parameters.
+
+In this case, `scoreBonus(a: number, b: number)` had parameters `a` and `b` in its signature, but the implementation was computing `base + bonus - 1` — reaching for globals instead of using the function arguments. The fix is to ensure the function body actually uses the parameters passed to it: replace global variable references with the corresponding parameter names (e.g., `a + b` instead of `base + bonus - 1`).
+
+This error commonly occurs when a function is initially written to work with globals, then refactored to accept parameters, but the function body is not fully updated to consume those parameters.
+
+=== ExpectMismatch - 30 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 3.1 ± 2.0     | 3.0 ± 1.8     | +6% ± 39%     |
+| Tokens (input)  | 3204 ± 2033   | 3268 ± 1834   | +19% ± 53%    |
+| Tokens (output) | 324 ± 242     | 303 ± 209     | +7% ± 59%     |
+| Success rate    | 15/30         | 19/30         | —             |
+
+=== Overall (1 types x 30 runs = 30 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 3.1 ± 2.0     | 3.0 ± 1.8     | +6% ± 39%     | 0.606    |
+| Tokens (input)  | 3204 ± 2033   | 3268 ± 1834   | +19% ± 53%    | 0.788    |
+| Tokens (output) | 324 ± 242     | 303 ± 209     | +7% ± 59%     | 0.472    |
+| Success rate    | 15/30         | 19/30         | —             | 0.219    |
+
+Completed 30 pairs; API error runs: 0; distillation failures: 0.
