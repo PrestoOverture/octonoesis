@@ -134,9 +134,12 @@ The target file does not have to be the file shown to you initially — it can b
 repo file tree (e.g. a config file or barrel export) if that is where the actual fix belongs.
 Do not include an "action" key when applying a fix.
 
-If you are not yet sure what the correct fix is, respond with a single read action instead of
-guessing — you have several turns available. Investigate first, then fix once you know the
-answer with confidence.
+Each turn, decide: do you already have enough information to make the fix, or are you missing
+something you need? If you have enough information, emit the edit — do not read first just to
+double-check something you already know. If you are missing information (for example, you do
+not yet know what a referenced file actually contains), emit a read action to get it. Reading is
+not free — it costs a turn — so use it only for information you genuinely lack, not as a default
+first step.
 
 Respond with ONLY that one JSON object now. No other text.`
 
@@ -591,7 +594,8 @@ Source file (${fixture.file}):
 ${sourceContent}
 ---
 ${readsBlock}${ruleBlock}
-Fix the bug, or read another file first if you need to investigate. Respond with ONLY the JSON object.`
+Respond with the fix if you already have enough information, or a read action if you are missing
+something you need. Respond with ONLY the JSON object.`
 }
 
 async function callFixLLM(

@@ -1,0 +1,153 @@
+Provider: anthropic | Solver model: claude-haiku-4-5-20251001 | Distill model: claude-haiku-4-5-20251001
+RepoQuirk run 1/6 RepoQuirk_ImportMap: control=pass:2 treatment=pass:2 rule=yes
+  control turn 1: read src/lib/strings.ts [exit=null]
+  control turn 2: edit src/label.ts [exit=0]
+  treatment turn 1: read src/lib/strings.ts [exit=null]
+  treatment turn 2: edit src/label.ts [exit=0]
+  evidence fixDiff: import { formatLabel } from '#lib/format.ts' -> import { formatLabel } from '#lib/strings.ts'
+  evidence errorExcerptSnippet: 
+src/label.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '#lib/format.ts' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesi
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When an ImportError occurs for a `#lib/*` aliased import that cannot be resolved, the issue is typically a mismatch between the import specifier and the actual filename or export location in the target directory.
+
+This repo uses a `#lib/*` import alias. The error here shows the import specifier referenced `#lib/format.ts`, but the actual file containing the required export (`formatLabel`) is `#lib/strings.ts`. The alias path is correct, but the module name within it was wrong.
+
+To resolve: verify that the filename in the `#lib/` target directory matches the import specifier. List the files that actually exist under the alias target and confirm the correct export source before assuming the specifier suffix is accurate.
+RepoQuirk run 2/6 RepoQuirk_BarrelExport: control=pass:2 treatment=pass:3 rule=yes
+  control turn 1: read src/lib/index.ts [exit=null]
+  control turn 2: edit src/lib/index.ts [exit=0]
+  treatment turn 1: read src/lib/index.ts [exit=null]
+  treatment turn 2: read src/lib/helper.ts [exit=null]
+  treatment turn 3: edit src/lib/index.ts [exit=0]
+  evidence fixDiff: export { titleCase } from './helper' -> export { titleCase } from './helper'
+export { slugify } from './helper'
+  evidence errorExcerptSnippet: 
+src/slug.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+SyntaxError: Export named 'slugify' not found in module '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/oc
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a named import fails with "Export named 'X' not found in module", the importing module exists but does not re-export the requested symbol. Check the barrel export file (typically `index.ts` in the target directory) and verify that all symbols being imported are explicitly exported there.
+
+The common root cause is that a symbol exists in a sibling file (e.g., `./helper.ts`) but the barrel file only exports a subset of available symbols. The fix is to add the missing named export to the barrel file—matching both the imported name and the source file it comes from (e.g., adding `export { slugify } from './helper'` when the test imports `{ slugify }` from the barrel directory but only `titleCase` was previously exported).
+
+This pattern applies whenever imports target a directory rather than a specific `.ts` file—the barrel is the contract for what that directory exports.
+RepoQuirk run 3/6 RepoQuirk_SettingsVersion: control=pass:2 treatment=pass:2 rule=yes
+  control turn 1: read config/settings.json [exit=null]
+  control turn 2: edit config/settings.json [exit=0]
+  treatment turn 1: read config/settings.json [exit=null]
+  treatment turn 2: edit config/settings.json [exit=0]
+  evidence fixDiff: {
+  "schema_version": 1, -> {
+  "schema_version": 2,
+  evidence errorExcerptSnippet: 
+src/settings.test.ts:
+3 | 
+4 | export function handleSettings(): string {
+5 |   const raw = readFileSync(join(import.meta.dir, '..', 'config', 'settings.json'), 'utf8')
+6 |   const parsed = JSON.pars
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a ConfigError occurs during schema validation in `src/settings.ts`, the root cause is typically a mismatch between the actual value in the config file and the expected value enforced by the code. The test file `src/settings.test.ts` reads `config/settings.json` and validates that `schema_version` equals a specific value (in this instance, 2).
+
+**Diagnostic approach:** Check the actual `schema_version` value in `config/settings.json` against the expected value in the validation logic in `src/settings.ts`. The error message will indicate what was found versus what was expected (e.g., "expected schema_version 2, got 1").
+
+**Resolution:** Update `config/settings.json` to set `schema_version` to the value that the validation code expects. Do not change the validation logic in `src/settings.ts` unless the schema version expectation itself needs to be updated across the codebase.
+RepoQuirk run 4/6 RepoQuirk_ImportMap: control=pass:2 treatment=pass:2 rule=yes
+  control turn 1: read src/lib/strings.ts [exit=null]
+  control turn 2: edit src/label.ts [exit=0]
+  treatment turn 1: read src/lib/strings.ts [exit=null]
+  treatment turn 2: edit src/label.ts [exit=0]
+  evidence fixDiff: import { formatLabel } from '#lib/format.ts' -> import { formatLabel } from '#lib/strings.ts'
+  evidence errorExcerptSnippet: 
+src/label.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+error: Cannot find module '#lib/format.ts' from '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/octonoesi
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a `#lib/...` import fails to resolve with 'Cannot find module', the specifier name does not always match the actual filename in the target directory. This repo uses a `#lib/*` import alias that maps to a specific directory; the alias itself works, but the suffix you've written may point to a file that doesn't exist.
+
+Resolve this by listing the files actually present in the `#lib` alias target directory and matching the symbol name to the correct file. The error here revealed that `#lib/format.ts` does not exist, but `#lib/strings.ts` does and exports the symbol being imported. Verify the correct filename before assuming the import specifier is right.
+RepoQuirk run 5/6 RepoQuirk_BarrelExport: control=pass:2 treatment=pass:3 rule=yes
+  control turn 1: read src/lib/index.ts [exit=null]
+  control turn 2: edit src/lib/index.ts [exit=0]
+  treatment turn 1: read src/lib/index.ts [exit=null]
+  treatment turn 2: read src/lib/helper.ts [exit=null]
+  treatment turn 3: edit src/lib/index.ts [exit=0]
+  evidence fixDiff: export { titleCase } from './helper' -> export { titleCase } from './helper'
+export { slugify } from './helper'
+  evidence errorExcerptSnippet: 
+src/slug.test.ts:
+
+# Unhandled error between tests
+-------------------------------
+SyntaxError: Export named 'slugify' not found in module '/private/var/folders/py/fgn4y69d7n33qyc1rzh_2nr80000gn/T/oc
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a named import fails with 'Export named X not found in module', the importing statement is correct but the barrel file (index.ts) is not exporting the symbol that exists in one of its re-export sources.
+
+The root cause is a mismatch between what a barrel file imports from its local modules and what it re-exports publicly. A symbol may exist in a sibling file (e.g., `./helper.ts`) but the barrel's `index.ts` never includes an `export { symbolName } from './source-file'` statement for it.
+
+To resolve: identify which sibling module in the barrel directory actually defines the missing export (check the files being imported within the barrel), then add an explicit re-export statement in `index.ts` for that symbol and its source file (e.g., add `export { slugify } from './helper'` when `slugify` exists in `helper.ts` but was not previously re-exported).
+RepoQuirk run 6/6 RepoQuirk_SettingsVersion: control=pass:2 treatment=pass:2 rule=yes
+  control turn 1: read config/settings.json [exit=null]
+  control turn 2: edit config/settings.json [exit=0]
+  treatment turn 1: read config/settings.json [exit=null]
+  treatment turn 2: edit config/settings.json [exit=0]
+  evidence fixDiff: {
+  "schema_version": 1,
+  "feature_flags": {
+    "betaSearch": true
+  }
+} -> {
+  "schema_version": 2,
+  "feature_flags": {
+    "betaSearch": true
+  }
+}
+  evidence errorExcerptSnippet: 
+src/settings.test.ts:
+3 | 
+4 | export function handleSettings(): string {
+5 |   const raw = readFileSync(join(import.meta.dir, '..', 'config', 'settings.json'), 'utf8')
+6 |   const parsed = JSON.pars
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a ConfigError occurs during schema validation and the error message indicates a mismatch between an expected and actual schema version, the root cause is that the configuration file's version field does not match what the code expects.
+
+Diagnose by reading the error message to identify (1) the expected version number and (2) the actual version number in the parsed config. Then inspect the config file that was loaded (the file path in the stack trace or readFileSync call shows the location—in this case, `config/settings.json`) and update its `schema_version` field to match the expected value that the code validation logic requires.
+
+This is not a code defect; it is a configuration drift issue resolved by aligning the config file's declared schema version with the code's validation requirement.
+
+=== RepoQuirk - 6 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 2.0 ± 0.0     | 2.3 ± 0.5     | +17% ± 26%    |
+| Tokens (input)  | 1730 ± 344    | 2502 ± 536    | +48% ± 42%    |
+| Tokens (output) | 84 ± 21       | 83 ± 18       | +3% ± 29%     |
+| Success rate    | 6/6           | 6/6           | —             |
+
+=== Overall (1 types x 6 runs = 6 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 2.0 ± 0.0     | 2.3 ± 0.5     | +17% ± 26%    | 0.114    |
+| Tokens (input)  | 1730 ± 344    | 2502 ± 536    | +48% ± 42%    | 0.001    |
+| Tokens (output) | 84 ± 21       | 83 ± 18       | +3% ± 29%     | 0.936    |
+| Success rate    | 6/6           | 6/6           | —             | —        |
+
+Completed 6 pairs; API error runs: 0; distillation failures: 0.
