@@ -1,8 +1,10 @@
-import { describe, expect, it } from 'bun:test'
+import { afterEach, describe, expect, it } from 'bun:test'
 import { readFile, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
+import { setProvider } from '../../../src/providers/index.ts'
+import type { LLMProvider } from '../../../src/providers/types.ts'
 import { assertInsideRepo } from '../../../src/utils/path.ts'
-import { parseFixResponse, setupEnv } from '../../demo/live-ab.ts'
+import { parseFixResponse, runSession, setupEnv } from '../../demo/live-ab.ts'
 import type { FixtureDef } from '../../fixtures/learning-demo/fixtures.ts'
 
 // RepoQuirk fixtures always supply testContent explicitly (buildTestFile()'s generators only
@@ -221,6 +223,109 @@ describe('live-ab read-action path guard (reuses assertInsideRepo)', () => {
         // The error is a diagnostic string, never file content.
         expect(rejected.error).not.toContain(fixture.sourceContent)
       }
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('live-ab runSession fixFile old-value validation', () => {
+  afterEach(() => {
+    setProvider(null)
+  })
+
+  // Modeled on the RepoQuirk_SettingsVersion fixture in test/fixtures/learning-demo/fixtures.ts:
+  // src/thing.ts reads config/settings.json at runtime and throws unless schema_version === 2,
+  // so `bun test` genuinely fails until config/settings.json is edited (the fixture's real fix
+  // target is fixFile, not file).
+  function settingsVersionFixture(): FixtureDef {
+    return baseFixture({
+      file: 'src/thing.ts',
+      fixFile: 'config/settings.json',
+      sourceContent:
+        "import { readFileSync } from 'node:fs'\nimport { join } from 'node:path'\n\nexport function handleThing(): string {\n  const raw = readFileSync(join(import.meta.dir, '..', 'config', 'settings.json'), 'utf8')\n  const parsed = JSON.parse(raw) as { schema_version: number }\n  if (parsed.schema_version !== 2) {\n    throw new Error(`ConfigError: expected schema_version 2, got ${parsed.schema_version}`)\n  }\n  return 'ok'\n}\n",
+      extraFiles: {
+        'config/settings.json': JSON.stringify({ schema_version: 1 }, null, 2),
+      },
+      fix: { old: '"schema_version": 1', new: '"schema_version": 2' },
+      testContent:
+        "import { describe, it } from 'bun:test'\nimport * as mod from './thing'\n\ndescribe('fixFile old-value validation', () => {\n  it('validates settings schema version', () => {\n    mod.handleThing()\n  })\n})\n",
+    })
+  }
+
+  function mockProviderWithText(text: string): LLMProvider {
+    return {
+      name: 'anthropic',
+      createMessageStream: async function* () {
+        yield { type: 'text_delta', text }
+        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      },
+    }
+  }
+
+  it('rejects a fixFile edit whose old value is not present in the real target file, ending the session as a failure', async () => {
+    const fixture = settingsVersionFixture()
+
+    // Syntactically valid edit response (file matches fixFile), but `old` does not appear
+    // anywhere in config/settings.json's actual content ('{"schema_version": 1}').
+    setProvider(
+      mockProviderWithText(
+        JSON.stringify({
+          file: 'config/settings.json',
+          old: '"schema_version": 999',
+          new: '"schema_version": 2',
+        }),
+      ),
+    )
+
+    const { repoRoot, testFile } = await setupEnv(fixture, 'unit-fixfile-wrongold')
+    try {
+      const result = await runSession(repoRoot, testFile, fixture, null, 'mock-model')
+
+      expect(result.success).toBe(false)
+      expect(result.successfulEdit).toBeUndefined()
+
+      // The rejected response must not have been written to disk: config/settings.json should
+      // remain exactly as setupEnv() wrote it (schema_version still 1), proving this was treated
+      // as a rejected response rather than a silent no-op write via String.replace().
+      const settingsContent = await readFile(join(repoRoot, 'config/settings.json'), 'utf8')
+      expect(settingsContent).toBe(JSON.stringify({ schema_version: 1 }, null, 2))
+
+      // Matches the severity of the existing `if (!parsed)` rejection: no turnLog entry gets
+      // pushed for a rejected response, since the session returns before reaching the
+      // read/edit turnLog.push() calls.
+      expect(result.turnLog).toEqual([])
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('accepts a fixFile edit whose old value IS present in the real target file (control case)', async () => {
+    const fixture = settingsVersionFixture()
+
+    setProvider(
+      mockProviderWithText(
+        JSON.stringify({
+          file: 'config/settings.json',
+          old: '"schema_version": 1',
+          new: '"schema_version": 2',
+        }),
+      ),
+    )
+
+    const { repoRoot, testFile } = await setupEnv(fixture, 'unit-fixfile-correctold')
+    try {
+      const result = await runSession(repoRoot, testFile, fixture, null, 'mock-model')
+
+      expect(result.success).toBe(true)
+      expect(result.successfulEdit).toEqual({
+        file: 'config/settings.json',
+        old: '"schema_version": 1',
+        new: '"schema_version": 2',
+      })
+
+      const settingsContent = await readFile(join(repoRoot, 'config/settings.json'), 'utf8')
+      expect(settingsContent).toContain('"schema_version": 2')
     } finally {
       await rm(repoRoot, { recursive: true, force: true })
     }

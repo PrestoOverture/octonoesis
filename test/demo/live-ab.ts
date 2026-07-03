@@ -453,7 +453,7 @@ async function runBunTest(repoRoot: string, testFile: string): Promise<TestRun> 
   return { exitCode, stdout, stderr }
 }
 
-async function runSession(
+export async function runSession(
   repoRoot: string,
   testFile: string,
   fixture: FixtureDef,
@@ -536,6 +536,16 @@ async function runSession(
     const targetPath = path.join(repoRoot, fix.file)
     const targetContent =
       fix.file === fixture.file ? sourceContent : await readFile(targetPath, 'utf8')
+    // parseFixResponse() already validates `old` against sourceContent when fix.file ===
+    // fixture.file, but when the edit targets fixture.fixFile instead, parseFixResponse() has no
+    // synchronous access to that file's real content and cannot check it (see its own
+    // `targetContent !== null` guard). Catch a wrong `old` guess here, where the real content of
+    // the fixFile target has just been read — otherwise String.replace() silently no-ops on a
+    // non-matching `old` and the turn is burned with no signal, instead of being rejected like
+    // any other malformed response.
+    if (!targetContent.includes(fix.old)) {
+      return { turns, inputTokens, outputTokens, success: false, apiError, initialStderr, turnLog }
+    }
     lastEdit = fix
     await writeFile(targetPath, targetContent.replace(fix.old, fix.new), 'utf8')
     testRun = await runBunTest(repoRoot, testFile)
