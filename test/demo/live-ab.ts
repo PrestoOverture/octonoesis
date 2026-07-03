@@ -108,6 +108,7 @@ const DEFAULT_TYPES: ScenarioType[] = [
 const SUPPORTED_TYPES: ScenarioType[] = [...DEFAULT_TYPES, 'RepoQuirk']
 const EXTRACTOR_VERSION = '0.3.0'
 const MAX_TURNS = 5
+const SOLVER_MAX_TOKENS = 4000
 const realSpawn = (globalThis as typeof globalThis & { Bun: { spawn: BunSpawn } }).Bun.spawn
 const FIX_SYSTEM_PROMPT = `You are a coding agent fixing a failing test, one turn at a time, over a plain text
 back-and-forth (there is no tool-calling API here — just you writing raw JSON text and a human
@@ -618,7 +619,7 @@ async function callFixLLM(
       const messages: CanonicalMessage[] = [{ role: 'user', content: prompt }]
       const stream = provider.createMessageStream(messages, [], {
         model: solverModel,
-        maxTokens: 1200,
+        maxTokens: SOLVER_MAX_TOKENS,
         signal: new AbortController().signal,
         system: FIX_SYSTEM_PROMPT,
       })
@@ -970,7 +971,7 @@ async function main(): Promise<void> {
   const solverModel = options.model ?? getCheapestModel()
   const distillModel = options.distillModel ?? getCheapestModel()
   console.log(
-    `Provider: ${resolvedProvider} | Solver model: ${solverModel} | Distill model: ${distillModel}`,
+    `Provider: ${resolvedProvider} | Solver model: ${solverModel} | Distill model: ${distillModel} | Solver maxTokens: ${SOLVER_MAX_TOKENS}`,
   )
   const allResults: PairResult[] = []
   let apiErrorRuns = 0
