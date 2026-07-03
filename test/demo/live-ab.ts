@@ -57,6 +57,13 @@ type ReadResult = {
 
 export type FixResponse = { kind: 'read'; file: string } | { kind: 'edit'; edit: FixEdit }
 
+type TurnLogEntry = {
+  turn: number
+  action: 'read' | 'edit'
+  file: string
+  testExitCode: number | null
+}
+
 type SessionResult = {
   turns: number
   inputTokens: number
@@ -65,6 +72,7 @@ type SessionResult = {
   apiError: boolean
   initialStderr: string
   successfulEdit?: FixEdit
+  turnLog: TurnLogEntry[]
 }
 
 type PairResult = {
@@ -75,6 +83,8 @@ type PairResult = {
   treatment: SessionResult
   ruleUsed: boolean
   distillFailed: boolean
+  evidenceUsed: { fixDiff: string; errorExcerptSnippet: string } | null
+  treatmentAdvice: string | null
 }
 
 type Summary = {
@@ -458,6 +468,7 @@ async function runSession(
   let apiError = false
   let lastEdit: FixEdit | undefined
   const reads: ReadResult[] = []
+  const turnLog: TurnLogEntry[] = []
 
   while (turns < MAX_TURNS) {
     if (testRun.exitCode === 0) {
@@ -469,6 +480,7 @@ async function runSession(
         apiError,
         initialStderr,
         successfulEdit: lastEdit,
+        turnLog,
       }
     }
 
@@ -487,6 +499,7 @@ async function runSession(
         success: false,
         apiError,
         initialStderr,
+        turnLog,
       }
     }
 
@@ -494,7 +507,7 @@ async function runSession(
     outputTokens += response.usage.output_tokens
     const parsed = parseFixResponse(response.text, sourceContent, fixture)
     if (!parsed) {
-      return { turns, inputTokens, outputTokens, success: false, apiError, initialStderr }
+      return { turns, inputTokens, outputTokens, success: false, apiError, initialStderr, turnLog }
     }
 
     if (parsed.kind === 'read') {
@@ -512,6 +525,7 @@ async function runSession(
           })
         }
       }
+      turnLog.push({ turn: turns, action: 'read', file: parsed.file, testExitCode: null })
       continue
     }
 
@@ -523,9 +537,10 @@ async function runSession(
     await writeFile(targetPath, targetContent.replace(fix.old, fix.new), 'utf8')
     testRun = await runBunTest(repoRoot, testFile)
     stderr = testRun.stderr || testRun.stdout
+    turnLog.push({ turn: turns, action: 'edit', file: fix.file, testExitCode: testRun.exitCode })
   }
 
-  return { turns, inputTokens, outputTokens, success: false, apiError, initialStderr }
+  return { turns, inputTokens, outputTokens, success: false, apiError, initialStderr, turnLog }
 }
 
 function buildFixPrompt(
@@ -668,6 +683,7 @@ async function runPair(
   let treatmentEnv: { repoRoot: string; testFile: string } | null = null
   let rule: RuleFile | null = null
   let distillFailed = false
+  let evidenceUsed: PairResult['evidenceUsed'] = null
 
   try {
     controlEnv = await setupEnv(fixture, `${type}-${run}-control`)
@@ -687,6 +703,12 @@ async function runPair(
               fixDiff: `${control.successfulEdit.old} -> ${control.successfulEdit.new}`,
             }
           : undefined
+        if (evidence) {
+          evidenceUsed = {
+            fixDiff: evidence.fixDiff,
+            errorExcerptSnippet: evidence.errorExcerpt.slice(0, 200),
+          }
+        }
         rule = await distillEpisode(
           buildEpisode(type, run, fixture, control, controlEnv.testFile),
           {
@@ -722,6 +744,8 @@ async function runPair(
       treatment,
       ruleUsed: Boolean(rule),
       distillFailed,
+      evidenceUsed,
+      treatmentAdvice: advice,
     }
   } finally {
     if (controlEnv) await rm(controlEnv.repoRoot, { recursive: true, force: true })
@@ -955,6 +979,23 @@ async function main(): Promise<void> {
         console.log(
           `${type} run ${run + 1}/${options.runs} ${fixture.id}: control=${result.control.success ? 'pass' : 'fail'}:${result.control.turns} treatment=${result.treatment.success ? 'pass' : 'fail'}:${result.treatment.turns} rule=${result.ruleUsed ? 'yes' : 'no'}`,
         )
+        for (const entry of result.control.turnLog) {
+          console.log(
+            `  control turn ${entry.turn}: ${entry.action} ${entry.file} [exit=${entry.testExitCode}]`,
+          )
+        }
+        for (const entry of result.treatment.turnLog) {
+          console.log(
+            `  treatment turn ${entry.turn}: ${entry.action} ${entry.file} [exit=${entry.testExitCode}]`,
+          )
+        }
+        if (result.evidenceUsed) {
+          console.log(`  evidence fixDiff: ${result.evidenceUsed.fixDiff}`)
+          console.log(`  evidence errorExcerptSnippet: ${result.evidenceUsed.errorExcerptSnippet}`)
+        }
+        if (result.treatmentAdvice) {
+          console.log(`  treatment advice:\n${result.treatmentAdvice}`)
+        }
       }
     }
     printTypeReport(type, typeResults)
