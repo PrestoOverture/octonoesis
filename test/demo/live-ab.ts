@@ -879,6 +879,57 @@ function pairedTTest(control: number[], treatment: number[]): { t: number; p: nu
   return { t, p: Math.max(0, Math.min(1, p)) }
 }
 
+/**
+ * Exact two-sided McNemar's test for paired binary (success/fail) outcomes. Used instead of the
+ * chi-squared/normal approximation because this benchmark's n is small (6-30 pairs), where the
+ * approximation is unreliable.
+ *
+ * Only the discordant pairs carry information: b = control succeeded & treatment failed, c =
+ * control failed & treatment succeeded. Under the null hypothesis (no difference), each
+ * discordant pair is a fair coin flip between b and c, so b ~ Binomial(n, 0.5) where n = b + c.
+ * The exact two-sided p-value sums the binomial tail probabilities at least as extreme as the
+ * observed min(b, c), doubled for both tails, capped at 1.
+ */
+export function mcNemarExactTest(
+  control: boolean[],
+  treatment: boolean[],
+): { b: number; c: number; p: number } {
+  if (control.length !== treatment.length) {
+    throw new Error('Mismatched paired samples')
+  }
+
+  let b = 0
+  let c = 0
+  for (let i = 0; i < control.length; i++) {
+    const controlValue = control[i]
+    const treatmentValue = treatment[i]
+    if (controlValue === true && treatmentValue === false) b++
+    else if (controlValue === false && treatmentValue === true) c++
+  }
+
+  const n = b + c
+  if (n === 0) return { b, c, p: 1 }
+
+  const k = Math.min(b, c)
+  let tailSum = 0
+  for (let i = 0; i <= k; i++) {
+    tailSum += binomialCoefficient(n, i)
+  }
+  const p = Math.min(1, 2 * tailSum * 0.5 ** n)
+  return { b, c, p }
+}
+
+/** Iterative multiplicative "n choose k" — avoids factorial overflow, fine at this codebase's scale (n < ~30). */
+function binomialCoefficient(n: number, k: number): number {
+  if (k < 0 || k > n) return 0
+  const kEff = Math.min(k, n - k)
+  let result = 1
+  for (let i = 0; i < kEff; i++) {
+    result = (result * (n - i)) / (i + 1)
+  }
+  return result
+}
+
 function normalCDF(x: number): number {
   const a1 = 0.254829592
   const a2 = -0.284496736
@@ -917,6 +968,10 @@ function printOverallReport(results: PairResult[], typeCount: number, runs: numb
   const turnsT = pairedTTest(summary.controlTurns, summary.treatmentTurns)
   const inputT = pairedTTest(summary.controlInput, summary.treatmentInput)
   const outputT = pairedTTest(summary.controlOutput, summary.treatmentOutput)
+  const successMcNemar = mcNemarExactTest(
+    results.map((result) => result.control.success),
+    results.map((result) => result.treatment.success),
+  )
 
   console.log(`\n=== Overall (${typeCount} types x ${runs} runs = ${results.length} pairs) ===`)
   console.log('| Metric          | Control       | Treatment     | Delta        | p-value  |')
@@ -931,7 +986,7 @@ function printOverallReport(results: PairResult[], typeCount: number, runs: numb
     `| Tokens (output) | ${pad(formatMean(summary.controlOutput, 0))} | ${pad(formatMean(summary.treatmentOutput, 0))} | ${pad(formatDelta(summary.controlOutput, summary.treatmentOutput))} | ${padP(outputT.p)} |`,
   )
   console.log(
-    `| Success rate    | ${pad(`${summary.controlSuccesses}/${results.length}`)} | ${pad(`${summary.treatmentSuccesses}/${results.length}`)} | ${pad('\u2014')} | ${padP(null)} |`,
+    `| Success rate    | ${pad(`${summary.controlSuccesses}/${results.length}`)} | ${pad(`${summary.treatmentSuccesses}/${results.length}`)} | ${pad('\u2014')} | ${padP(successMcNemar.p)} |`,
   )
 }
 
