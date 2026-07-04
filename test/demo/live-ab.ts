@@ -4,7 +4,11 @@ import path from 'node:path'
 import type { Episode } from '../../src/memory/episodes/types.ts'
 import { assembleFingerprint } from '../../src/memory/fingerprint/extract.ts'
 import { distillEpisode } from '../../src/memory/rules/distill.ts'
-import { formatMatchAdvice } from '../../src/memory/rules/match.ts'
+import {
+  type MatchLevel,
+  findMatchingRules,
+  formatMatchAdvice,
+} from '../../src/memory/rules/match.ts'
 import type { RuleFile } from '../../src/memory/rules/types.ts'
 import { getCheapestModel, getProvider } from '../../src/providers/index.ts'
 import type { CanonicalMessage, Usage } from '../../src/providers/types.ts'
@@ -24,6 +28,8 @@ type CliOptions = {
   help: boolean
   model: string | null
   distillModel: string | null
+  emitSeedRules: string | null
+  seedRules: string | null
 }
 
 type TestRun = {
@@ -85,6 +91,7 @@ type PairResult = {
   distillFailed: boolean
   evidenceUsed: { fixDiff: string; errorExcerptSnippet: string } | null
   treatmentAdvice: string | null
+  matchLevel: MatchLevel | null
 }
 
 type Summary = {
@@ -157,6 +164,58 @@ const EXPECTED_BY_FIXTURE: Record<string, string> = {
   ExpectMismatch_E1: '6',
 }
 
+// Experiment 2 (cross-model rule transfer): the three scenario types that support seed/transfer,
+// each pinned to one designated "seed" fixture instance. Seed mode distills a rule from exactly
+// these instances (with the strong model); transfer mode loads those rules and applies them to the
+// OTHER instances of the same type. Hardcoded, not user-configurable, because the experiment's
+// validity depends on a fixed, documented seed set.
+const SEED_FIXTURE_IDS: Record<'ParseError' | 'ExpectMismatch' | 'NullAccess', string> = {
+  ParseError: 'ParseError_A1',
+  ExpectMismatch: 'ExpectMismatch_A1',
+  NullAccess: 'NullAccess_A1',
+}
+
+// Harness-only artifact for bridging the two provider processes of Experiment 2. Plain JSON, NOT
+// the production markdown+frontmatter rule format in src/memory/rules/store.ts — deliberately kept
+// separate so this experiment scaffolding never touches the real rule store.
+export type SeedRuleFile = {
+  scenarioType: string
+  seedFixtureId: string
+  rule: RuleFile
+}
+
+/**
+ * Writes one seed-rule file per scenario type to `dir`, keyed by scenario type
+ * (`<scenarioType>.json`). Creates `dir` if needed.
+ */
+export async function saveSeedRule(dir: string, seedRuleFile: SeedRuleFile): Promise<void> {
+  await mkdir(dir, { recursive: true })
+  await writeFile(
+    path.join(dir, `${seedRuleFile.scenarioType}.json`),
+    JSON.stringify(seedRuleFile, null, 2),
+    'utf8',
+  )
+}
+
+/**
+ * Loads the seed-rule file for `scenarioType` from `dir`. Returns null specifically when no file
+ * exists yet (ENOENT); any other error (malformed JSON, permissions) propagates, since that is a
+ * real problem worth surfacing distinctly from "not seeded yet".
+ */
+export async function loadSeedRule(
+  dir: string,
+  scenarioType: string,
+): Promise<SeedRuleFile | null> {
+  let raw: string
+  try {
+    raw = await readFile(path.join(dir, `${scenarioType}.json`), 'utf8')
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === 'ENOENT') return null
+    throw error
+  }
+  return JSON.parse(raw) as SeedRuleFile
+}
+
 function printHelp(): void {
   console.log(`Usage: bun run test/demo/live-ab.ts [options]
 
@@ -169,10 +228,22 @@ Options:
   --distill-model ID  Distiller model used to write rules from resolved episodes
                        (default: cheapest model for the resolved provider, i.e.
                        getCheapestModel())
+  --emit-seed-rules DIR
+                      Experiment 2 seed phase: solve the three designated seed fixtures
+                       (ParseError_A1, ExpectMismatch_A1, NullAccess_A1) with the strong
+                       model, distill a rule from each via the normal evidence path, and
+                       write each to DIR/<scenarioType>.json. Ignores --types. Mutually
+                       exclusive with --seed-rules.
+  --seed-rules DIR    Experiment 2 transfer phase: skip per-pair distillation and instead
+                       load the pre-seeded rule for each --types scenario from
+                       DIR/<scenarioType>.json, match it against the current (different)
+                       fixture's fingerprint, and inject that as the treatment's advice.
+                       The seed instance is excluded from the run rotation. Mutually
+                       exclusive with --emit-seed-rules.
   --help              Show this help`)
 }
 
-function parseArgs(argv: string[]): CliOptions {
+export function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     runs: 10,
     types: DEFAULT_TYPES,
@@ -180,6 +251,8 @@ function parseArgs(argv: string[]): CliOptions {
     help: false,
     model: null,
     distillModel: null,
+    emitSeedRules: null,
+    seedRules: null,
   }
 
   for (let i = 0; i < argv.length; i++) {
@@ -213,9 +286,28 @@ function parseArgs(argv: string[]): CliOptions {
         throw new Error('--distill-model requires a value')
       }
       options.distillModel = value
+    } else if (arg === '--emit-seed-rules') {
+      const value = argv[++i]
+      if (!value) {
+        throw new Error('--emit-seed-rules requires a directory')
+      }
+      options.emitSeedRules = value
+    } else if (arg === '--seed-rules') {
+      const value = argv[++i]
+      if (!value) {
+        throw new Error('--seed-rules requires a directory')
+      }
+      options.seedRules = value
     } else {
       throw new Error(`Unknown option: ${arg}`)
     }
+  }
+
+  if (options.emitSeedRules !== null && options.seedRules !== null) {
+    throw new Error(
+      '--emit-seed-rules and --seed-rules are mutually exclusive: they represent two ' +
+        'different process phases (seed generation vs. transfer) and are never used together.',
+    )
   }
 
   return options
@@ -687,12 +779,13 @@ export function parseFixResponse(
   }
 }
 
-async function runPair(
+export async function runPair(
   type: ScenarioType,
   run: number,
   fixture: FixtureDef,
   solverModel: string,
   distillModel: string,
+  seedRule: RuleFile | null = null,
 ): Promise<PairResult> {
   let controlEnv: { repoRoot: string; testFile: string } | null = null
   let treatmentEnv: { repoRoot: string; testFile: string } | null = null
@@ -710,38 +803,60 @@ async function runPair(
       solverModel,
     )
 
-    if (control.success) {
-      try {
-        const evidence = control.successfulEdit
-          ? {
-              errorExcerpt: control.initialStderr,
-              fixDiff: `${control.successfulEdit.old} -> ${control.successfulEdit.new}`,
+    let advice: string | null
+    let matchLevel: MatchLevel | null
+    let ruleUsed: boolean
+
+    if (seedRule) {
+      // Transfer mode (Experiment 2, Phase T): do NOT distill from this pair's control session.
+      // Instead reuse the pre-seeded rule (distilled earlier from a DIFFERENT instance by the
+      // strong model) and compute its real match level against THIS fixture's fingerprint. No
+      // evidence is gathered this pair, so evidenceUsed stays null.
+      const fingerprint = fingerprintFor(fixture)
+      const matches = findMatchingRules([fingerprint], [seedRule])
+      const top = matches[0]
+      advice = top ? formatMatchAdvice(top) : null
+      matchLevel = top ? top.level : null
+      ruleUsed = Boolean(advice)
+    } else {
+      // Normal mode: unchanged behavior. Distill a rule from this pair's own resolved control
+      // session, then apply it (formatted at fine level) as the treatment's advice.
+      if (control.success) {
+        try {
+          const evidence = control.successfulEdit
+            ? {
+                errorExcerpt: control.initialStderr,
+                fixDiff: `${control.successfulEdit.old} -> ${control.successfulEdit.new}`,
+              }
+            : undefined
+          if (evidence) {
+            evidenceUsed = {
+              fixDiff: evidence.fixDiff,
+              errorExcerptSnippet: evidence.errorExcerpt.slice(0, 200),
             }
-          : undefined
-        if (evidence) {
-          evidenceUsed = {
-            fixDiff: evidence.fixDiff,
-            errorExcerptSnippet: evidence.errorExcerpt.slice(0, 200),
           }
+          rule = await distillEpisode(
+            buildEpisode(type, run, fixture, control, controlEnv.testFile),
+            {
+              model: distillModel,
+              extractorVersion: EXTRACTOR_VERSION,
+              ...(evidence ? { evidence } : {}),
+            },
+          )
+        } catch (error) {
+          distillFailed = true
+          console.error(
+            `Distillation failed for ${fixture.id}: ${error instanceof Error ? error.message : String(error)}`,
+          )
         }
-        rule = await distillEpisode(
-          buildEpisode(type, run, fixture, control, controlEnv.testFile),
-          {
-            model: distillModel,
-            extractorVersion: EXTRACTOR_VERSION,
-            ...(evidence ? { evidence } : {}),
-          },
-        )
-      } catch (error) {
-        distillFailed = true
-        console.error(
-          `Distillation failed for ${fixture.id}: ${error instanceof Error ? error.message : String(error)}`,
-        )
       }
+
+      const fingerprint = fingerprintFor(fixture)
+      advice = rule ? formatMatchAdvice({ rule, fingerprint, level: 'fine' }) : null
+      matchLevel = rule ? 'fine' : null
+      ruleUsed = Boolean(rule)
     }
 
-    const fingerprint = fingerprintFor(fixture)
-    const advice = rule ? formatMatchAdvice({ rule, fingerprint, level: 'fine' }) : null
     treatmentEnv = await setupEnv(fixture, `${type}-${run}-treatment`)
     const treatment = await runSession(
       treatmentEnv.repoRoot,
@@ -757,10 +872,11 @@ async function runPair(
       run,
       control,
       treatment,
-      ruleUsed: Boolean(rule),
+      ruleUsed,
       distillFailed,
       evidenceUsed,
       treatmentAdvice: advice,
+      matchLevel,
     }
   } finally {
     if (controlEnv) await rm(controlEnv.repoRoot, { recursive: true, force: true })
@@ -998,6 +1114,57 @@ function padP(value: number | null): string {
   return (value === null ? '\u2014' : value.toFixed(3)).padEnd(8, ' ')
 }
 
+/**
+ * Experiment 2, Phase S: for each of the three designated seed fixtures, solve it with the strong
+ * solver model, distill a rule from the resolved episode via the normal evidence path, and write
+ * the rule to `dir/<scenarioType>.json`. Prints each seed's advice text and output path so the
+ * reviewer can read every distilled rule directly from the console. A seed instance that fails to
+ * resolve is reported and skipped, so one bad seed does not block the other two. Meant to run in a
+ * plain Anthropic-provider process (distillModel resolves to Haiku via getCheapestModel()).
+ */
+async function runSeedMode(dir: string, solverModel: string): Promise<void> {
+  for (const [scenarioType, fixtureId] of Object.entries(SEED_FIXTURE_IDS)) {
+    const fixture = ALL_FIXTURES.find((f) => f.id === fixtureId)
+    if (!fixture) {
+      throw new Error(
+        `Seed fixture ${fixtureId} (for ${scenarioType}) not found in ALL_FIXTURES — hardcoded SEED_FIXTURE_IDS is out of sync with the fixture bank.`,
+      )
+    }
+
+    const { repoRoot, testFile } = await setupEnv(fixture, `seed-${fixtureId}`)
+    try {
+      const session = await runSession(repoRoot, testFile, fixture, null, solverModel)
+      if (!session.success || !session.successfulEdit) {
+        console.error(
+          `Seed fixture ${fixtureId} (${scenarioType}) did not resolve (success=${session.success}, hasEdit=${Boolean(session.successfulEdit)}); skipping this type. Its seed rule will not be written.`,
+        )
+        continue
+      }
+
+      const evidence = {
+        errorExcerpt: session.initialStderr,
+        fixDiff: `${session.successfulEdit.old} -> ${session.successfulEdit.new}`,
+      }
+      const rule = await distillEpisode(
+        buildEpisode(scenarioType as ScenarioType, 0, fixture, session, testFile),
+        {
+          model: getCheapestModel(),
+          extractorVersion: EXTRACTOR_VERSION,
+          evidence,
+        },
+      )
+
+      await saveSeedRule(dir, { scenarioType, seedFixtureId: fixtureId, rule })
+      const outPath = path.join(dir, `${scenarioType}.json`)
+      console.log(`\n=== Seed rule written: ${scenarioType} (from ${fixtureId}) ===`)
+      console.log(`File: ${outPath}`)
+      console.log(`Advice:\n${rule.advice}`)
+    } finally {
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  }
+}
+
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2))
   if (options.help) {
@@ -1028,19 +1195,55 @@ async function main(): Promise<void> {
   console.log(
     `Provider: ${resolvedProvider} | Solver model: ${solverModel} | Distill model: ${distillModel} | Solver maxTokens: ${SOLVER_MAX_TOKENS}`,
   )
+
+  if (options.emitSeedRules) {
+    await runSeedMode(options.emitSeedRules, solverModel)
+    return
+  }
+
   const allResults: PairResult[] = []
   let apiErrorRuns = 0
   let distillFailures = 0
 
   for (const type of options.types) {
-    const fixtures = fixturesForType(type)
+    // Transfer mode (Experiment 2, Phase T): load the pre-seeded rule for this scenario type and
+    // exclude its seed instance from the run rotation, so the treatment is only ever measured on a
+    // DIFFERENT instance than the one the rule was distilled from (the cross-instance guarantee the
+    // experiment's validity rests on). Normal mode leaves seedRuleForType null and fixtures full,
+    // so runPair(..., null) below is byte-identical to the original call.
+    let seedRuleForType: RuleFile | null = null
+    let fixtures = fixturesForType(type)
+    if (options.seedRules) {
+      const seedRuleFile = await loadSeedRule(options.seedRules, type)
+      if (!seedRuleFile) {
+        console.error(
+          `No seed rule found for ${type} in ${options.seedRules} (expected ${type}.json); skipping this type.`,
+        )
+        continue
+      }
+      seedRuleForType = seedRuleFile.rule
+      fixtures = fixtures.filter((f) => f.id !== seedRuleFile.seedFixtureId)
+      const headerTop = fixtures[0]
+      const headerMatch = headerTop
+        ? findMatchingRules([fingerprintFor(headerTop)], [seedRuleFile.rule])
+        : []
+      const headerMatchLevel = headerMatch[0]?.level ?? null
+      if (headerMatchLevel === null) {
+        console.error(
+          `WARNING: seed rule for ${type} does not match any excluded-seed-free fixture of this type at any level — transfer treatment will receive NO advice. This defeats the experiment for ${type}; check the seed rule's error_signatures.`,
+        )
+      }
+      console.log(
+        `Seed rules dir: ${options.seedRules} | Seed instance: ${seedRuleFile.seedFixtureId} | Match level: ${headerMatchLevel ?? 'NO MATCH FOUND'}`,
+      )
+    }
     const typeResults: PairResult[] = []
     for (let run = 0; run < options.runs; run++) {
       const fixture = fixtures[run % fixtures.length]
       if (!fixture) {
         throw new Error(`No fixture selected for ${type} run ${run}`)
       }
-      const result = await runPair(type, run, fixture, solverModel, distillModel)
+      const result = await runPair(type, run, fixture, solverModel, distillModel, seedRuleForType)
       typeResults.push(result)
       allResults.push(result)
       if (result.control.apiError || result.treatment.apiError) apiErrorRuns++

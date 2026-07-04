@@ -1,11 +1,54 @@
 import { afterEach, describe, expect, it } from 'bun:test'
-import { readFile, rm, stat } from 'node:fs/promises'
-import { join } from 'node:path'
+import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import os from 'node:os'
+import path, { join } from 'node:path'
+import { assembleFingerprint } from '../../../src/memory/fingerprint/extract.ts'
+import { DISTILL_PROMPT_TEMPLATE } from '../../../src/memory/rules/distill.ts'
+import { findMatchingRules } from '../../../src/memory/rules/match.ts'
+import type { RuleFile } from '../../../src/memory/rules/types.ts'
 import { setProvider } from '../../../src/providers/index.ts'
-import type { LLMProvider } from '../../../src/providers/types.ts'
+import type { CanonicalMessage, LLMProvider } from '../../../src/providers/types.ts'
 import { assertInsideRepo } from '../../../src/utils/path.ts'
-import { parseFixResponse, runSession, setupEnv } from '../../demo/live-ab.ts'
-import type { FixtureDef } from '../../fixtures/learning-demo/fixtures.ts'
+import {
+  type SeedRuleFile,
+  loadSeedRule,
+  parseArgs,
+  parseFixResponse,
+  runPair,
+  runSession,
+  saveSeedRule,
+  setupEnv,
+} from '../../demo/live-ab.ts'
+import { ALL_FIXTURES, type FixtureDef } from '../../fixtures/learning-demo/fixtures.ts'
+
+// A stable substring unique to DISTILL_PROMPT_TEMPLATE (the same one the generalization-requirement
+// test in test/unit/memory/rules/distill.test.ts asserts on). Used below to detect whether a
+// provider prompt is a distillation call, so we can prove seeded/transfer mode never distills.
+// Guarded against the real template at import time so this detector fails loudly (rather than
+// silently going vacuous) if that phrase is ever reworded in distill.ts.
+const DISTILL_MARKER =
+  'Your advice must help with a FUTURE occurrence of this error class, not just restate this one instance.'
+if (!DISTILL_PROMPT_TEMPLATE.includes(DISTILL_MARKER)) {
+  throw new Error(
+    'DISTILL_MARKER is no longer a substring of DISTILL_PROMPT_TEMPLATE — update it in ' +
+      'test/unit/demo/live-ab.test.ts to keep the seeded-mode distillation detector meaningful.',
+  )
+}
+
+/** Extracts the user-message text from a provider call, handling both the solver's plain-string
+ *  content and the distiller's [{type:'text', text}] content shape. */
+function firstUserText(messages: CanonicalMessage[]): string {
+  const first = messages[0]
+  const content = first?.content
+  if (typeof content === 'string') return content
+  if (Array.isArray(content)) {
+    const textPart = content.find(
+      (part): part is { type: 'text'; text: string } => part.type === 'text',
+    )
+    return textPart?.text ?? ''
+  }
+  return ''
+}
 
 // RepoQuirk fixtures always supply testContent explicitly (buildTestFile()'s generators only
 // cover the 5 legacy scenario types), so the default here mirrors real RepoQuirk fixture
@@ -329,5 +372,288 @@ describe('live-ab runSession fixFile old-value validation', () => {
     } finally {
       await rm(repoRoot, { recursive: true, force: true })
     }
+  })
+})
+
+describe('live-ab seed-rule save/load keying (Experiment 2 file bank)', () => {
+  function sampleRule(id: string, signatures: string[]): RuleFile {
+    return {
+      id,
+      triggers: { tools: ['Bash'], command_prefix: ['bun test'], error_signatures: signatures },
+      scope: 'repo',
+      alpha: 3,
+      beta: 2,
+      confidence: 0.6,
+      evidence: ['ep_seed'],
+      hits: 0,
+      misses: 0,
+      challenged_by: [],
+      anchor: { file: 'src/thing.ts' },
+      status: 'candidate',
+      user_confirmed: false,
+      extractor_version: '0.3.0',
+      model_id: 'mock-model',
+      prompt_hash: 'deadbeef',
+      created_at: '2026-07-04T00:00:00.000Z',
+      last_matched_at: null,
+      last_rebuilt_at: null,
+      advice: `advice for ${id}`,
+    }
+  }
+
+  it('round-trips a SeedRuleFile keyed by scenario type, without cross-type collision', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'octonoesis-seedrule-'))
+    try {
+      const parseErrorSeed: SeedRuleFile = {
+        scenarioType: 'ParseError',
+        seedFixtureId: 'ParseError_A1',
+        rule: sampleRule('rule-parse', ['bun-test|SyntaxError']),
+      }
+      const nullAccessSeed: SeedRuleFile = {
+        scenarioType: 'NullAccess',
+        seedFixtureId: 'NullAccess_A1',
+        rule: sampleRule('rule-null', ['bun-test|TypeError']),
+      }
+
+      await saveSeedRule(dir, parseErrorSeed)
+      await saveSeedRule(dir, nullAccessSeed)
+
+      // File name must match the scenario type (the keying the transfer phase relies on).
+      const parseRaw = await readFile(path.join(dir, 'ParseError.json'), 'utf8')
+      expect(JSON.parse(parseRaw)).toEqual(parseErrorSeed)
+
+      const loadedParse = await loadSeedRule(dir, 'ParseError')
+      const loadedNull = await loadSeedRule(dir, 'NullAccess')
+      expect(loadedParse).toEqual(parseErrorSeed)
+      expect(loadedNull).toEqual(nullAccessSeed)
+      // No collision: each type resolves to its own distinct rule.
+      expect(loadedParse?.rule.id).toBe('rule-parse')
+      expect(loadedNull?.rule.id).toBe('rule-null')
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('returns null for a scenario type with no seed file (ENOENT)', async () => {
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'octonoesis-seedrule-missing-'))
+    try {
+      expect(await loadSeedRule(dir, 'ExpectMismatch')).toBe(null)
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('live-ab seeded transfer mode skips distillation', () => {
+  afterEach(() => {
+    setProvider(null)
+  })
+
+  // Genuinely fails until config/settings.json is edited (schema_version 1 -> 2), so control can
+  // succeed with a single deterministic edit — which is exactly the condition under which normal
+  // mode WOULD distill. Mirrors settingsVersionFixture() used earlier in this file.
+  function settingsVersionFixture(): FixtureDef {
+    return baseFixture({
+      file: 'src/thing.ts',
+      fixFile: 'config/settings.json',
+      errorClass: 'ConfigError',
+      expression: 'schema_version mismatch',
+      extractorResponse: {
+        tool: 'bun-test',
+        error_class: 'ConfigError',
+        file: 'src/thing.ts',
+        expression: 'schema_version mismatch',
+      },
+      sourceContent:
+        "import { readFileSync } from 'node:fs'\nimport { join } from 'node:path'\n\nexport function handleThing(): string {\n  const raw = readFileSync(join(import.meta.dir, '..', 'config', 'settings.json'), 'utf8')\n  const parsed = JSON.parse(raw) as { schema_version: number }\n  if (parsed.schema_version !== 2) {\n    throw new Error(`ConfigError: expected schema_version 2, got ${parsed.schema_version}`)\n  }\n  return 'ok'\n}\n",
+      extraFiles: {
+        'config/settings.json': JSON.stringify({ schema_version: 1 }, null, 2),
+      },
+      fix: { old: '"schema_version": 1', new: '"schema_version": 2' },
+      testContent:
+        "import { describe, it } from 'bun:test'\nimport * as mod from './thing'\n\ndescribe('transfer-mode fixture', () => {\n  it('validates settings schema version', () => {\n    mod.handleThing()\n  })\n})\n",
+    })
+  }
+
+  const solverEditText = JSON.stringify({
+    file: 'config/settings.json',
+    old: '"schema_version": 1',
+    new: '"schema_version": 2',
+  })
+
+  const distillResponseJson = JSON.stringify({
+    slug: 'settings-schema',
+    triggers: {
+      tools: ['Bash'],
+      command_prefix: ['bun test'],
+      error_signatures: ['bun-test|ConfigError|src/thing.ts|schema_version mismatch'],
+    },
+    anchor_file: 'config/settings.json',
+    advice: 'Ensure config/settings.json declares the schema_version this repo expects.',
+  })
+
+  /** Provider that throws if it ever receives a distillation prompt, and otherwise returns a valid
+   *  solver fix-edit. Any distillation call proves the seeded path did NOT skip distillation. */
+  function providerThatBansDistillation(): LLMProvider {
+    return {
+      name: 'anthropic',
+      createMessageStream: async function* (messages) {
+        if (firstUserText(messages).includes(DISTILL_MARKER)) {
+          throw new Error('distillation prompt reached the provider in seeded transfer mode')
+        }
+        yield { type: 'text_delta', text: solverEditText }
+        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      },
+    }
+  }
+
+  it('runPair with a non-null seedRule completes without any distillation call', async () => {
+    const fixture = settingsVersionFixture()
+    setProvider(providerThatBansDistillation())
+
+    const seedFingerprint = assembleFingerprint(
+      fixture.extractorResponse.tool,
+      fixture.extractorResponse.error_class,
+      fixture.extractorResponse.file,
+      fixture.extractorResponse.expression,
+    )
+    const seedRule: RuleFile = {
+      id: 'rule-seed',
+      triggers: {
+        tools: ['Bash'],
+        command_prefix: ['bun test'],
+        error_signatures: [seedFingerprint.fine, seedFingerprint.medium, seedFingerprint.coarse],
+      },
+      scope: 'repo',
+      alpha: 3,
+      beta: 2,
+      confidence: 0.6,
+      evidence: ['ep_seed'],
+      hits: 0,
+      misses: 0,
+      challenged_by: [],
+      anchor: { file: 'config/settings.json' },
+      status: 'candidate',
+      user_confirmed: false,
+      extractor_version: '0.3.0',
+      model_id: 'strong-model',
+      prompt_hash: 'deadbeef',
+      created_at: '2026-07-04T00:00:00.000Z',
+      last_matched_at: null,
+      last_rebuilt_at: null,
+      advice: 'Seed advice: check the repo config schema version.',
+    }
+
+    // Must not throw — proves no distillation call happened despite control succeeding.
+    const result = await runPair('RepoQuirk', 0, fixture, 'mock-model', 'mock-model', seedRule)
+
+    expect(result.control.success).toBe(true)
+    expect(result.treatment.success).toBe(true)
+    // Seed rule matched this fixture (its own fingerprint), so a rule was available for treatment,
+    // but evidence was NOT gathered from this pair (it reused a pre-seeded rule).
+    expect(result.ruleUsed).toBe(true)
+    expect(result.evidenceUsed).toBe(null)
+    expect(result.matchLevel).toBe('fine')
+    expect(result.treatmentAdvice).not.toBe(null)
+  })
+
+  it('runPair with seedRule null (normal mode) DOES issue a distillation call (detector sanity)', async () => {
+    const fixture = settingsVersionFixture()
+    let distillCalled = false
+    setProvider({
+      name: 'anthropic',
+      createMessageStream: async function* (messages) {
+        if (firstUserText(messages).includes(DISTILL_MARKER)) {
+          distillCalled = true
+          yield { type: 'text_delta', text: distillResponseJson }
+          yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+          return
+        }
+        yield { type: 'text_delta', text: solverEditText }
+        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      },
+    })
+
+    const result = await runPair('RepoQuirk', 0, fixture, 'mock-model', 'mock-model', null)
+
+    expect(result.control.success).toBe(true)
+    // The distinctive distillation prompt reached the provider in normal mode — confirms the
+    // detector in the sibling test is not vacuously passing.
+    expect(distillCalled).toBe(true)
+    expect(result.ruleUsed).toBe(true)
+    expect(result.evidenceUsed).not.toBe(null)
+    expect(result.matchLevel).toBe('fine')
+  })
+})
+
+describe('live-ab cross-instance match level (core Experiment 2 claim)', () => {
+  it('a rule seeded from ParseError_A1 matches a different ParseError fixture at coarse level', () => {
+    const seed = ALL_FIXTURES.find((f) => f.id === 'ParseError_A1')
+    const other = ALL_FIXTURES.find((f) => f.id === 'ParseError_B1')
+    if (!seed || !other) throw new Error('expected ParseError_A1 and ParseError_B1 in ALL_FIXTURES')
+
+    // Sanity: same scenario type, but different file/expression — so they share only the coarse
+    // (tool + error_class) fingerprint, never medium or fine.
+    expect(seed.scenarioType).toBe(other.scenarioType)
+    expect(seed.extractorResponse.file).not.toBe(other.extractorResponse.file)
+
+    const seedFp = assembleFingerprint(
+      seed.extractorResponse.tool,
+      seed.extractorResponse.error_class,
+      seed.extractorResponse.file,
+      seed.extractorResponse.expression,
+    )
+    // Build the rule's signatures the way distill.ts's expandSignatures() would: fine + its
+    // medium and coarse prefixes.
+    const rule: RuleFile = {
+      id: 'rule-parseerror-a1',
+      triggers: {
+        tools: ['Bash'],
+        command_prefix: ['bun test'],
+        error_signatures: [seedFp.fine, seedFp.medium, seedFp.coarse],
+      },
+      scope: 'repo',
+      alpha: 3,
+      beta: 2,
+      confidence: 0.6,
+      evidence: ['ep_ParseError_A1'],
+      hits: 0,
+      misses: 0,
+      challenged_by: [],
+      anchor: { file: seed.fixFile ?? seed.file },
+      status: 'candidate',
+      user_confirmed: false,
+      extractor_version: '0.3.0',
+      model_id: 'strong-model',
+      prompt_hash: 'deadbeef',
+      created_at: '2026-07-04T00:00:00.000Z',
+      last_matched_at: null,
+      last_rebuilt_at: null,
+      advice: 'When a SyntaxError points at an unbalanced brace, check the block boundaries.',
+    }
+
+    const otherFp = assembleFingerprint(
+      other.extractorResponse.tool,
+      other.extractorResponse.error_class,
+      other.extractorResponse.file,
+      other.extractorResponse.expression,
+    )
+    const matches = findMatchingRules([otherFp], [rule])
+
+    expect(matches.length).toBe(1)
+    expect(matches[0]?.level).toBe('coarse')
+  })
+})
+
+describe('live-ab parseArgs seed-flag mutual exclusivity', () => {
+  it('throws when both --emit-seed-rules and --seed-rules are passed', () => {
+    expect(() =>
+      parseArgs(['--emit-seed-rules', '/tmp/seeds', '--seed-rules', '/tmp/seeds']),
+    ).toThrow(/mutually exclusive/)
+  })
+
+  it('accepts either flag alone', () => {
+    expect(parseArgs(['--emit-seed-rules', '/tmp/seeds']).emitSeedRules).toBe('/tmp/seeds')
+    expect(parseArgs(['--seed-rules', '/tmp/seeds']).seedRules).toBe('/tmp/seeds')
   })
 })
