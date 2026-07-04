@@ -215,11 +215,11 @@ The real-spawn smoke test (sub-test 7) runs actual `bun test` against 3 material
 ### Known Limitations
 
 1. **Ceiling effect on simple bugs**: Haiku-tier models solve 3/5 benchmark bug types in 1 turn with 100% success rate, leaving no room for rule injection to help. The learning loop's value is best measured on bugs of moderate difficulty — hard enough that the model sometimes fails, but general enough that advice from one instance transfers to another.
-2. **Instance-specific fixes don't generalize well**: ModuleNotFound rules learn a specific import path fix (e.g., `./config-loader` → `./config`) that doesn't transfer to other instances with different import paths. Rules need to capture the *strategy* ("check what modules exist in the directory"), not the specific edit.
+2. **Instance-specific fixes vs. repo-scoped facts**: the distiller (`src/memory/rules/distill.ts`) now receives the real error output and the real fix diff, and its prompt requires that advice generalize across *instances* of an error class (e.g. "check what modules exist in the directory," not "change `./config-loader` to `./config`") while still stating *repo-structural* facts plainly when the evidence reveals them (an import alias, a barrel-export convention, a config schema field) — those facts hold for every future occurrence in the same repo, so hiding them behind "go read and confirm" defeats the point of writing the rule down. This fixed ModuleNotFound's negative transfer (see below). What's still open: even with a repo-scoped fact stated directly, injected advice does not reliably make a solver skip re-verification via reads — see the RepoQuirk finding below. A repetition gate (require ≥2 episodes sharing a signature before distilling) and real-repo longitudinal validation are both deferred to v1.0; this benchmark uses single-episode seeding, which is a different regime.
 
 ### Live A/B Benchmark
 
-`test/demo/live-ab.ts` measures whether rule injection changes real LLM fix behavior. It runs paired control (no rules) vs. treatment (with distilled rule) sessions against materialized fixtures using the cheapest available model.
+`test/demo/live-ab.ts` measures whether rule injection changes real LLM fix behavior. It runs paired control (no rules) vs. treatment (with distilled rule) sessions against materialized fixtures.
 
 ```bash
 # Quick smoke (2 runs, 1 type)
@@ -227,9 +227,17 @@ bun run test/demo/live-ab.ts --runs 2 --types NullAccess
 
 # Full benchmark (10 runs × 5 types = 50 pairs)
 bun run test/demo/live-ab.ts --runs 10
+
+# Weak-model probe (any OpenAI-compatible model) — set --distill-model explicitly.
+# Omitting it lets the distiller silently default to the provider's cheapest model
+# (gpt-5-nano — a reasoning model that burns the distiller's 1000-token cap on reasoning
+# and fails its own JSON protocol; see "Weak-model probes" below). The distiller must be
+# a model on the SAME provider as the solver; pick a non-reasoning one.
+LLM_PROVIDER=openai OPENAI_API_KEY=... bun run test/demo/live-ab.ts \
+  --model gpt-4o-mini --distill-model gpt-4o --runs 20
 ```
 
-#### Results (Claude Haiku 4.5, 50 pairs)
+#### First benchmark (2026-06-23, Claude Haiku 4.5, 50 pairs, n=10 per type)
 
 ```
 === Overall (5 types x 10 runs = 50 pairs) ===
@@ -252,6 +260,71 @@ bun run test/demo/live-ab.ts --runs 10
 | ModuleNotFound | 8/10, 1.8 turns | 7/10, 2.1 turns | Negative — rule too instance-specific |
 
 ExpectMismatch showed the clearest positive signal: individual runs went from 4 turns to 1 turn, and 2 failures became successes. But negative transfer in other runs offset the gains. The learning loop's mechanics are validated — the question is fixture difficulty and rule generality.
+
+#### What changed since the first benchmark
+
+The table above prompted a code-level investigation (`docs/distiller_fix_plan.md`) that found three root causes: (1) the distiller saw only episode metadata — never the real error output or the real edit — so its advice was guessed rather than grounded; (2) the distillation prompt had no generalization requirement, so advice came out as copy-paste instance edits; (3) n=10 was underpowered for the one real signal (ExpectMismatch) and the harness had no way to test the actual thesis-relevant failure mode: a repo-local convention no model can know a priori.
+
+Four fixes landed in response, all on branch `v0.2_fix`:
+- **Distiller evidence + generalization** (`src/memory/rules/distill.ts`): `distillEpisode()` now takes optional `{errorExcerpt, fixDiff}` evidence, and the prompt requires advice to generalize *across instances* of an error class while still stating *stable repo facts* directly when the evidence reveals them (see Known Limitations #2 above — this second half was added during a later diagnostic pass, not the first).
+- **Harness model/provider flags** (`test/demo/live-ab.ts`): `--model`/`--distill-model` let the solver and distiller use different models; the hardcoded `ANTHROPIC_API_KEY` requirement is now provider-aware.
+- **RepoQuirk scenario family + discovery affordance**: every scenario type's prompt now includes a repo file tree and a `{"action":"read","file":...}` response option (guarded by the same path-traversal check used elsewhere in the codebase), so the solver can investigate before fixing. Three new fixtures (import map, barrel export, config schema drift) test convention-discovery specifically — this is the arena the project's actual thesis targets (see PRD §1.2/§2.2), not the classic 5 types, which are closer to isolated bug-fixing than repo-learning.
+- **Harness correctness + reporting**: a validation gap where a wrong edit guess against a non-displayed file silently no-op'd instead of being rejected is fixed; the solver's completion budget was raised (1200→4000 tokens, since reasoning-model providers burn completion budget on reasoning before the JSON answer); Success rate now gets a real paired-significance test (exact McNemar, not eyeballed).
+
+**The n=10 ModuleNotFound "negative transfer" claim in the table above does not replicate at n=30** — including under the *old*, pre-fix distiller:
+
+```
+=== ModuleNotFound - 30 runs (old distiller, old prompt, 2026-07-03) ===
+| Metric          | Control       | Treatment     | Delta        | p-value |
+|-----------------|---------------|---------------|--------------|---------|
+| Turns           | 1.8 ± 1.6     | 1.7 ± 1.4     | -5% ± 16%     | 0.123   |
+| Success rate    | 21/30         | 22/30         | —             | —       |
+```
+
+The n=10 sample was underpowered — a 2-pair difference at that n produces a headline-looking table cell that isn't distinguishable from noise. Corrected here rather than quietly dropped; the original table above is left intact as the historical record. Full transcript: `test/demo/results/2026-07-baseline-modulenotfound-n30.txt`.
+
+**Comparison rule for everything below**: Task 4 added the file tree/read affordance to *every* scenario type's prompt, so control's own prompt shape changed too — raw turn counts are not comparable across the old system (n=10 table, and the n=30 re-run just above) and the new system (next section). What *is* valid is a delta-of-deltas: each system's own treatment-vs-control gap is internally paired (both arms in a system share the same prompt shape), so compare *gaps*, not raw numbers, across systems.
+
+#### Second benchmark (2026-07-03, Claude Haiku 4.5, fully-fixed system)
+
+```
+=== ModuleNotFound - 30 runs ===
+| Metric          | Control       | Treatment     | Delta        | p-value |
+|-----------------|---------------|---------------|--------------|---------|
+| Turns           | 1.3 ± 0.5     | 1.3 ± 0.7     | +0% ± 23%     | 1.000   |
+| Success rate    | 30/30         | 30/30         | —             | 1.000   |
+
+=== ExpectMismatch - 30 runs ===
+| Metric          | Control       | Treatment     | Delta        | p-value |
+|-----------------|---------------|---------------|--------------|---------|
+| Turns           | 3.1 ± 2.0     | 3.0 ± 1.8     | +6% ± 39%     | 0.606   |
+| Success rate    | 15/30         | 19/30         | —             | 0.219   |
+```
+
+**Headline: ModuleNotFound's negative transfer is gone.** Old-system gap (treatment − control): success −1 pair, and the n=10 table's −0.3-turn/-1-pair story. New-system gap: turns tied exactly (+0%, p=1.000) and success rate perfectly tied at 30/30 both arms — zero discordant pairs, so McNemar's p=1.000 is not "no evidence either way," it's "not a single pair disagreed." Two caveats keep this honest. First, the n=30 re-run above already showed the n=10 "negative transfer" was noise — so the defensible claim is not "a regression was fixed" but "the failure mode was made structurally impossible": the advice itself verifiably changed from instance edits to grounded strategy (spot-checked against real distilled output during review), and the data shows zero measurable harm from carrying it. Second, this type now sits at ceiling (30/30, 1.3 turns, both arms), so it can no longer measure *benefit* either — what it measures is that rule carriage costs nothing here beyond input tokens (+21% ± 28%).
+
+**ExpectMismatch: mixed, not a clean win.** The turns significance from the n=30 old-distiller re-run above (p=0.006) does not persist under the new prompt: p=0.606. Success rate moved in the positive direction (15/30 → 19/30, old-system gap was 20/30 → 18/30) but isn't significant either (McNemar p=0.219). Also notable: control's *own* baseline success rate dropped from 20/30 (old prompt) to 15/30 (new prompt) — giving the solver more to read/consider isn't free even for control, exactly the "expect absolute numbers to shift" warning `distiller_fix_plan.md` made before this campaign ran. Net honest read: no longer a significant turns win, no longer worse on success — a wash, reported as one, not spun either direction. Full transcripts: `test/demo/results/2026-07-campaign-expectmismatch-n30.txt`, `test/demo/results/2026-07-campaign-modulenotfound-n30.txt`.
+
+#### RepoQuirk: a documented negative finding
+
+RepoQuirk fixtures (import map, barrel export, config schema drift) test the project's actual thesis — can a repo-local convention no model can know a priori be discovered once and then reused — via a read-then-edit discovery mechanism. It does not reliably reach the one-shot outcome it's meant to demonstrate.
+
+Two distinct fixes were tried, in sequence, each validated against a pre-registered pass/fail gate before being kept:
+1. **Distiller repo-fact framing** (see "What changed" above): verified directly against real fixtures that advice now states the concrete answer as fact instead of "go read and compare." This measurably improved advice *quality* but did not fix the *live outcome* — treatment still averaged more turns than control on re-test.
+2. **Neutral solver prompt**: turn-by-turn instrumentation (kept in the harness — see `--verbose` output) showed 0/6 sessions matching a "wrong edit, then recover" pattern and 6/6 matching a "read anyway, then a correct edit" pattern, so the fix targeted the solver's default-to-caution system prompt instead of the distiller again. This closed part of the gap (treatment mean turns dropped below control's) but the pre-registered bar — treatment mean below control **and** at least 2 of 6 runs completing in a single turn — still failed (only 1 of 6). The same fixture with the identical advice one-shot perfectly in one run and took 4 turns in another (reading an irrelevant file twice) — high run-to-run variance, not a reliable mechanism.
+
+This connects to a risk already named in `docs/prd.md`'s risk register: "rule injection pollutes model context." The evidence here doesn't show pollution exactly — treatment never fails *because* of the rule — but it does show the rule failing to reliably save the reads it's meant to save, which is close in spirit. RepoQuirk is therefore excluded from the campaign numbers below rather than reported as a false positive. The mechanism this scenario family is meant to demonstrate — one real session learns a convention, a later session applies it — moves to a future real-agent end-to-end demo (PRD §2.2's golden-path flow with actual post-failure injection, not this mini-harness), where the model has the full system prompt and tool surface rather than a stripped-down two-shape JSON protocol. Full transcripts of both gate attempts: `test/demo/results/2026-07-gate0v3-step2-diagnostic-n6.txt`, `test/demo/results/2026-07-gate0v3-step4-final-n6.txt`.
+
+#### Weak-model probes: a methodology lesson, not a clean result
+
+```
+LLM_PROVIDER=openai bun run test/demo/live-ab.ts --model gpt-4o-mini --runs 20 --types NullAccess,ParseError,UndefinedRef
+LLM_PROVIDER=openai bun run test/demo/live-ab.ts --model gpt-5-nano --runs 20 --types NullAccess,ParseError,UndefinedRef
+```
+
+Both commands omitted `--distill-model`, which defaults to the provider's cheapest model — `gpt-5-nano`, a reasoning model, regardless of what `--model` is set to (the first run therefore paired a `gpt-4o-mini` solver with a `gpt-5-nano` distiller; the second used `gpt-5-nano` for both). Result: the *distiller* hit its own JSON-protocol floor (1000-token cap, untouched by this campaign's solver-side fix) on **44/60** (`gpt-4o-mini` run) and **43/60** (`gpt-5-nano` run) pairs — `Distillation failed ... JSON Parse error: Unexpected EOF`. Most treatment sessions in both runs never received a real rule (`rule=no`), so the aggregate control-vs-treatment numbers from these two runs are **not reported as a rule-injection result** — they mostly measure "the same weak model, twice," diluted by a minority of pairs that got real advice. This is now documented in the command block above and in code (`--help`); a follow-up run with an explicit, reliable `--distill-model` is future work, not repeated here, per the "no re-runs to chase a better number" rule this campaign held itself to. One design note for that follow-up: as currently built it still couldn't say much — the harness only distills a rule when the pair's *control* session succeeds, so on the one type where this solver has real headroom (ParseError, 4/20) almost no treatment pair would receive a rule, while the types where rules are always available (20/20) have no headroom left to show. The informative version is cross-model rule transfer — rules distilled from a strong model's episodes, injected into the weak solver's sessions — a different experimental design, deferred alongside the real-agent demo.
+
+One legitimate finding survives the contamination, since it's about the *solver* alone, independent of whether a rule was injected: `gpt-4o-mini` solved NullAccess and UndefinedRef trivially (20/20 both arms) but struggled genuinely with ParseError (4/20 control, 2/20 treatment) — and the failure pattern was mostly real struggle, not format non-compliance (13/16 control and 14/18 treatment failures exhausted the full 5-turn budget; only 3–4 were quick single-turn rejections). `gpt-5-nano` showed no comparably sharp capability cliff across the three types, but its own numbers carry the same distiller caveat and aren't broken out further here. Full transcripts: `test/demo/results/2026-07-campaign-weakmodel-gpt4o-mini-n20.txt`, `test/demo/results/2026-07-campaign-weakmodel-gpt5-nano-n20.txt`.
 
 ---
 
