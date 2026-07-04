@@ -1,0 +1,356 @@
+=== PRE-REGISTRATION (written before this run; not edited after) ===
+Experiment 2: cross-model rule transfer. Question: do rules distilled from a STRONG model's
+(Haiku) resolved episodes improve a WEAK solver (gpt-4o-mini) on unseen instances of the same
+error class, via file-based seed rules (test/demo/seed-rules/), never distilled from this run's
+own sessions?
+Primary endpoint: ParseError success rate (exact McNemar test).
+Secondary endpoints: turns/token deltas across all three rows; ExpectMismatch success rate.
+NullAccess is a negative control: a null result is EXPECTED here (gpt-4o-mini is not known to
+need help on NullAccess per the earlier weak-model probe, where it solved it 20/20 in both arms) -
+a large change on this row indicates a harness artifact, not genuine transfer.
+Interpretation, decided in advance:
+  - Significant lift on the primary endpoint => "cross-model transfer demonstrated."
+  - Null result on the primary endpoint => "injection transfers knowledge, not skill --
+    capability floors persist."
+One run per row. Re-runs only for disclosed infrastructure failure. No code, fixture, or prompt
+edits after the first number from this campaign is seen (the mechanical smoke test above this
+line is exempt -- it validated wiring only, per the experiment's own success conditions).
+=== END PRE-REGISTRATION ===
+Provider: openai | Solver model: gpt-4o-mini | Distill model: gpt-5-nano | Solver maxTokens: 4000
+Seed rules dir: test/demo/seed-rules/ | Seed instance: ParseError_A1 | Match level: medium
+ParseError run 1/20 ParseError_A2: control=fail:1 treatment=pass:2 rule=yes
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 2/20 ParseError_A3: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=1]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 3/20 ParseError_B1: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: edit src/tokenizer.ts [exit=1]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 4/20 ParseError_B2: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: read src/tokenizer.ts [exit=null]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 5/20 ParseError_B3: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: edit src/tokenizer.ts [exit=1]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 6/20 ParseError_C1: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/compiler.ts [exit=1]
+  control turn 2: edit src/compiler.ts [exit=1]
+  control turn 3: edit src/compiler.ts [exit=1]
+  control turn 4: edit src/compiler.ts [exit=1]
+  control turn 5: edit src/compiler.ts [exit=1]
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment turn 2: edit src/compiler.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 7/20 ParseError_C2: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/compiler.ts [exit=1]
+  control turn 2: edit src/compiler.ts [exit=1]
+  control turn 3: edit src/compiler.ts [exit=1]
+  control turn 4: edit src/compiler.ts [exit=1]
+  control turn 5: read src/compiler.ts [exit=null]
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment turn 2: edit src/compiler.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 8/20 ParseError_D1: control=fail:1 treatment=pass:2 rule=yes
+  treatment turn 1: edit src/template.ts [exit=1]
+  treatment turn 2: edit src/template.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 9/20 ParseError_E1: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/evaluator.ts [exit=1]
+  control turn 2: edit src/evaluator.ts [exit=1]
+  control turn 3: edit src/evaluator.ts [exit=1]
+  control turn 4: edit src/evaluator.ts [exit=1]
+  control turn 5: edit src/evaluator.ts [exit=0]
+  treatment turn 1: edit src/evaluator.ts [exit=1]
+  treatment turn 2: edit src/evaluator.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 10/20 ParseError_A2: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=1]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 11/20 ParseError_A3: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=1]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 12/20 ParseError_B1: control=fail:2 treatment=pass:2 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 13/20 ParseError_B2: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: read src/tokenizer.ts [exit=null]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 14/20 ParseError_B3: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: edit src/tokenizer.ts [exit=1]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 15/20 ParseError_C1: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/compiler.ts [exit=1]
+  control turn 2: edit src/compiler.ts [exit=1]
+  control turn 3: edit src/compiler.ts [exit=1]
+  control turn 4: edit src/compiler.ts [exit=1]
+  control turn 5: edit src/compiler.ts [exit=1]
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment turn 2: edit src/compiler.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 16/20 ParseError_C2: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/compiler.ts [exit=1]
+  control turn 2: edit src/compiler.ts [exit=1]
+  control turn 3: edit src/compiler.ts [exit=1]
+  control turn 4: edit src/compiler.ts [exit=1]
+  control turn 5: edit src/compiler.ts [exit=1]
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment turn 2: edit src/compiler.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 17/20 ParseError_D1: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/template.ts [exit=1]
+  control turn 2: edit src/template.ts [exit=1]
+  control turn 3: edit src/template.ts [exit=1]
+  control turn 4: edit src/template.ts [exit=1]
+  control turn 5: edit src/template.ts [exit=0]
+  treatment turn 1: edit src/template.ts [exit=1]
+  treatment turn 2: edit src/template.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 18/20 ParseError_E1: control=pass:4 treatment=pass:2 rule=yes
+  control turn 1: edit src/evaluator.ts [exit=1]
+  control turn 2: edit src/evaluator.ts [exit=1]
+  control turn 3: edit src/evaluator.ts [exit=1]
+  control turn 4: edit src/evaluator.ts [exit=0]
+  treatment turn 1: edit src/evaluator.ts [exit=1]
+  treatment turn 2: edit src/evaluator.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 19/20 ParseError_A2: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=1]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+ParseError run 20/20 ParseError_A3: control=pass:4 treatment=pass:2 rule=yes
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=0]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test run reports "Unexpected end of file" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.
+
+Diagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.
+
+Resolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct.
+
+=== ParseError - 20 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 4.3 ± 1.3     | 2.0 ± 0.0     | -40% ± 50%    |
+| Tokens (input)  | 3422 ± 1054   | 1932 ± 20     | -27% ± 60%    |
+| Tokens (output) | 108 ± 32      | 56 ± 10       | -40% ± 36%    |
+| Success rate    | 2/20          | 20/20         | —             |
+
+=== Overall (1 types x 20 runs = 20 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 4.3 ± 1.3     | 2.0 ± 0.0     | -40% ± 50%    | 0.000    |
+| Tokens (input)  | 3422 ± 1054   | 1932 ± 20     | -27% ± 60%    | 0.000    |
+| Tokens (output) | 108 ± 32      | 56 ± 10       | -40% ± 36%    | 0.000    |
+| Success rate    | 2/20          | 20/20         | —             | 0.000    |
+
+Completed 20 pairs; API error runs: 0; distillation failures: 0.

@@ -1,0 +1,155 @@
+=== PRE-REGISTRATION (written before this run; not edited after) ===
+Experiment 2: cross-model rule transfer. Question: do rules distilled from a STRONG model's
+(Haiku) resolved episodes improve a WEAK solver (gpt-4o-mini) on unseen instances of the same
+error class, via file-based seed rules (test/demo/seed-rules/), never distilled from this run's
+own sessions?
+Primary endpoint: ParseError success rate (exact McNemar test).
+Secondary endpoints: turns/token deltas across all three rows; ExpectMismatch success rate.
+NullAccess is a negative control: a null result is EXPECTED here (gpt-4o-mini is not known to
+need help on NullAccess per the earlier weak-model probe, where it solved it 20/20 in both arms) -
+a large change on this row indicates a harness artifact, not genuine transfer.
+Interpretation, decided in advance:
+  - Significant lift on the primary endpoint => "cross-model transfer demonstrated."
+  - Null result on the primary endpoint => "injection transfers knowledge, not skill --
+    capability floors persist."
+One run per row. Re-runs only for disclosed infrastructure failure. No code, fixture, or prompt
+edits after the first number from this campaign is seen (the mechanical smoke test above this
+line is exempt -- it validated wiring only, per the experiment's own success conditions).
+=== END PRE-REGISTRATION ===
+Provider: openai | Solver model: gpt-4o-mini | Distill model: gpt-5-nano | Solver maxTokens: 4000
+Seed rules dir: test/demo/seed-rules/ | Seed instance: NullAccess_A1 | Match level: medium
+NullAccess run 1/10 NullAccess_A2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.
+
+**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.
+
+**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires.
+NullAccess run 2/10 NullAccess_A3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.
+
+**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.
+
+**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires.
+NullAccess run 3/10 NullAccess_B1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.
+
+**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.
+
+**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires.
+NullAccess run 4/10 NullAccess_B2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.
+
+**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.
+
+**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires.
+NullAccess run 5/10 NullAccess_B3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.
+
+**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.
+
+**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires.
+NullAccess run 6/10 NullAccess_C1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/profile.ts [exit=0]
+  treatment turn 1: edit src/profile.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.
+
+**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.
+
+**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires.
+NullAccess run 7/10 NullAccess_C2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/profile.ts [exit=0]
+  treatment turn 1: edit src/profile.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.
+
+**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.
+
+**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires.
+NullAccess run 8/10 NullAccess_D1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/session.ts [exit=0]
+  treatment turn 1: edit src/session.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.
+
+**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.
+
+**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires.
+NullAccess run 9/10 NullAccess_E1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/auth.ts [exit=0]
+  treatment turn 1: edit src/auth.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.
+
+**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.
+
+**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires.
+NullAccess run 10/10 NullAccess_A2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.
+
+**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.
+
+**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires.
+
+=== NullAccess - 10 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 1.0 ± 0.0     | 1.0 ± 0.0     | +0% ± 0%      |
+| Tokens (input)  | 863 ± 3       | 1092 ± 9      | +27% ± 1%     |
+| Tokens (output) | 31 ± 2        | 40 ± 1        | +29% ± 8%     |
+| Success rate    | 10/10         | 10/10         | —             |
+
+=== Overall (1 types x 10 runs = 10 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 1.0 ± 0.0     | 1.0 ± 0.0     | +0% ± 0%      | 1.000    |
+| Tokens (input)  | 863 ± 3       | 1092 ± 9      | +27% ± 1%     | 0.000    |
+| Tokens (output) | 31 ± 2        | 40 ± 1        | +29% ± 8%     | 0.000    |
+| Success rate    | 10/10         | 10/10         | —             | 1.000    |
+
+Completed 10 pairs; API error runs: 0; distillation failures: 0.

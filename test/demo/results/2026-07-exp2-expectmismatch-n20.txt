@@ -1,0 +1,281 @@
+=== PRE-REGISTRATION (written before this run; not edited after) ===
+Experiment 2: cross-model rule transfer. Question: do rules distilled from a STRONG model's
+(Haiku) resolved episodes improve a WEAK solver (gpt-4o-mini) on unseen instances of the same
+error class, via file-based seed rules (test/demo/seed-rules/), never distilled from this run's
+own sessions?
+Primary endpoint: ParseError success rate (exact McNemar test).
+Secondary endpoints: turns/token deltas across all three rows; ExpectMismatch success rate.
+NullAccess is a negative control: a null result is EXPECTED here (gpt-4o-mini is not known to
+need help on NullAccess per the earlier weak-model probe, where it solved it 20/20 in both arms) -
+a large change on this row indicates a harness artifact, not genuine transfer.
+Interpretation, decided in advance:
+  - Significant lift on the primary endpoint => "cross-model transfer demonstrated."
+  - Null result on the primary endpoint => "injection transfers knowledge, not skill --
+    capability floors persist."
+One run per row. Re-runs only for disclosed infrastructure failure. No code, fixture, or prompt
+edits after the first number from this campaign is seen (the mechanical smoke test above this
+line is exempt -- it validated wiring only, per the experiment's own success conditions).
+=== END PRE-REGISTRATION ===
+Provider: openai | Solver model: gpt-4o-mini | Distill model: gpt-5-nano | Solver maxTokens: 4000
+Seed rules dir: test/demo/seed-rules/ | Seed instance: ExpectMismatch_A1 | Match level: medium
+ExpectMismatch run 1/20 ExpectMismatch_A2: control=pass:2 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=1]
+  control turn 2: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 2/20 ExpectMismatch_A3: control=pass:1 treatment=fail:5 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=1]
+  treatment turn 2: edit src/calc.ts [exit=1]
+  treatment turn 3: edit src/calc.ts [exit=1]
+  treatment turn 4: edit src/calc.ts [exit=1]
+  treatment turn 5: edit src/calc.ts [exit=1]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 3/20 ExpectMismatch_B1: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 4/20 ExpectMismatch_B2: control=fail:5 treatment=fail:2 rule=yes
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 5/20 ExpectMismatch_B3: control=fail:5 treatment=fail:5 rule=yes
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=1]
+  treatment turn 3: edit src/formatter.ts [exit=1]
+  treatment turn 4: edit src/formatter.ts [exit=1]
+  treatment turn 5: edit src/formatter.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 6/20 ExpectMismatch_C1: control=pass:2 treatment=pass:2 rule=yes
+  control turn 1: edit src/converter.ts [exit=1]
+  control turn 2: edit src/converter.ts [exit=0]
+  treatment turn 1: edit src/converter.ts [exit=1]
+  treatment turn 2: edit src/converter.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 7/20 ExpectMismatch_C2: control=pass:3 treatment=fail:5 rule=yes
+  control turn 1: edit src/converter.ts [exit=1]
+  control turn 2: edit src/converter.ts [exit=1]
+  control turn 3: edit src/converter.ts [exit=0]
+  treatment turn 1: edit src/converter.ts [exit=1]
+  treatment turn 2: edit src/converter.ts [exit=1]
+  treatment turn 3: edit src/converter.ts [exit=1]
+  treatment turn 4: edit src/converter.ts [exit=1]
+  treatment turn 5: edit src/converter.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 8/20 ExpectMismatch_D1: control=fail:5 treatment=fail:5 rule=yes
+  control turn 1: edit src/aggregator.ts [exit=1]
+  control turn 2: edit src/aggregator.ts [exit=1]
+  control turn 3: edit src/aggregator.ts [exit=1]
+  control turn 4: edit src/aggregator.ts [exit=1]
+  control turn 5: edit src/aggregator.ts [exit=1]
+  treatment turn 1: edit src/aggregator.ts [exit=1]
+  treatment turn 2: edit src/aggregator.ts [exit=1]
+  treatment turn 3: edit src/aggregator.ts [exit=1]
+  treatment turn 4: edit src/aggregator.ts [exit=1]
+  treatment turn 5: edit src/aggregator.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 9/20 ExpectMismatch_E1: control=pass:4 treatment=pass:1 rule=yes
+  control turn 1: edit src/scorer.ts [exit=1]
+  control turn 2: edit src/scorer.ts [exit=1]
+  control turn 3: edit src/scorer.ts [exit=1]
+  control turn 4: edit src/scorer.ts [exit=0]
+  treatment turn 1: edit src/scorer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 10/20 ExpectMismatch_A2: control=pass:2 treatment=fail:5 rule=yes
+  control turn 1: edit src/calc.ts [exit=1]
+  control turn 2: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=1]
+  treatment turn 2: edit src/calc.ts [exit=1]
+  treatment turn 3: edit src/calc.ts [exit=1]
+  treatment turn 4: edit src/calc.ts [exit=1]
+  treatment turn 5: edit src/calc.ts [exit=1]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 11/20 ExpectMismatch_A3: control=fail:3 treatment=fail:4 rule=yes
+  control turn 1: edit src/calc.ts [exit=1]
+  control turn 2: edit src/calc.ts [exit=1]
+  treatment turn 1: edit src/calc.ts [exit=1]
+  treatment turn 2: edit src/calc.ts [exit=1]
+  treatment turn 3: edit src/calc.ts [exit=1]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 12/20 ExpectMismatch_B1: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 13/20 ExpectMismatch_B2: control=fail:5 treatment=fail:5 rule=yes
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=1]
+  control turn 3: edit src/formatter.ts [exit=1]
+  control turn 4: edit src/formatter.ts [exit=1]
+  control turn 5: edit src/formatter.ts [exit=1]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=1]
+  treatment turn 3: edit src/formatter.ts [exit=1]
+  treatment turn 4: edit src/formatter.ts [exit=1]
+  treatment turn 5: edit src/formatter.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 14/20 ExpectMismatch_B3: control=pass:2 treatment=fail:4 rule=yes
+  control turn 1: edit src/formatter.ts [exit=1]
+  control turn 2: edit src/formatter.ts [exit=0]
+  treatment turn 1: edit src/formatter.ts [exit=1]
+  treatment turn 2: edit src/formatter.ts [exit=1]
+  treatment turn 3: edit src/formatter.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 15/20 ExpectMismatch_C1: control=pass:1 treatment=fail:5 rule=yes
+  control turn 1: edit src/converter.ts [exit=0]
+  treatment turn 1: edit src/converter.ts [exit=1]
+  treatment turn 2: edit src/converter.ts [exit=1]
+  treatment turn 3: edit src/converter.ts [exit=1]
+  treatment turn 4: edit src/converter.ts [exit=1]
+  treatment turn 5: edit src/converter.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 16/20 ExpectMismatch_C2: control=fail:5 treatment=fail:5 rule=yes
+  control turn 1: edit src/converter.ts [exit=1]
+  control turn 2: edit src/converter.ts [exit=1]
+  control turn 3: edit src/converter.ts [exit=1]
+  control turn 4: edit src/converter.ts [exit=1]
+  control turn 5: edit src/converter.ts [exit=0]
+  treatment turn 1: edit src/converter.ts [exit=1]
+  treatment turn 2: edit src/converter.ts [exit=1]
+  treatment turn 3: edit src/converter.ts [exit=1]
+  treatment turn 4: edit src/converter.ts [exit=1]
+  treatment turn 5: edit src/converter.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 17/20 ExpectMismatch_D1: control=fail:5 treatment=fail:5 rule=yes
+  control turn 1: edit src/aggregator.ts [exit=1]
+  control turn 2: edit src/aggregator.ts [exit=1]
+  control turn 3: edit src/aggregator.ts [exit=1]
+  control turn 4: edit src/aggregator.ts [exit=1]
+  control turn 5: edit src/aggregator.ts [exit=1]
+  treatment turn 1: edit src/aggregator.ts [exit=1]
+  treatment turn 2: edit src/aggregator.ts [exit=1]
+  treatment turn 3: edit src/aggregator.ts [exit=1]
+  treatment turn 4: edit src/aggregator.ts [exit=1]
+  treatment turn 5: edit src/aggregator.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 18/20 ExpectMismatch_E1: control=pass:4 treatment=pass:1 rule=yes
+  control turn 1: edit src/scorer.ts [exit=1]
+  control turn 2: edit src/scorer.ts [exit=1]
+  control turn 3: edit src/scorer.ts [exit=1]
+  control turn 4: edit src/scorer.ts [exit=0]
+  treatment turn 1: edit src/scorer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 19/20 ExpectMismatch_A2: control=pass:2 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=1]
+  control turn 2: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+ExpectMismatch run 20/20 ExpectMismatch_A3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/calc.ts [exit=0]
+  treatment turn 1: edit src/calc.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten.
+
+=== ExpectMismatch - 20 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 3.4 ± 1.6     | 3.3 ± 1.8     | +36% ± 137%   |
+| Tokens (input)  | 3004 ± 1441   | 3446 ± 1860   | +58% ± 160%   |
+| Tokens (output) | 107 ± 64      | 88 ± 49       | +23% ± 129%   |
+| Success rate    | 11/20         | 8/20          | —             |
+
+=== Overall (1 types x 20 runs = 20 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 3.4 ± 1.6     | 3.3 ± 1.8     | +36% ± 137%   | 0.921    |
+| Tokens (input)  | 3004 ± 1441   | 3446 ± 1860   | +58% ± 160%   | 0.371    |
+| Tokens (output) | 107 ± 64      | 88 ± 49       | +23% ± 129%   | 0.201    |
+| Success rate    | 11/20         | 8/20          | —             | 0.453    |
+
+Completed 20 pairs; API error runs: 0; distillation failures: 0.
