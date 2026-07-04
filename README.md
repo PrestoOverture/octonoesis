@@ -326,6 +326,56 @@ Both commands omitted `--distill-model`, which defaults to the provider's cheape
 
 One legitimate finding survives the contamination, since it's about the *solver* alone, independent of whether a rule was injected: `gpt-4o-mini` solved NullAccess and UndefinedRef trivially (20/20 both arms) but struggled genuinely with ParseError (4/20 control, 2/20 treatment) — and the failure pattern was mostly real struggle, not format non-compliance (13/16 control and 14/18 treatment failures exhausted the full 5-turn budget; only 3–4 were quick single-turn rejections). `gpt-5-nano` showed no comparably sharp capability cliff across the three types, but its own numbers carry the same distiller caveat and aren't broken out further here. Full transcripts: `test/demo/results/2026-07-campaign-weakmodel-gpt4o-mini-n20.txt`, `test/demo/results/2026-07-campaign-weakmodel-gpt5-nano-n20.txt`.
 
+### Experiment 2: cross-model rule transfer
+
+The weak-model probes above deferred the informative version of that question: not "does a weak model's own rules help itself" (contaminated by the distiller-collapse bug), but **does a rule distilled from a strong model's (Haiku) resolved episode help a weak model (gpt-4o-mini) on a different, unseen instance of the same error class?** This is the final experiment in the v0.2 benchmark-remediation line.
+
+`getProvider()` (`src/providers/index.ts`) is a module-level singleton fixed for the whole process by `LLM_PROVIDER` — one process can't run a Haiku seed-solver and a gpt-4o-mini transfer-solver at the same time. So this is two phases bridged by a file-based rule bank instead of one paired run:
+
+```bash
+# Phase S (plain Anthropic process): solve 3 designated seed fixtures with the strong model,
+# distill a rule from each via the existing evidence path, write JSON keyed by scenario type.
+bun run test/demo/live-ab.ts --emit-seed-rules test/demo/seed-rules/
+
+# Phase T (OpenAI process): skip per-pair distillation, load the pre-seeded rule for this type,
+# exclude its seed instance from the run rotation, inject at whatever match level actually
+# computes (not forced to 'fine').
+LLM_PROVIDER=openai bun run test/demo/live-ab.ts --model gpt-4o-mini \
+  --seed-rules test/demo/seed-rules/ --types ParseError --runs 20
+```
+
+**Pre-registered before Phase T** (written into each result file's header, unedited since): primary endpoint = ParseError success rate (exact McNemar); secondary = turns/token deltas plus ExpectMismatch; NullAccess as a negative control (expected null — a large change there would indicate a harness artifact, not transfer). Significant lift on the primary endpoint was pre-worded as "cross-model transfer demonstrated"; a null result as "injection transfers knowledge, not skill — capability floors persist."
+
+```
+=== ParseError (primary, n=20) ===
+| Metric          | Control       | Treatment     | Delta        | p-value |
+|-----------------|---------------|---------------|--------------|---------|
+| Turns           | 4.3 ± 1.3     | 2.0 ± 0.0     | -40% ± 50%    | 0.000   |
+| Success rate    | 2/20          | 20/20         | —             | 0.000   |
+
+=== ExpectMismatch (secondary, n=20) ===
+| Metric          | Control       | Treatment     | Delta        | p-value |
+|-----------------|---------------|---------------|--------------|---------|
+| Turns           | 3.4 ± 1.6     | 3.3 ± 1.8     | +36% ± 137%   | 0.921   |
+| Success rate    | 11/20         | 8/20          | —             | 0.453   |
+
+=== NullAccess (negative control, n=10) ===
+| Metric          | Control       | Treatment     | Delta        | p-value |
+|-----------------|---------------|---------------|--------------|---------|
+| Turns           | 1.0 ± 0.0     | 1.0 ± 0.0     | +0% ± 0%      | 1.000   |
+| Success rate    | 10/10         | 10/10         | —             | 1.000   |
+```
+
+**Cross-model transfer demonstrated on the primary endpoint** — cleanly. `gpt-4o-mini` alone solves ParseError 2/20 (10%); with a rule distilled by Haiku from a *different* ParseError instance, it solves 20/20, every single run in exactly 2 turns (zero variance), p<0.001 on both turns and success rate (the harness prints 0.000). Per-turn logs show the uniform 2-turn pattern is edit→edit — the first edit does not yet pass the test, the second completes the repair — with zero read actions in the treatment arm, across all five source files in the rotation (i.e., the rule transferred at coarse match level too, not only to the seed's same-file siblings); both arms ran the identical protocol. The negative control came back exactly null as pre-registered (turns and success both tied, p=1.000) — no harness artifact is inflating the primary result.
+
+ExpectMismatch, the secondary endpoint, is a wash (p=0.921 turns, p=0.453 success, numerically slightly worse for treatment) — not a contradiction, but a real boundary condition worth understanding. The seeded rule (see below) was diagnostically scoped to *numeric*-offset arithmetic bugs (`a + b - 1` when the intent was `a + b`); ExpectMismatch's other instances include string-formatting mismatches (currency, casing, padding) that a numeric-offset-shaped rule has nothing to say about, and can plausibly distract from. ParseError's seed rule, by contrast, diagnosed a structural pattern (unclosed brace in a catch block) general enough to matter across most of that type's instances. **The takeaway isn't "ParseError transfers, ExpectMismatch doesn't" — it's that transfer quality depends on how representative the one seed instance is of the target type's actual internal diversity**, which is exactly the kind of thing a repetition gate (≥2 seed episodes before trusting a rule, still deferred to v1.0) would help with.
+
+One mechanical nuance surfaced by the header line (`Match level: medium`, not the anticipated `coarse`): `ParseError_A2`/`ParseError_A3` happen to share the same file (`src/parser.ts`) as the seed fixture `ParseError_A1`, so they match at the *medium* level (file matches too) rather than coarse; instances in other files match at coarse. The match level is genuinely computed per pair via `findMatchingRules()`, never forced — this is real heterogeneity in the fixture set, not a bug, and it doesn't change the interpretation (medium is still not fine — no instance-specific detail from the seed carries over, only the diagnostic pattern).
+
+Seed rule advice texts (all three reviewed before Phase T; none required re-seeding): `test/demo/seed-rules/ParseError.json`, `ExpectMismatch.json`, `NullAccess.json`. Full pre-registered transcripts: `test/demo/results/2026-07-exp2-parseerror-n20.txt`, `2026-07-exp2-expectmismatch-n20.txt`, `2026-07-exp2-nullaccess-n10.txt`. (Auditing note: the Phase T transcript headers print a `Distill model:` field — that is the per-pair default, unused in seeded mode, which performs no distillation at all (`distillation failures: 0`); actual rule provenance is recorded in the seed JSONs' `model_id` field: `claude-haiku-4-5-20251001`.)
+
+This is the final experiment in the v0.2 benchmark-remediation line. Next work is v1.0 Batch 0 (Phase 21+).
+
 ---
 
 ## License
