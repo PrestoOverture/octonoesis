@@ -1,0 +1,42 @@
+{
+  "scenarioType": "NullAccess",
+  "seedFixtureId": "NullAccess_A1",
+  "rule": {
+    "id": "rule-null-union-type-property-access",
+    "triggers": {
+      "tools": [
+        "bun"
+      ],
+      "command_prefix": [
+        "bun test"
+      ],
+      "error_signatures": [
+        "bun-test|TypeError|src/user.ts|evaluating 'user.name'",
+        "bun-test|TypeError",
+        "bun-test|TypeError|src/user.ts"
+      ]
+    },
+    "scope": "repo",
+    "alpha": 3,
+    "beta": 2,
+    "confidence": 0.6,
+    "evidence": [
+      "ep_ab_NullAccess_0"
+    ],
+    "hits": 0,
+    "misses": 0,
+    "challenged_by": [],
+    "anchor": {
+      "file": "src/user.ts"
+    },
+    "status": "candidate",
+    "user_confirmed": false,
+    "extractor_version": "0.3.0",
+    "model_id": "claude-haiku-4-5-20251001",
+    "prompt_hash": "5d2a6eb1",
+    "created_at": "2026-07-04T09:03:08.656Z",
+    "last_matched_at": null,
+    "last_rebuilt_at": null,
+    "advice": "When a TypeError occurs with the signature 'null is not an object (evaluating ...)' on a property access chain, the immediate cause is attempting to access a property on a `null` value. This arises when a function parameter or variable has a union type that includes `null` (e.g., `User | null`), but the code proceeds to access properties without first narrowing the type.\n\n**Root cause:** The type signature permits `null`, but the implementation assumes a non-null value. The function receives `null` at runtime and crashes on property access.\n\n**Resolution:** Add a guard clause at the function entry point to check for `null` (or other falsy union members) and handle it explicitly. This both satisfies the type contract and prevents the runtime error. In this case, check `if (user === null)` before accessing `user.name`, and return a sensible default or error response (e.g., `'User: Anonymous'`) when the guard fires."
+  }
+}

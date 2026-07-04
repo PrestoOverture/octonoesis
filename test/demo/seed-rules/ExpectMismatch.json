@@ -1,0 +1,42 @@
+{
+  "scenarioType": "ExpectMismatch",
+  "seedFixtureId": "ExpectMismatch_A1",
+  "rule": {
+    "id": "rule-arithmetic-operator-off-by-one",
+    "triggers": {
+      "tools": [
+        "bun"
+      ],
+      "command_prefix": [
+        "bun test"
+      ],
+      "error_signatures": [
+        "bun-test|AssertionError|src/calc.ts|asserting sumTotal result",
+        "bun-test|AssertionError",
+        "bun-test|AssertionError|src/calc.ts"
+      ]
+    },
+    "scope": "repo",
+    "alpha": 3,
+    "beta": 2,
+    "confidence": 0.6,
+    "evidence": [
+      "ep_ab_ExpectMismatch_0"
+    ],
+    "hits": 0,
+    "misses": 0,
+    "challenged_by": [],
+    "anchor": {
+      "file": "src/calc.ts"
+    },
+    "status": "candidate",
+    "user_confirmed": false,
+    "extractor_version": "0.3.0",
+    "model_id": "claude-haiku-4-5-20251001",
+    "prompt_hash": "5d2a6eb1",
+    "created_at": "2026-07-04T09:03:02.440Z",
+    "last_matched_at": null,
+    "last_rebuilt_at": null,
+    "advice": "When a test assertion fails with a numeric mismatch where the received value is consistently offset from the expected value by a small integer (e.g., expected 6, received 5), examine arithmetic operations in the function under test for unintended constant adjustments. Look for expressions that add or subtract a literal value unnecessarily—such as `a + b - 1` when the intent is simply `a + b`. The fix is to remove the extraneous operator and operand. This error typically occurs when debugging code is left in place or when an arithmetic expression was modified during development and the adjustment was forgotten."
+  }
+}

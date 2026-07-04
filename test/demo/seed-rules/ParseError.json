@@ -1,0 +1,42 @@
+{
+  "scenarioType": "ParseError",
+  "seedFixtureId": "ParseError_A1",
+  "rule": {
+    "id": "rule-missing-catch-block-closing-brace",
+    "triggers": {
+      "tools": [
+        "bun"
+      ],
+      "command_prefix": [
+        "bun test"
+      ],
+      "error_signatures": [
+        "bun-test|SyntaxError|src/parser.ts|missing closing brace in parsePayload",
+        "bun-test|SyntaxError",
+        "bun-test|SyntaxError|src/parser.ts"
+      ]
+    },
+    "scope": "repo",
+    "alpha": 3,
+    "beta": 2,
+    "confidence": 0.6,
+    "evidence": [
+      "ep_ab_ParseError_0"
+    ],
+    "hits": 0,
+    "misses": 0,
+    "challenged_by": [],
+    "anchor": {
+      "file": "src/parser.ts"
+    },
+    "status": "candidate",
+    "user_confirmed": false,
+    "extractor_version": "0.3.0",
+    "model_id": "claude-haiku-4-5-20251001",
+    "prompt_hash": "5d2a6eb1",
+    "created_at": "2026-07-04T09:02:56.894Z",
+    "last_matched_at": null,
+    "last_rebuilt_at": null,
+    "advice": "When a test run reports \"Unexpected end of file\" pointing to a return statement inside a catch block, the catch block is missing its closing brace. This occurs when the catch body is written but the closing `}` that terminates the try-catch statement is omitted.\n\nDiagnose by examining the try-catch structure: verify that every `catch (...)` block has a matching closing brace after its final statement. The error location points to the last statement in the unclosed block, making it appear as if that line is malformed when the real issue is structural.\n\nResolve by adding the missing `}` immediately after the catch block's last statement to properly close the try-catch construct."
+  }
+}
