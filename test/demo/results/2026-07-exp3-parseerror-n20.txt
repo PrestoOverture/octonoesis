@@ -1,0 +1,305 @@
+=== PRE-REGISTRATION (written before this run; not edited after) ===
+Experiment 3: can gpt-4o-mini improve ITSELF? The last empty cell of the who-solves x
+who-distills matrix. Weak model (gpt-4o-mini) solves the seed episode, weak model
+(gpt-4o-mini) distills the rule, weak model (gpt-4o-mini) consumes it on unseen instances
+of the same error class, via file-based seed rules (test/demo/seed-rules-selfloop/), never
+distilled from this run's own sessions.
+
+Phase S' disclosure: the ParseError_A1 seed resolved on attempt 62/62 (empirical solve
+rate ~1.6% for this specific fixture, well below the ~10% pre-registered estimate in the
+goal contract -- disclosed as-is per the goal contract's own instruction to persist until
+one success, since "rules are only distilled from resolved episodes, however rare"; not
+treated as a stopping condition). NullAccess_A1 resolved on attempt 1/1. Both seed rules
+carry model_id: gpt-4o-mini (test/demo/seed-rules-selfloop/{ParseError,NullAccess}.json),
+confirming gpt-4o-mini was used for both the solve and distill roles.
+
+Primary endpoint: ParseError success rate (exact McNemar test).
+Secondary endpoints: turns/token deltas.
+
+Reference point (NOT re-run here): Experiment 2 showed 20/20 ParseError success under a
+Haiku-distilled rule consumed by the same weak solver (gpt-4o-mini) --
+test/demo/results/2026-07-exp2-parseerror-n20.txt. That is the strong-distiller upper
+bound this run is measured against.
+
+Interpretation, decided in advance:
+  - Near-20/20 success => "full self-improvement -- no stronger teacher needed."
+  - Intermediate, statistically significant lift over control => "self-improvement works;
+    distiller quality amplifies it."
+  - Null result (~2/20, i.e. indistinguishable from control's own baseline rate) =>
+    "distillation quality is the binding constraint -- empirical support for the
+    asymmetric-cost design (cheap-but-competent distiller)."
+Every one of these three outcomes is publishable; none revises Experiment 2's result.
+
+Calibration note: gpt-4o-mini's own control-arm (no-rule) success rate on ParseError
+across all 10 fixture instances was 4/20 = 20% in the earlier weak-model probe
+(test/demo/results/2026-07-campaign-weakmodel-gpt4o-mini-n20.txt), so a control rate in
+that neighborhood is expected here too (ParseError_A1 itself is excluded from this run's
+rotation as the seed instance, per the same cross-instance guarantee as Experiment 2).
+
+One run per row. Re-runs only for disclosed infrastructure failure. No code, fixture, or
+prompt edits after the first number from this campaign is seen (the mechanical smoke test
+already run separately -- 2 pairs, rule=yes, match level=medium, both genuinely computed --
+is exempt, per the experiment's own success conditions; it validated wiring only).
+=== END PRE-REGISTRATION ===
+Provider: openai | Solver model: gpt-4o-mini | Distill model: gpt-5-nano | Solver maxTokens: 4000
+Seed rules dir: test/demo/seed-rules-selfloop/ | Seed instance: ParseError_A1 | Match level: medium
+ParseError run 1/20 ParseError_A2: control=fail:5 treatment=fail:3 rule=yes
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=1]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=1]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 2/20 ParseError_A3: control=fail:1 treatment=pass:3 rule=yes
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=1]
+  treatment turn 3: edit src/parser.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 3/20 ParseError_B1: control=pass:4 treatment=fail:1 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 4/20 ParseError_B2: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: read src/tokenizer.ts [exit=null]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 5/20 ParseError_B3: control=pass:4 treatment=pass:3 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=0]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=1]
+  treatment turn 3: edit src/tokenizer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 6/20 ParseError_C1: control=fail:5 treatment=fail:2 rule=yes
+  control turn 1: edit src/compiler.ts [exit=1]
+  control turn 2: read src/compiler.ts [exit=null]
+  control turn 3: edit src/compiler.ts [exit=1]
+  control turn 4: edit src/compiler.ts [exit=1]
+  control turn 5: edit src/compiler.ts [exit=1]
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 7/20 ParseError_C2: control=fail:1 treatment=pass:3 rule=yes
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment turn 2: edit src/compiler.ts [exit=1]
+  treatment turn 3: edit src/compiler.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 8/20 ParseError_D1: control=fail:5 treatment=pass:4 rule=yes
+  control turn 1: edit src/template.ts [exit=1]
+  control turn 2: edit src/template.ts [exit=1]
+  control turn 3: edit src/template.ts [exit=1]
+  control turn 4: edit src/template.ts [exit=1]
+  control turn 5: edit src/template.ts [exit=1]
+  treatment turn 1: edit src/template.ts [exit=1]
+  treatment turn 2: edit src/template.ts [exit=1]
+  treatment turn 3: edit src/template.ts [exit=1]
+  treatment turn 4: edit src/template.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 9/20 ParseError_E1: control=fail:5 treatment=fail:5 rule=yes
+  control turn 1: edit src/evaluator.ts [exit=1]
+  control turn 2: edit src/evaluator.ts [exit=1]
+  control turn 3: edit src/evaluator.ts [exit=1]
+  control turn 4: edit src/evaluator.ts [exit=1]
+  control turn 5: edit src/evaluator.ts [exit=1]
+  treatment turn 1: edit src/evaluator.ts [exit=1]
+  treatment turn 2: edit src/evaluator.ts [exit=1]
+  treatment turn 3: edit src/evaluator.ts [exit=1]
+  treatment turn 4: edit src/evaluator.ts [exit=1]
+  treatment turn 5: edit src/evaluator.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 10/20 ParseError_A2: control=fail:5 treatment=pass:3 rule=yes
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=1]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=1]
+  treatment turn 3: edit src/parser.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 11/20 ParseError_A3: control=fail:5 treatment=fail:2 rule=yes
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=1]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 12/20 ParseError_B1: control=fail:5 treatment=fail:2 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: edit src/tokenizer.ts [exit=1]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 13/20 ParseError_B2: control=fail:5 treatment=fail:3 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: edit src/tokenizer.ts [exit=1]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 14/20 ParseError_B3: control=fail:5 treatment=pass:2 rule=yes
+  control turn 1: edit src/tokenizer.ts [exit=1]
+  control turn 2: edit src/tokenizer.ts [exit=1]
+  control turn 3: edit src/tokenizer.ts [exit=1]
+  control turn 4: edit src/tokenizer.ts [exit=1]
+  control turn 5: read src/tokenizer.ts [exit=null]
+  treatment turn 1: edit src/tokenizer.ts [exit=1]
+  treatment turn 2: edit src/tokenizer.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 15/20 ParseError_C1: control=fail:5 treatment=pass:3 rule=yes
+  control turn 1: edit src/compiler.ts [exit=1]
+  control turn 2: edit src/compiler.ts [exit=1]
+  control turn 3: edit src/compiler.ts [exit=1]
+  control turn 4: edit src/compiler.ts [exit=1]
+  control turn 5: edit src/compiler.ts [exit=0]
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment turn 2: edit src/compiler.ts [exit=1]
+  treatment turn 3: edit src/compiler.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 16/20 ParseError_C2: control=fail:1 treatment=pass:3 rule=yes
+  treatment turn 1: edit src/compiler.ts [exit=1]
+  treatment turn 2: edit src/compiler.ts [exit=1]
+  treatment turn 3: edit src/compiler.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 17/20 ParseError_D1: control=fail:5 treatment=fail:3 rule=yes
+  control turn 1: edit src/template.ts [exit=1]
+  control turn 2: edit src/template.ts [exit=1]
+  control turn 3: edit src/template.ts [exit=1]
+  control turn 4: edit src/template.ts [exit=1]
+  control turn 5: edit src/template.ts [exit=1]
+  treatment turn 1: edit src/template.ts [exit=1]
+  treatment turn 2: edit src/template.ts [exit=1]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 18/20 ParseError_E1: control=fail:5 treatment=pass:4 rule=yes
+  control turn 1: edit src/evaluator.ts [exit=1]
+  control turn 2: edit src/evaluator.ts [exit=1]
+  control turn 3: edit src/evaluator.ts [exit=1]
+  control turn 4: edit src/evaluator.ts [exit=1]
+  control turn 5: edit src/evaluator.ts [exit=1]
+  treatment turn 1: edit src/evaluator.ts [exit=1]
+  treatment turn 2: edit src/evaluator.ts [exit=1]
+  treatment turn 3: edit src/evaluator.ts [exit=1]
+  treatment turn 4: edit src/evaluator.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 19/20 ParseError_A2: control=fail:1 treatment=fail:4 rule=yes
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=1]
+  treatment turn 3: edit src/parser.ts [exit=1]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+ParseError run 20/20 ParseError_A3: control=fail:5 treatment=pass:3 rule=yes
+  control turn 1: edit src/parser.ts [exit=1]
+  control turn 2: edit src/parser.ts [exit=1]
+  control turn 3: edit src/parser.ts [exit=1]
+  control turn 4: edit src/parser.ts [exit=1]
+  control turn 5: edit src/parser.ts [exit=0]
+  treatment turn 1: edit src/parser.ts [exit=1]
+  treatment turn 2: edit src/parser.ts [exit=1]
+  treatment turn 3: edit src/parser.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When encountering a SyntaxError due to a missing closing brace while running tests with the bun test command, the common root cause is a mismatched or missing brace in your code. This often results in unexpected end of file errors during execution. To resolve this, carefully inspect code blocks and ensure every opening brace `{` has a corresponding closing brace `}`. Implementing consistent formatting practices, such as using code linters or IDE features for auto-indentation, can help catch these issues early.
+
+=== ParseError - 20 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 4.1 ± 1.6     | 2.9 ± 0.9     | +11% ± 113%   |
+| Tokens (input)  | 3240 ± 1279   | 2682 ± 839    | +29% ± 129%   |
+| Tokens (output) | 100 ± 36      | 111 ± 84      | +49% ± 179%   |
+| Success rate    | 2/20          | 11/20         | —             |
+
+=== Overall (1 types x 20 runs = 20 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 4.1 ± 1.6     | 2.9 ± 0.9     | +11% ± 113%   | 0.006    |
+| Tokens (input)  | 3240 ± 1279   | 2682 ± 839    | +29% ± 129%   | 0.125    |
+| Tokens (output) | 100 ± 36      | 111 ± 84      | +49% ± 179%   | 0.627    |
+| Success rate    | 2/20          | 11/20         | —             | 0.012    |
+
+Completed 20 pairs; API error runs: 0; distillation failures: 0.

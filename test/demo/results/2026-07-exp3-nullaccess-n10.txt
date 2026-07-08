@@ -1,0 +1,119 @@
+=== PRE-REGISTRATION (written before this run; not edited after) ===
+Experiment 3: can gpt-4o-mini improve ITSELF? Same self-loop design as the ParseError
+primary endpoint (test/demo/results/2026-07-exp3-parseerror-n20.txt) -- see that file for
+the full design description and Phase S' disclosure.
+
+NullAccess is a negative control here, same role as in Experiment 2: a null result is
+EXPECTED. gpt-4o-mini solved NullAccess 20/20 in ITS OWN control arm (no rule) in the
+earlier weak-model probe (test/demo/results/2026-07-campaign-weakmodel-gpt4o-mini-n20.txt),
+every single instance resolved in exactly 1 turn -- a clean ceiling effect with no room for
+a rule to show a turns/tokens improvement and no room for a success-rate improvement either.
+A large change on this row would indicate a harness artifact, not genuine transfer, exactly
+as in Experiment 2 (which also saw a clean null here).
+
+Interpretation, decided in advance:
+  - Null result (control and treatment both ~10/10, no material turns/tokens delta) =>
+    expected; confirms the harness is not injecting spurious effects.
+  - Any large deviation (either arm's success rate or turns dropping well off the ceiling)
+    => investigate as a possible harness artifact before drawing any capability conclusion.
+
+One run. Re-run only for disclosed infrastructure failure. No code, fixture, or prompt
+edits after the first number from this campaign is seen.
+=== END PRE-REGISTRATION ===
+Provider: openai | Solver model: gpt-4o-mini | Distill model: gpt-5-nano | Solver maxTokens: 4000
+Seed rules dir: test/demo/seed-rules-selfloop/ | Seed instance: NullAccess_A1 | Match level: medium
+NullAccess run 1/10 NullAccess_A2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution.
+NullAccess run 2/10 NullAccess_A3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution.
+NullAccess run 3/10 NullAccess_B1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution.
+NullAccess run 4/10 NullAccess_B2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution.
+NullAccess run 5/10 NullAccess_B3: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/account.ts [exit=0]
+  treatment turn 1: edit src/account.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution.
+NullAccess run 6/10 NullAccess_C1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/profile.ts [exit=0]
+  treatment turn 1: edit src/profile.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution.
+NullAccess run 7/10 NullAccess_C2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/profile.ts [exit=0]
+  treatment turn 1: edit src/profile.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution.
+NullAccess run 8/10 NullAccess_D1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/session.ts [exit=0]
+  treatment turn 1: edit src/session.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution.
+NullAccess run 9/10 NullAccess_E1: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/auth.ts [exit=0]
+  treatment turn 1: edit src/auth.ts [exit=0]
+  treatment advice:
+[Low-confidence advice fallback]
+*This repository has sometimes seen this class of error. Here is a general rule that might help:*
+
+When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution.
+NullAccess run 10/10 NullAccess_A2: control=pass:1 treatment=pass:1 rule=yes
+  control turn 1: edit src/user.ts [exit=0]
+  treatment turn 1: edit src/user.ts [exit=0]
+  treatment advice:
+*The following rule matched your current error signature:*
+
+When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution.
+
+=== NullAccess - 10 runs ===
+| Metric          | Control       | Treatment     | Delta        |
+|-----------------|---------------|---------------|--------------|
+| Turns           | 1.0 ± 0.0     | 1.0 ± 0.0     | +0% ± 0%      |
+| Tokens (input)  | 864 ± 2       | 970 ± 8       | +12% ± 1%     |
+| Tokens (output) | 31 ± 5        | 36 ± 3        | +21% ± 27%    |
+| Success rate    | 10/10         | 10/10         | —             |
+
+=== Overall (1 types x 10 runs = 10 pairs) ===
+| Metric          | Control       | Treatment     | Delta        | p-value  |
+|-----------------|---------------|---------------|--------------|----------|
+| Turns           | 1.0 ± 0.0     | 1.0 ± 0.0     | +0% ± 0%      | 1.000    |
+| Tokens (input)  | 864 ± 2       | 970 ± 8       | +12% ± 1%     | 0.000    |
+| Tokens (output) | 31 ± 5        | 36 ± 3        | +21% ± 27%    | 0.002    |
+| Success rate    | 10/10         | 10/10         | —             | 1.000    |
+
+Completed 10 pairs; API error runs: 0; distillation failures: 0.
