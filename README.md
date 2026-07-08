@@ -374,7 +374,48 @@ One mechanical nuance surfaced by the header line (`Match level: medium`, not th
 
 Seed rule advice texts (all three reviewed before Phase T; none required re-seeding): `test/demo/seed-rules/ParseError.json`, `ExpectMismatch.json`, `NullAccess.json`. Full pre-registered transcripts: `test/demo/results/2026-07-exp2-parseerror-n20.txt`, `2026-07-exp2-expectmismatch-n20.txt`, `2026-07-exp2-nullaccess-n10.txt`. (Auditing note: the Phase T transcript headers print a `Distill model:` field — that is the per-pair default, unused in seeded mode, which performs no distillation at all (`distillation failures: 0`); actual rule provenance is recorded in the seed JSONs' `model_id` field: `claude-haiku-4-5-20251001`.)
 
-This is the final experiment in the v0.2 benchmark-remediation line. Next work is v1.0 Batch 0 (Phase 21+).
+This was the first experiment in the cross-model rule-transfer line; see Experiment 3 below for the fully-weak self-loop case.
+
+### Experiment 3: can the weak model teach itself?
+
+The last empty cell of the who-solves × who-distills matrix. Experiment 2 fixed the teacher at Haiku (strong) and asked whether a weak student benefits; this experiment fixes every role at gpt-4o-mini — it solves its own seed episode, distills the rule from that episode, and consumes the rule on unseen instances of the same error class. Same file-bridged seed/transfer infrastructure as Experiment 2, unchanged, except for one prerequisite fix: `runSeedMode()` previously hardcoded the distiller to `getCheapestModel()` and ignored `--types` entirely (the seed phase always emitted all three types regardless). Neither mattered for Experiment 2 — its seed phase ran in a plain Anthropic process, where `getCheapestModel()` happened to equal the intended Haiku distiller anyway — but both had to be fixed for a genuine self-loop, since under `LLM_PROVIDER=openai`, `getCheapestModel()` resolves to `gpt-5-nano`, a *different* weak model, not gpt-4o-mini.
+
+```bash
+# Phase S' (OpenAI process): gpt-4o-mini solves AND distills its own seed fixtures.
+LLM_PROVIDER=openai bun run test/demo/live-ab.ts \
+  --emit-seed-rules test/demo/seed-rules-selfloop/ \
+  --model gpt-4o-mini --distill-model gpt-4o-mini --types ParseError,NullAccess
+
+# Phase T' (same process): gpt-4o-mini consumes its own seed rule on unseen instances.
+LLM_PROVIDER=openai bun run test/demo/live-ab.ts --model gpt-4o-mini \
+  --seed-rules test/demo/seed-rules-selfloop/ --types ParseError --runs 20
+```
+
+ExpectMismatch was skipped (a wash in both prior campaigns; it wouldn't have added anything here). `NullAccess_A1` resolved on the solver's first attempt; `ParseError_A1` — the same seed instance Experiment 2 used — resolved on attempt 62/62 with gpt-4o-mini as solver (empirical rate ~1.6% for this specific fixture, well below this experiment's own ~10% pre-registered estimate). That count is disclosed as-is, not treated as a stopping condition: rules are only ever distilled from resolved episodes, however rare, and the pre-registration committed to persisting until one success. A standalone diagnostic session (outside the counted attempts) confirmed the failures are a genuine competence gap, not a harness artifact — 5/5 turns spent on distinct wrong edits to `src/parser.ts`, never a read action, no malformed responses to parse.
+
+**Pre-registered before Phase T'** (three interpretations worded in advance, all publishable, none revising Experiment 2): near-20/20 → "full self-improvement — no stronger teacher needed"; a significant but partial lift → "self-improvement works; distiller quality amplifies it"; a null result (~2/20, matching control) → "distillation quality is the binding constraint — empirical support for the asymmetric-cost design (cheap-but-competent distiller)."
+
+```
+=== ParseError (primary, n=20) ===
+| Metric          | Control       | Treatment     | Delta        | p-value |
+|-----------------|---------------|---------------|--------------|---------|
+| Turns           | 4.1 ± 1.6     | 2.9 ± 0.9     | +11% ± 113%   | 0.006   |
+| Success rate    | 2/20          | 11/20         | —             | 0.012   |
+
+=== NullAccess (negative control, n=10) ===
+| Metric          | Control       | Treatment     | Delta        | p-value |
+|-----------------|---------------|---------------|--------------|---------|
+| Turns           | 1.0 ± 0.0     | 1.0 ± 0.0     | +0% ± 0%      | 1.000   |
+| Success rate    | 10/10         | 10/10         | —             | 1.000   |
+```
+
+**The middle outcome, exactly as pre-worded: self-improvement works, but distiller quality amplifies it.** gpt-4o-mini alone solves ParseError 2/20 (10%, matching this experiment's own control-arm calibration from the earlier weak-model probe); with a rule it distilled *from its own* resolved episode, it solves 11/20 (55%) on different, unseen instances — a real, statistically significant lift (exact McNemar p=0.012, turns p=0.006). But it falls well short of Experiment 2's 20/20 ceiling, where the same weak solver consumed a Haiku-distilled rule for the same scenario type. Same solver, same fixture rotation, same match level (`medium` — `ParseError_A2`/`A3` again happen to share `src/parser.ts` with the seed, as in Experiment 2); the only variable that moved between this row and Experiment 2's is who wrote the rule. The negative control came back exactly null as pre-registered (turns and success both tied at the ceiling, p=1.000). The significant token deltas on that row (p=0.000 input, p=0.002 output) are the same harmless rule-text-padding effect documented in Experiment 2 — advice text lengthens the prompt without moving turns or success — so they don't undercut the primary result.
+
+Qualitatively, the self-distilled rule reads as real generalized diagnostic strategy, not an instance-specific restatement — but it's noticeably thinner than Haiku's. Haiku's ParseError rule named the exact structural mechanism ("the catch block is missing its closing brace... verify that every catch(...) block has a matching closing brace after its final statement"); gpt-4o-mini's names the general error class correctly ("a mismatched or missing brace in your code... unexpected end of file") but pads it with generic filler a stronger model wouldn't need ("using code linters or IDE features for auto-indentation"). That gap is consistent with an 11/20 lift being real but partial rather than either extreme.
+
+Seed rule advice texts: `test/demo/seed-rules-selfloop/ParseError.json`, `NullAccess.json` (`model_id: gpt-4o-mini` in both, confirming the self-loop actually ran as designed). Full pre-registered transcripts: `test/demo/results/2026-07-exp3-parseerror-n20.txt`, `2026-07-exp3-nullaccess-n10.txt`. (Same auditing note as Experiment 2: the Phase T' header's `Distill model:` field is just the per-pair fallback default — it prints `gpt-5-nano` here, since `--distill-model` isn't passed to a transfer-mode run that performs no distillation at all, `distillation failures: 0`; actual rule provenance is the seed JSONs' `model_id` field.)
+
+This was the second experiment in the cross-model rule-transfer line and closes the who-solves × who-distills matrix begun in Experiment 2: a strong teacher fully rescues a weak student (20/20); a weak teacher partially helps itself (11/20, up from a 2/20 floor). Next work is v1.0 Batch 0 (Phase 21+).
 
 ---
 
