@@ -17,6 +17,7 @@ import {
   runPair,
   runSession,
   saveSeedRule,
+  seedTypesFor,
   setupEnv,
 } from '../../demo/live-ab.ts'
 import { ALL_FIXTURES, type FixtureDef } from '../../fixtures/learning-demo/fixtures.ts'
@@ -655,5 +656,25 @@ describe('live-ab parseArgs seed-flag mutual exclusivity', () => {
   it('accepts either flag alone', () => {
     expect(parseArgs(['--emit-seed-rules', '/tmp/seeds']).emitSeedRules).toBe('/tmp/seeds')
     expect(parseArgs(['--seed-rules', '/tmp/seeds']).seedRules).toBe('/tmp/seeds')
+  })
+})
+
+describe('live-ab seedTypesFor (Experiment 2 seed-mode --types filtering)', () => {
+  it('filters SEED_FIXTURE_IDS down to the requested types, preserving declaration order', () => {
+    // All three seed-capable types, in SEED_FIXTURE_IDS's declaration order.
+    expect(seedTypesFor(['ParseError', 'ExpectMismatch', 'NullAccess'])).toEqual([
+      ['ParseError', 'ParseError_A1'],
+      ['ExpectMismatch', 'ExpectMismatch_A1'],
+      ['NullAccess', 'NullAccess_A1'],
+    ])
+
+    // Omitting ExpectMismatch excludes it, leaving the other two in order.
+    expect(seedTypesFor(['ParseError', 'NullAccess'])).toEqual([
+      ['ParseError', 'ParseError_A1'],
+      ['NullAccess', 'NullAccess_A1'],
+    ])
+
+    // A type with no seed fixture yields no entries.
+    expect(seedTypesFor(['ModuleNotFound'])).toEqual([])
   })
 })

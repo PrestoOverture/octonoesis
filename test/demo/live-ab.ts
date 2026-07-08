@@ -175,6 +175,17 @@ const SEED_FIXTURE_IDS: Record<'ParseError' | 'ExpectMismatch' | 'NullAccess', s
   NullAccess: 'NullAccess_A1',
 }
 
+/**
+ * Filters SEED_FIXTURE_IDS down to the scenario types present in `types`, preserving declaration
+ * order. Types with no seed fixture (anything outside ParseError/ExpectMismatch/NullAccess) are
+ * silently excluded, same as before --types was threaded through this mode.
+ */
+export function seedTypesFor(types: ScenarioType[]): Array<[string, string]> {
+  return Object.entries(SEED_FIXTURE_IDS).filter(([scenarioType]) =>
+    types.includes(scenarioType as ScenarioType),
+  )
+}
+
 // Harness-only artifact for bridging the two provider processes of Experiment 2. Plain JSON, NOT
 // the production markdown+frontmatter rule format in src/memory/rules/store.ts — deliberately kept
 // separate so this experiment scaffolding never touches the real rule store.
@@ -232,8 +243,11 @@ Options:
                       Experiment 2 seed phase: solve the three designated seed fixtures
                        (ParseError_A1, ExpectMismatch_A1, NullAccess_A1) with the strong
                        model, distill a rule from each via the normal evidence path, and
-                       write each to DIR/<scenarioType>.json. Ignores --types. Mutually
-                       exclusive with --seed-rules.
+                       write each to DIR/<scenarioType>.json. Honors --model and
+                       --distill-model. --types narrows which of the three seed-capable
+                       types (ParseError, ExpectMismatch, NullAccess) to emit; defaults to
+                       all three (types outside this set are ignored). Mutually exclusive
+                       with --seed-rules.
   --seed-rules DIR    Experiment 2 transfer phase: skip per-pair distillation and instead
                        load the pre-seeded rule for each --types scenario from
                        DIR/<scenarioType>.json, match it against the current (different)
@@ -1119,11 +1133,17 @@ function padP(value: number | null): string {
  * solver model, distill a rule from the resolved episode via the normal evidence path, and write
  * the rule to `dir/<scenarioType>.json`. Prints each seed's advice text and output path so the
  * reviewer can read every distilled rule directly from the console. A seed instance that fails to
- * resolve is reported and skipped, so one bad seed does not block the other two. Meant to run in a
- * plain Anthropic-provider process (distillModel resolves to Haiku via getCheapestModel()).
+ * resolve is reported and skipped, so one bad seed does not block the other two. distillModel and
+ * types are caller-supplied, same as the rest of the CLI (see main()); types is narrowed to the
+ * seed-capable subset via seedTypesFor().
  */
-async function runSeedMode(dir: string, solverModel: string): Promise<void> {
-  for (const [scenarioType, fixtureId] of Object.entries(SEED_FIXTURE_IDS)) {
+async function runSeedMode(
+  dir: string,
+  solverModel: string,
+  distillModel: string,
+  types: ScenarioType[],
+): Promise<void> {
+  for (const [scenarioType, fixtureId] of seedTypesFor(types)) {
     const fixture = ALL_FIXTURES.find((f) => f.id === fixtureId)
     if (!fixture) {
       throw new Error(
@@ -1148,7 +1168,7 @@ async function runSeedMode(dir: string, solverModel: string): Promise<void> {
       const rule = await distillEpisode(
         buildEpisode(scenarioType as ScenarioType, 0, fixture, session, testFile),
         {
-          model: getCheapestModel(),
+          model: distillModel,
           extractorVersion: EXTRACTOR_VERSION,
           evidence,
         },
@@ -1197,7 +1217,7 @@ async function main(): Promise<void> {
   )
 
   if (options.emitSeedRules) {
-    await runSeedMode(options.emitSeedRules, solverModel)
+    await runSeedMode(options.emitSeedRules, solverModel, distillModel, options.types)
     return
   }
 
