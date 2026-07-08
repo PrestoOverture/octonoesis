@@ -1,0 +1,42 @@
+{
+  "scenarioType": "NullAccess",
+  "seedFixtureId": "NullAccess_A1",
+  "rule": {
+    "id": "rule-null-check-user-object",
+    "triggers": {
+      "tools": [
+        "bun"
+      ],
+      "command_prefix": [
+        "bun test"
+      ],
+      "error_signatures": [
+        "bun-test|TypeError|src/user.ts|evaluating 'user.name'",
+        "bun-test|TypeError",
+        "bun-test|TypeError|src/user.ts"
+      ]
+    },
+    "scope": "repo",
+    "alpha": 3,
+    "beta": 2,
+    "confidence": 0.6,
+    "evidence": [
+      "ep_ab_NullAccess_0"
+    ],
+    "hits": 0,
+    "misses": 0,
+    "challenged_by": [],
+    "anchor": {
+      "file": "src/user.ts"
+    },
+    "status": "candidate",
+    "user_confirmed": false,
+    "extractor_version": "0.3.0",
+    "model_id": "gpt-4o-mini",
+    "prompt_hash": "5d2a6eb1",
+    "created_at": "2026-07-08T09:32:16.677Z",
+    "last_matched_at": null,
+    "last_rebuilt_at": null,
+    "advice": "When defining functions that operate on objects, especially those that may be optional or nullable, implement null checks at the beginning of the function. The common root cause of TypeErrors in such cases is attempting to access properties on null or undefined objects. To resolve this issue, return a default value or handle the null case appropriately if the object is not present at the time of function execution."
+  }
+}
