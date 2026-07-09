@@ -7,7 +7,7 @@ import { type VerifyResult, verify } from '../memory/verifier'
 import { requestPermission } from '../permissions/confirm'
 import { preToolUseHook } from '../permissions/hooks'
 import { getResolvedModel } from '../providers/index'
-import type { ToolContext } from '../query'
+import type { QueryLoopContext } from '../query/types'
 import type { ToolResult } from './Tool'
 import { getTool } from './registry'
 
@@ -148,7 +148,7 @@ export function isVerificationCommand(command: string, verificationCommand?: str
 export async function runTool(
   name: string,
   rawInput: unknown,
-  ctx: ToolContext,
+  ctx: QueryLoopContext,
 ): Promise<ToolResult> {
   const startTime = performance.now()
   const inputDigest = crypto.createHash('sha256').update(JSON.stringify(rawInput)).digest('hex')

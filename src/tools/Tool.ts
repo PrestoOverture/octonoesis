@@ -1,13 +1,11 @@
 import type { z } from 'zod'
+import type { QueryToolContextFields } from '../query/types'
 
 /**
  * Context provided to tools during execution.
- * Holds query-level shared states such as the cached repository root path.
+ * Extends QueryToolContextFields to guarantee field alignment with QueryLoopContext.
  */
-export interface ToolContext {
-  repoRoot: string
-  abortSignal?: AbortSignal
-}
+export interface ToolContext extends QueryToolContextFields {}
 
 /**
  * Standard return type internal to the tool executor.
