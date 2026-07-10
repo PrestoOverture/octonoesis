@@ -1,0 +1,35 @@
+{
+  "model": "claude-sonnet-4-6",
+  "maxTurns": 75,
+  "sandbox": {
+    "enabled": true,
+    "filesystem": {
+      "allowWrite": ["src/**", ".octonoesis/**"],
+      "denyRead": [".env", "~/.ssh/**"]
+    },
+    "network": {
+      "allowedDomains": ["registry.npmjs.org"]
+    }
+  },
+  "mcpServers": {
+    "sqlite": {
+      "command": "bunx",
+      "args": ["-y", "@modelcontextprotocol/server-sqlite", "./data/app.db"],
+      "env": {
+        "SQLITE_BUSY_TIMEOUT": "5000"
+      },
+      "timeout": 7500
+    }
+  },
+  "hooks": [
+    {
+      "event": "pre_tool_use",
+      "toolPattern": "Bash(sqlite *)",
+      "command": "echo checking sqlite command"
+    }
+  ],
+  "permissions": {
+    "allowPatterns": ["Read(*)", "Grep(*)"],
+    "denyPatterns": ["Bash(rm -rf *)"]
+  }
+}
