@@ -1,3 +1,7 @@
+import { estimateTextTokens as estimateTokens } from '../utils/tokens'
+
+export { estimateTokens }
+
 export type ContextPriority = 'critical' | 'high' | 'medium' | 'low'
 
 export interface ContextSource {
@@ -45,10 +49,6 @@ interface PreparedSource extends ContextSource {
   included: boolean
   budgetTokens: number
   usesTokenOverride: boolean
-}
-
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4)
 }
 
 export function compileContext(sources: ContextSource[], budget: ContextBudget): CompiledContext {

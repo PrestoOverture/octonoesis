@@ -8,6 +8,7 @@ import type {
   ContentBlock,
   LLMProvider,
   StreamEvent,
+  Usage,
 } from './types'
 
 export const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'
@@ -20,6 +21,20 @@ export type SystemPromptPart = {
   type: 'text'
   text: string
   cache_control?: { type: 'ephemeral' }
+}
+
+/** Maps Anthropic billing/context usage to the canonical usage record. */
+export function toCanonicalUsage(
+  usage?: Record<string, unknown> & { input_tokens?: number; output_tokens?: number },
+): Usage {
+  const cacheCreation = usage?.cache_creation_input_tokens
+  const cacheRead = usage?.cache_read_input_tokens
+  return {
+    input_tokens: usage?.input_tokens ?? 0,
+    output_tokens: usage?.output_tokens ?? 0,
+    ...(typeof cacheCreation === 'number' ? { cache_creation_input_tokens: cacheCreation } : {}),
+    ...(typeof cacheRead === 'number' ? { cache_read_input_tokens: cacheRead } : {}),
+  }
 }
 
 /**
@@ -99,7 +114,10 @@ export function toAnthropicMessages(
       const curContent = Array.isArray(msg.content)
         ? msg.content
         : [{ type: 'text' as const, text: msg.content }]
-      prev.content = [...prevContent, ...curContent] as Anthropic.MessageParam['content']
+      merged[merged.length - 1] = {
+        ...prev,
+        content: [...prevContent, ...curContent],
+      } as Anthropic.MessageParam
     } else {
       merged.push(msg)
     }
@@ -260,10 +278,7 @@ export class AnthropicProvider implements LLMProvider {
         // Yield final message end event with token usage
         yield {
           type: 'message_end',
-          usage: {
-            input_tokens: finalMsg.usage?.input_tokens || 0,
-            output_tokens: finalMsg.usage?.output_tokens || 0,
-          },
+          usage: toCanonicalUsage(usageRecord),
         }
       }
     }

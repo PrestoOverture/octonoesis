@@ -175,6 +175,10 @@ export function App(props: AppProps) {
   const [messages, setMessages] = useState<CanonicalMessage[]>(initialMessages)
   const [inputValue, setInputValue] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
+  const [compactNotices, setCompactNotices] = useState<
+    { id: number; preTokens: number; postTokens: number }[]
+  >([])
+  const compactNoticeIdRef = useRef(0)
 
   const { exit } = useApp()
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -304,6 +308,16 @@ export function App(props: AppProps) {
                   : t,
               ),
             )
+          } else if (event.type === 'compact') {
+            compactNoticeIdRef.current++
+            setCompactNotices((prev) => [
+              ...prev,
+              {
+                id: compactNoticeIdRef.current,
+                preTokens: event.preTokens,
+                postTokens: event.postTokens,
+              },
+            ])
           } else if (event.type === 'message_end') {
             setUsage((prev) => ({
               input_tokens: prev.input_tokens + event.usage.input_tokens,
@@ -331,6 +345,12 @@ export function App(props: AppProps) {
       <Box flexDirection="row" flexGrow={1}>
         <Box flexDirection="column" flexGrow={1}>
           <MessageList messages={messages} />
+          {compactNotices.map((notice) => (
+            <Text key={notice.id} color="yellow">
+              ✻ Context compacted: {notice.preTokens.toLocaleString('en-US')} →{' '}
+              {notice.postTokens.toLocaleString('en-US')} tokens
+            </Text>
+          ))}
           <StreamingResponse text={streamingText} toolUses={streamingToolUses} />
           {pendingConfirm ? (
             <ConfirmDialog

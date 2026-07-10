@@ -13,6 +13,14 @@ import type {
   StreamEvent as ProviderStreamEvent,
   Usage,
 } from './providers'
+import {
+  CompactAbortError,
+  CompactError,
+  compact,
+  createCompactSummaryMessage,
+  selectKeepTail,
+  shouldCompact,
+} from './query/compact'
 import type { QueryLoopContext } from './query/types'
 import { bashTool } from './tools/Bash'
 import { editTool } from './tools/Edit'
@@ -28,6 +36,8 @@ import { getAllTools } from './tools/registry'
 import { dbg } from './utils/debug'
 import { getRepoRoot } from './utils/path'
 import { zodToJsonSchema } from './utils/schema'
+import type { ContextSnapshot } from './utils/tokens'
+import { totalTokensFromUsage } from './utils/tokens'
 
 // 1. Automatically register all tools in the registry
 registerTool(readTool)
@@ -46,6 +56,20 @@ export { getRepoRoot }
 export type StreamEvent =
   | ProviderStreamEvent
   | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error' }
+  | { type: 'compact'; preTokens: number; postTokens: number; durationMs: number }
+
+function addUsage(target: Usage, usage: Usage): void {
+  target.input_tokens += usage.input_tokens
+  target.output_tokens += usage.output_tokens
+  if (usage.cache_creation_input_tokens !== undefined) {
+    target.cache_creation_input_tokens =
+      (target.cache_creation_input_tokens ?? 0) + usage.cache_creation_input_tokens
+  }
+  if (usage.cache_read_input_tokens !== undefined) {
+    target.cache_read_input_tokens =
+      (target.cache_read_input_tokens ?? 0) + usage.cache_read_input_tokens
+  }
+}
 
 /**
  * Normalized multi-turn query engine generator loop matching the PRD contract.
@@ -78,6 +102,9 @@ export async function* query(
 
   let exitReason: 'completed' | 'max_turns' | 'fatal_error' | 'user_cancel' = 'fatal_error'
   const cumulativeUsage: Usage = { input_tokens: 0, output_tokens: 0 }
+  let contextSnapshot: ContextSnapshot | undefined
+  let consecutiveCompactFailures = 0
+  let compactCircuitOpen = false
   let turn = 0
 
   try {
@@ -136,6 +163,60 @@ export async function* query(
           error: 'Query aborted by user',
         }
       }
+
+      if (
+        !compactCircuitOpen &&
+        shouldCompact(ctx.messages, resolvedModel, contextSnapshot) &&
+        selectKeepTail(ctx.messages) > 0
+      ) {
+        const compactStart = performance.now()
+        try {
+          const compactResult = await compact(ctx.messages, {
+            systemPrompt: system,
+            signal: ctx.abortSignal,
+            snapshot: contextSnapshot,
+            onForkUsage: (usage) => addUsage(cumulativeUsage, usage),
+          })
+          ctx.messages = [
+            createCompactSummaryMessage(compactResult.summary),
+            ...compactResult.messagesKept,
+          ]
+          contextSnapshot = undefined
+          consecutiveCompactFailures = 0
+          const durationMs = Math.max(0, Math.round(performance.now() - compactStart))
+          dbg('compact', 'Context compacted', {
+            preTokens: compactResult.preCompactTokens,
+            postTokens: compactResult.postCompactTokens,
+            durationMs,
+          })
+          yield {
+            type: 'compact',
+            preTokens: compactResult.preCompactTokens,
+            postTokens: compactResult.postCompactTokens,
+            durationMs,
+          }
+        } catch (error) {
+          const durationMs = Math.max(0, Math.round(performance.now() - compactStart))
+          if (error instanceof CompactAbortError) {
+            dbg('compact', 'Context compaction cancelled', { durationMs })
+            if (ctx.abortSignal?.aborted) continue
+          } else {
+            consecutiveCompactFailures++
+            compactCircuitOpen = consecutiveCompactFailures >= 3
+            const compactError =
+              error instanceof CompactError
+                ? error
+                : new CompactError('Unexpected context compaction failure', { cause: error })
+            dbg('compact', 'Context compaction failed; continuing without replacement', {
+              error: compactError.message,
+              durationMs,
+              consecutiveFailures: consecutiveCompactFailures,
+              circuitOpen: compactCircuitOpen,
+            })
+          }
+        }
+      }
+
       turn++
       dbg('query', `Starting turn ${turn}/${MAX_TURNS}`)
 
@@ -147,6 +228,7 @@ export async function* query(
 
       const assistantContent: ContentBlock[] = []
       let finalUsage: Usage | null = null
+      const messagesAtStreamStart = ctx.messages.length
 
       try {
         const stream = provider.createMessageStream(ctx.messages, activeTools, {
@@ -198,6 +280,10 @@ export async function* query(
             })
           } else if (event.type === 'message_end') {
             finalUsage = event.usage
+            contextSnapshot = {
+              tokens: totalTokensFromUsage(event.usage),
+              coveredCount: messagesAtStreamStart + 1,
+            }
           }
         }
       } catch (err) {
@@ -227,16 +313,12 @@ export async function* query(
       }
 
       const usage = finalUsage || { input_tokens: 0, output_tokens: 0 }
-      cumulativeUsage.input_tokens += usage.input_tokens
-      cumulativeUsage.output_tokens += usage.output_tokens
+      addUsage(cumulativeUsage, usage)
 
       // Yield message_end containing this turn's usage
       yield {
         type: 'message_end',
-        usage: {
-          input_tokens: usage.input_tokens,
-          output_tokens: usage.output_tokens,
-        },
+        usage,
       }
 
       // Record the assistant response to conversational history
@@ -457,6 +539,10 @@ export async function runQuery(userPrompt: string): Promise<void> {
         }
       }
       process.stdout.write(`\n[Tool Call] ${event.name}${inputStr}...\n`)
+    } else if (event.type === 'compact') {
+      process.stdout.write(
+        `\n✻ Context compacted: ${event.preTokens.toLocaleString('en-US')} → ${event.postTokens.toLocaleString('en-US')} tokens\n`,
+      )
     }
   }
   process.stdout.write('\n')
