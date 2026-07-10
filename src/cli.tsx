@@ -10,6 +10,11 @@ import { runQuery } from './query'
 import { App } from './ui/App'
 import { getMemoryDir } from './utils/path.ts'
 
+if (process.argv.includes('--fork-child')) {
+  const { forkChildMain } = await import('./providers/forkChild.ts')
+  process.exit(await forkChildMain())
+}
+
 /**
  * Validates that the necessary API key environment variables are set.
  * Exits the process if the required key for the configured provider is missing.
