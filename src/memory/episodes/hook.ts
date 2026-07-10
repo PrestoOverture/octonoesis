@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getMemoryDir } from '../../utils/path'
+import { isKnownJournalEvent, parseJournalEvent } from '../events'
 import { type JournalEventWithLine, type StoredJournalEvent, segmentJournal } from './segment'
 import { readEpisodes } from './store'
 import type { Episode } from './types'
@@ -84,7 +85,8 @@ export async function runSessionEndEpisodes(sessionId: string, memoryDir?: strin
         if (!lineStr) continue
 
         try {
-          const parsed = JSON.parse(lineStr)
+          const parsed = parseJournalEvent(JSON.parse(lineStr))
+          if (!parsed || !isKnownJournalEvent(parsed)) continue
           eventsWithLines.push({
             event: parsed as StoredJournalEvent,
             line: i + 1,

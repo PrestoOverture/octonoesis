@@ -1,7 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getMemoryDir } from '../utils/path'
-import type { JournalEvent } from './events'
+import { EVENT_SCHEMA_VERSIONS, type JournalEvent } from './events'
 
 let activeSessionId: string | null = null
 let writeQueue: Promise<void> = Promise.resolve()
@@ -34,7 +34,8 @@ export function appendJournal(
 ): void {
   const ts = event.ts || new Date().toISOString()
   const session_id = event.session_id || activeSessionId || 'no-session'
-  const fullEvent = { ts, session_id, ...event }
+  const schema_version = event.schema_version ?? EVENT_SCHEMA_VERSIONS[event.kind]
+  const fullEvent = { ts, session_id, ...event, schema_version }
 
   const line = `${JSON.stringify(fullEvent)}\n`
 

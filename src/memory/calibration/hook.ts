@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getResolvedModel } from '../../providers/index.ts'
 import { getMemoryDir } from '../../utils/path.ts'
+import { isKnownJournalEvent, parseJournalEvent } from '../events.ts'
 import type { Fingerprint } from '../fingerprint/extract.ts'
 import { bucketKey } from './bucket.ts'
 import {
@@ -53,7 +54,8 @@ export async function runSessionEndCalibration(
         if (!trimmed) continue
 
         try {
-          const parsed = JSON.parse(trimmed)
+          const parsed = parseJournalEvent(JSON.parse(trimmed))
+          if (!parsed || !isKnownJournalEvent(parsed)) continue
           if (parsed.session_id === sessionId) {
             events.push(parsed)
           }

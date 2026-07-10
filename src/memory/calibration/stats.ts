@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 import { getMemoryDir } from '../../utils/path.ts'
+import { isKnownJournalEvent, parseJournalEvent } from '../events.ts'
 import type { Fingerprint } from '../fingerprint/extract.ts'
 import { createPrior, credibleInterval, posteriorMean, update } from './beta.ts'
 import { bucketKey } from './bucket.ts'
@@ -166,7 +167,8 @@ export async function rebuildCalibration(
     if (!trimmed) continue
 
     try {
-      const event = JSON.parse(trimmed)
+      const event = parseJournalEvent(JSON.parse(trimmed))
+      if (!event || !isKnownJournalEvent(event)) continue
       const sessionId = event.session_id || 'no-session'
       let sessionData = sessionEventsMap.get(sessionId)
       if (!sessionData) {
