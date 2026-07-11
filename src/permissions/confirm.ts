@@ -31,6 +31,100 @@ type PromptHandler = (
 ) => Promise<'allow_once' | 'allow_always' | 'deny'>
 let activePromptHandler: PromptHandler | null = null
 
+interface FallbackPromptState {
+  input: NodeJS.ReadableStream
+  interface: readline.Interface
+  bufferedLines: string[]
+  pending?: (answer: string | null) => void
+  eof: boolean
+}
+
+let fallbackPromptInput: NodeJS.ReadableStream = process.stdin
+let fallbackPromptState: FallbackPromptState | undefined
+
+function pauseFallbackPrompt(state: FallbackPromptState): void {
+  state.interface.pause()
+  state.input.pause()
+}
+
+function createFallbackPromptState(): FallbackPromptState {
+  const promptInterface = readline.createInterface({
+    input: fallbackPromptInput,
+    output: process.stdout,
+  })
+  const state: FallbackPromptState = {
+    input: fallbackPromptInput,
+    interface: promptInterface,
+    bufferedLines: [],
+    eof: false,
+  }
+
+  promptInterface.on('line', (line) => {
+    const pending = state.pending
+    if (pending) {
+      state.pending = undefined
+      pauseFallbackPrompt(state)
+      pending(line)
+    } else {
+      state.bufferedLines.push(line)
+    }
+  })
+  promptInterface.on('close', () => {
+    state.eof = true
+    const pending = state.pending
+    if (pending) {
+      state.pending = undefined
+      pending(null)
+    }
+  })
+  pauseFallbackPrompt(state)
+  return state
+}
+
+function getFallbackPromptState(): FallbackPromptState {
+  fallbackPromptState ??= createFallbackPromptState()
+  return fallbackPromptState
+}
+
+function resetFallbackPromptState(): void {
+  const state = fallbackPromptState
+  fallbackPromptState = undefined
+  if (!state) return
+  pauseFallbackPrompt(state)
+  state.interface.close()
+}
+
+async function readFallbackAnswer(prompt: string): Promise<string | null> {
+  const state = getFallbackPromptState()
+  const buffered = state.bufferedLines.shift()
+  if (buffered !== undefined) {
+    process.stdout.write(prompt)
+    pauseFallbackPrompt(state)
+    return buffered
+  }
+  if (state.eof) {
+    process.stdout.write(prompt)
+    return null
+  }
+
+  return new Promise((resolve) => {
+    state.pending = resolve
+    state.interface.setPrompt(prompt)
+    state.interface.prompt()
+  })
+}
+
+/**
+ * Overrides one-shot permission input for tests and resets buffered prompt state.
+ * Omit the argument to restore process.stdin.
+ */
+export function setPermissionInputStreamForTests(
+  input: NodeJS.ReadableStream = process.stdin,
+): void {
+  resetFallbackPromptState()
+  fallbackPromptInput = input
+}
+
 /**
  * Registers a delegated UI handler to display permission prompts.
  * @param handler The delegated prompt handler callback.
@@ -80,29 +174,20 @@ export async function requestPermission(
   }
 
   // Interactive console CLI fallback for verification
-  return new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    })
-
-    console.log(`\n⚠️  [Permission Request] Tool: ${toolName}`)
-    console.log(`Parameters: ${JSON.stringify(input, null, 2)}`)
-
-    rl.question(
-      'Allow execution? [y] Yes once / [n] No / [a] Always for this input: ',
-      (answer) => {
-        rl.close()
-        const normalized = answer.trim().toLowerCase()
-        if (normalized === 'y') {
-          resolve('allow_once')
-        } else if (normalized === 'a') {
-          allowlist.add(key)
-          resolve('allow_always')
-        } else {
-          resolve('deny')
-        }
-      },
-    )
+  console.log(`\n⚠️  [Permission Request] Tool: ${toolName}`)
+  console.log(`Parameters: ${JSON.stringify(input, null, 2)}`)
+  const answer = await readFallbackAnswer(
+    'Allow execution? [y] Yes once / [n] No / [a] Always for this input: ',
+  )
+  const normalized = answer?.trim().toLowerCase()
+  const decision = normalized === 'y' ? 'allow_once' : normalized === 'a' ? 'allow_always' : 'deny'
+  if (decision === 'allow_always') {
+    allowlist.add(key)
+  }
+  appendJournal({
+    kind: 'permission',
+    decision,
+    key,
   })
+  return decision
 }
