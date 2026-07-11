@@ -68,6 +68,8 @@ export interface SandboxConfig {
 
 export interface QueryToolContextFields {
   repoRoot: string
+  /** Optional cumulative billed-token cap for the query session. */
+  tokenBudget?: number
   abortSignal?: AbortSignal
   messages?: CanonicalMessage[]
   sessionId?: string
@@ -90,6 +92,9 @@ export interface QueryState {
   abortSignal?: AbortSignal
   repoRoot: string
   compactBoundary?: number
+  /** Initialized concretely by the engine; optional here for Batch 0 construction compatibility. */
+  compactConsecutiveFailures?: number
+  compactCircuitOpen?: boolean
   injectedRules: InjectedRule[]
   recordedRuleOutcomes: Set<string>
   tasks: Map<string, TaskState>
