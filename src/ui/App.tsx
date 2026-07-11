@@ -1,10 +1,15 @@
+import crypto from 'node:crypto'
 import { Box, Text, useApp, useInput } from 'ink'
 import TextInput from 'ink-text-input'
 import React, { useState, useEffect, useRef } from 'react'
 import { registerPromptHandler, unregisterPromptHandler } from '../permissions/confirm'
 import { getResolvedModel } from '../providers'
 import { type CanonicalMessage, type ToolContext, query } from '../query'
+import type { SessionState } from '../query/types'
+import { createSessionState } from '../state/session'
+import { estimateCost } from '../utils/cost'
 import { getRepoRoot } from '../utils/path'
+import { CompactNotice } from './CompactNotice'
 import { ConfirmDialog } from './ConfirmDialog'
 import { StatusBar } from './StatusBar'
 import { TodoPanel } from './TodoPanel'
@@ -16,6 +21,7 @@ export interface AppProps {
   streamingText?: string
   streamingToolUses?: { name: string; status?: 'running' | 'done' | 'error'; input?: unknown }[]
   placeholder?: string
+  onSessionState?: (sessionState: SessionState, priced: boolean) => void
 }
 
 /**
@@ -166,17 +172,24 @@ export function App(props: AppProps) {
     streamingText: initialStreamingText = '',
     streamingToolUses: initialStreamingToolUses = [],
     placeholder = 'Type a message...',
+    onSessionState,
   } = props
-  const [ctx] = useState<ToolContext>(() => ({
-    repoRoot: getRepoRoot(),
-    messages: initialMessages,
-  }))
+  const [ctx] = useState<ToolContext>(() => {
+    const sessionId = crypto.randomUUID()
+    const model = getResolvedModel()
+    return {
+      repoRoot: getRepoRoot(),
+      messages: initialMessages,
+      sessionId,
+      sessionState: createSessionState(sessionId, model),
+    }
+  })
 
   const [messages, setMessages] = useState<CanonicalMessage[]>(initialMessages)
   const [inputValue, setInputValue] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [compactNotices, setCompactNotices] = useState<
-    { id: number; preTokens: number; postTokens: number }[]
+    { id: number; preTokens: number; postTokens: number; durationMs: number }[]
   >([])
   const compactNoticeIdRef = useRef(0)
 
@@ -234,8 +247,12 @@ export function App(props: AppProps) {
     })),
   )
 
-  // Cumulative token usage tracking
-  const [usage, setUsage] = useState({ input_tokens: 0, output_tokens: 0 })
+  const modelName = getResolvedModel()
+  const initialPricing = estimateCost({ input_tokens: 0, output_tokens: 0 }, modelName)
+  const [sessionView, setSessionView] = useState<{
+    sessionState: SessionState
+    priced: boolean
+  } | null>(null)
 
   const handleSubmit = (value: string) => {
     if (!value.trim() || isGenerating) return
@@ -316,13 +333,16 @@ export function App(props: AppProps) {
                 id: compactNoticeIdRef.current,
                 preTokens: event.preTokens,
                 postTokens: event.postTokens,
+                durationMs: event.durationMs,
               },
             ])
-          } else if (event.type === 'message_end') {
-            setUsage((prev) => ({
-              input_tokens: prev.input_tokens + event.usage.input_tokens,
-              output_tokens: prev.output_tokens + event.usage.output_tokens,
-            }))
+          } else if (event.type === 'session_state') {
+            const sessionState = {
+              ...event.sessionState,
+              usage: { ...event.sessionState.usage },
+            }
+            setSessionView({ sessionState, priced: event.priced })
+            onSessionState?.(sessionState, event.priced)
           }
         }
 
@@ -346,10 +366,12 @@ export function App(props: AppProps) {
         <Box flexDirection="column" flexGrow={1}>
           <MessageList messages={messages} />
           {compactNotices.map((notice) => (
-            <Text key={notice.id} color="yellow">
-              ✻ Context compacted: {notice.preTokens.toLocaleString('en-US')} →{' '}
-              {notice.postTokens.toLocaleString('en-US')} tokens
-            </Text>
+            <CompactNotice
+              key={notice.id}
+              preTokens={notice.preTokens}
+              postTokens={notice.postTokens}
+              durationMs={notice.durationMs}
+            />
           ))}
           <StreamingResponse text={streamingText} toolUses={streamingToolUses} />
           {pendingConfirm ? (
@@ -371,9 +393,12 @@ export function App(props: AppProps) {
         <TodoPanel />
       </Box>
       <StatusBar
-        modelName={getResolvedModel()}
-        inputTokens={usage.input_tokens}
-        outputTokens={usage.output_tokens}
+        modelName={sessionView?.sessionState.model ?? modelName}
+        inputTokens={sessionView?.sessionState.usage.input_tokens ?? 0}
+        outputTokens={sessionView?.sessionState.usage.output_tokens ?? 0}
+        costUsd={sessionView?.sessionState.costUsd ?? 0}
+        priced={sessionView?.priced ?? initialPricing.priced}
+        contextUtilization={sessionView?.sessionState.contextUtilization ?? 0}
       />
     </Box>
   )

@@ -17,7 +17,7 @@ class CompactingUiProvider implements LLMProvider {
 
   async *createMessageStream(): AsyncIterable<StreamEvent> {
     this.turn++
-    if (this.turn <= 2) {
+    if (this.turn <= 3) {
       yield {
         type: 'tool_use',
         id: `ui-read-${this.turn}`,

@@ -185,19 +185,23 @@ describe('context auto-compression integration', () => {
     if (!postCompactMessages) return
     assertValidMessageHistory(postCompactMessages)
     expect(contextTokensWithEstimation(postCompactMessages)).toBe(compactEvent.postTokens)
-    expect(postCompactMessages.length).toBe(5)
-    expect(JSON.stringify(postCompactMessages[0])).toContain('<octo-compact-summary>')
-    expect(JSON.stringify(postCompactMessages[0])).toContain('FACT_ALPHA')
-    expect(postCompactMessages[1]?.role).toBe('assistant')
-    expect(JSON.stringify(postCompactMessages[1])).toContain('read-11')
-    expect(postCompactMessages[2]?.role).toBe('tool')
-    if (postCompactMessages[2]?.role === 'tool') {
-      expect(postCompactMessages[2].tool_use_id).toBe('read-11')
+    expect(postCompactMessages.length).toBe(6)
+    expect(postCompactMessages[0]).toEqual(provider.calls[0]?.[0])
+    expect(JSON.stringify(postCompactMessages[0])).toContain(
+      'Inspect this repository over many turns',
+    )
+    expect(JSON.stringify(postCompactMessages[1])).toContain('<octo-compact-summary>')
+    expect(JSON.stringify(postCompactMessages[1])).toContain('FACT_ALPHA')
+    expect(postCompactMessages[2]?.role).toBe('assistant')
+    expect(JSON.stringify(postCompactMessages[2])).toContain('read-11')
+    expect(postCompactMessages[3]?.role).toBe('tool')
+    if (postCompactMessages[3]?.role === 'tool') {
+      expect(postCompactMessages[3].tool_use_id).toBe('read-11')
     }
-    expect(JSON.stringify(postCompactMessages[3])).toContain('read-12')
-    expect(postCompactMessages[4]?.role).toBe('tool')
-    if (postCompactMessages[4]?.role === 'tool') {
-      expect(postCompactMessages[4].tool_use_id).toBe('read-12')
+    expect(JSON.stringify(postCompactMessages[4])).toContain('read-12')
+    expect(postCompactMessages[5]?.role).toBe('tool')
+    if (postCompactMessages[5]?.role === 'tool') {
+      expect(postCompactMessages[5].tool_use_id).toBe('read-12')
     }
     expect(JSON.stringify(provider.calls[13])).toContain('FACT_ALPHA')
 
@@ -213,6 +217,29 @@ describe('context auto-compression integration', () => {
     expect(compactRows[0]?.summary_length).toBe(compactSummary.length)
   })
 
+  it('continues a mock session with the verbatim original request pinned at index zero', async () => {
+    process.env.OCTONOESIS_COMPACT_THRESHOLD = '1000'
+    process.env.OCTONOESIS_FORK_MOCK = JSON.stringify({
+      text: 'Fictional Phase 29 review task invented by the summarizer.',
+    })
+    const provider = new ScheduledProvider(3)
+    setProvider(provider)
+    const originalRequest = 'Audit exactly twenty source files and report each risk level.'
+
+    const { events, result } = await collectQuery(
+      query(originalRequest, { repoRoot: process.cwd() }),
+    )
+
+    expect(result.exit_reason).toBe('completed')
+    expect(events.some((event) => event.type === 'compact')).toBe(true)
+    const postCompactMessages = provider.calls.find((messages) =>
+      JSON.stringify(messages).includes('Fictional Phase 29 review task'),
+    )
+    expect(postCompactMessages?.[0]).toEqual(provider.calls[0]?.[0])
+    expect(JSON.stringify(postCompactMessages?.[0])).toContain(originalRequest)
+    expect(JSON.stringify(postCompactMessages?.[1])).toContain('<octo-compact-summary>')
+  })
+
   it('leaves history intact and opens the circuit after three consecutive fork failures', async () => {
     process.env.OCTONOESIS_COMPACT_THRESHOLD = '1000'
     process.env.OCTONOESIS_FORK_MOCK = '{invalid-json'
@@ -223,7 +250,7 @@ describe('context auto-compression integration', () => {
       return originalSpawn(...args)
     }
     const provider = new ScheduledProvider(6, (turn) => {
-      if (turn === 5) {
+      if (turn === 6) {
         process.env.OCTONOESIS_FORK_MOCK = JSON.stringify({ text: 'would succeed' })
       }
     })
@@ -265,7 +292,7 @@ describe('context auto-compression integration', () => {
 
     expect(result.exit_reason).toBe('completed')
     expect(result.turns).toBe(5)
-    expect(forkSpawnCount).toBe(3)
+    expect(forkSpawnCount).toBe(2)
     expect(events.filter((event) => event.type === 'compact').length).toBe(1)
   })
 
@@ -296,14 +323,14 @@ describe('context auto-compression integration', () => {
 
     expect(result.exit_reason).toBe('completed')
     expect(result.turns).toBe(8)
-    expect(forkSpawnCount).toBe(6)
+    expect(forkSpawnCount).toBe(5)
     expect(compactEvents.length).toBe(2)
     expect(JSON.stringify(provider.calls[7])).toContain('second reset summary')
   })
 
   it('prints a one-line compact notice in one-shot mode', async () => {
     process.env.OCTONOESIS_COMPACT_THRESHOLD = '1000'
-    const provider = new ScheduledProvider(2)
+    const provider = new ScheduledProvider(3)
     setProvider(provider)
     const writes: string[] = []
     const originalWrite = process.stdout.write
@@ -346,13 +373,13 @@ describe('context auto-compression integration', () => {
         kill: () => {},
       }
     }
-    setProvider(new ScheduledProvider(2))
+    setProvider(new ScheduledProvider(3))
 
     const { result } = await collectQuery(
       query('Account for the compaction fork', { repoRoot: process.cwd() }),
     )
 
     expect(forkSpawnCount).toBe(1)
-    expect(result.usage).toEqual({ input_tokens: 10_117, output_tokens: 35 })
+    expect(result.usage).toEqual({ input_tokens: 15_117, output_tokens: 45 })
   })
 })

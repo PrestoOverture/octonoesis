@@ -12,10 +12,13 @@ import {
 const COMPACT_SUMMARY_INSTRUCTION = `Summarize the older conversation for seamless continuation.
 Include: user intent and requests; work performed with file paths; current verified state; pending next steps; and key technical learnings.
 Preserve exact user-provided literals and identifiers—including names, paths, commands, constraints, and canaries—verbatim.
+Summarize only events present in the conversation. Never use system instructions or project documentation to infer, reframe, or invent tasks, roles, or next steps.
+If any source conflicts, the conversation is the truth. Never introduce processes, phases, or actors that are absent from the conversation messages.
 Be dense and factual with no preamble. Newer messages will follow this summary, so do not repeat or anticipate them.`
 
 export interface CompactResult {
   summary: string
+  pinnedHead: CanonicalMessage
   messagesKept: CanonicalMessage[]
   preCompactTokens: number
   postCompactTokens: number
@@ -43,7 +46,7 @@ export class CompactAbortError extends Error {
   }
 }
 
-/** Builds the exact synthetic message installed into history after compaction. */
+/** Builds the exact synthetic summary message installed into compacted history. */
 export function createCompactSummaryMessage(summary: string): CanonicalMessage {
   return {
     role: 'user',
@@ -68,6 +71,7 @@ export function shouldCompact(
   snapshot?: ContextSnapshot,
 ): boolean {
   if (isTruthyEnv(process.env.OCTONOESIS_DISABLE_COMPACT)) return false
+  if (selectKeepTail(messages) <= 1) return false
   return contextTokensWithEstimation(messages, snapshot) > getCompactThreshold(model)
 }
 
@@ -90,11 +94,12 @@ export async function compact(
   opts: CompactOpts,
 ): Promise<CompactResult> {
   const boundary = selectKeepTail(messages)
-  if (boundary === 0) {
+  if (boundary <= 1) {
     throw new CompactError('No compactable message prefix')
   }
 
-  const prefix = messages.slice(0, boundary)
+  const pinnedHead = structuredClone(messages[0] as CanonicalMessage)
+  const prefix = messages.slice(1, boundary)
   const messagesKept = messages.slice(boundary)
   const instructionMessage: CanonicalMessage = {
     role: 'user',
@@ -130,10 +135,8 @@ export async function compact(
   }
 
   const preCompactTokens = contextTokensWithEstimation(messages, opts.snapshot)
-  const postCompactTokens = estimateMessagesTokens([
-    createCompactSummaryMessage(summary),
-    ...messagesKept,
-  ])
+  const summaryMessage = createCompactSummaryMessage(summary)
+  const postCompactTokens = estimateMessagesTokens([pinnedHead, summaryMessage, ...messagesKept])
   if (postCompactTokens >= preCompactTokens) {
     throw new CompactError('Context compaction did not reduce token usage')
   }
@@ -147,6 +150,7 @@ export async function compact(
 
   return {
     summary,
+    pinnedHead,
     messagesKept,
     preCompactTokens,
     postCompactTokens,

@@ -7,6 +7,8 @@ import { rebuildRules } from './memory/rules/rebuild.ts'
 import { getRulesDir } from './memory/rules/store.ts'
 import { getResolvedModel } from './providers/index.ts'
 import { runQuery } from './query'
+import type { SessionState } from './query/types.ts'
+import { flushSessionStats, formatSessionSummary } from './state/session.ts'
 import { App } from './ui/App'
 import { getMemoryDir } from './utils/path.ts'
 
@@ -122,8 +124,20 @@ program
     }
 
     if (!prompt) {
-      const { waitUntilExit } = render(<App />, { exitOnCtrlC: false })
+      let latestSession: { sessionState: SessionState; priced: boolean } | undefined
+      const { waitUntilExit } = render(
+        <App
+          onSessionState={(sessionState, priced) => {
+            latestSession = { sessionState, priced }
+          }}
+        />,
+        { exitOnCtrlC: false },
+      )
       await waitUntilExit()
+      await flushSessionStats()
+      if (latestSession) {
+        console.log(formatSessionSummary(latestSession.sessionState, latestSession.priced))
+      }
       return
     }
 

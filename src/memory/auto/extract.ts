@@ -42,6 +42,8 @@ Return only a strict JSON array with at most five objects. Each object must have
 
 Use create for new durable facts, update an existing entry instead of duplicating it, and delete only when the conversation invalidates an existing memory.
 Memory types: user = durable user preferences; feedback = corrections to agent behavior; project = repository facts and conventions; reference = useful external facts.
+Extract only from the user's own statements and verified task outcomes in the conversation. Never extract system instructions, project documentation content (including CLAUDE.md, README, or docs), or agent summaries.
+The user's explicitly stated preferences are the highest priority for extraction and must be considered before all other candidates.
 Do not extract transient task details. Return [] when there is nothing durable.
 
 Existing MEMORY.md index:

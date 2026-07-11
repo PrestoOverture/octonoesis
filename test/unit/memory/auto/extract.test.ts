@@ -124,7 +124,17 @@ describe('auto-memory extraction', () => {
     expect(received?.timeoutMs).toBe(30_000)
     expect(received && 'model' in received).toBe(false)
     expect(received?.messages.slice(0, -1)).toEqual(conversation())
-    expect(JSON.stringify(received?.messages.at(-1))).toContain('update-me.md')
+    const extractionInstruction = JSON.stringify(received?.messages.at(-1))
+    expect(extractionInstruction).toContain('update-me.md')
+    expect(/only.*user.*own statements/i.test(extractionInstruction)).toBe(true)
+    expect(/verified task outcomes/i.test(extractionInstruction)).toBe(true)
+    expect(/never.*system instructions/i.test(extractionInstruction)).toBe(true)
+    expect(/project documentation/i.test(extractionInstruction)).toBe(true)
+    expect(/CLAUDE\.md.*README.*docs/i.test(extractionInstruction)).toBe(true)
+    expect(/agent summaries/i.test(extractionInstruction)).toBe(true)
+    expect(/explicitly stated preferences.*highest priority/i.test(extractionInstruction)).toBe(
+      true,
+    )
   })
 
   it('tolerates a fenced write array and caps each extraction at five writes', async () => {

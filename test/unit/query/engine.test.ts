@@ -315,6 +315,11 @@ describe('query engine', () => {
   it('keeps live state aliases and replaces both message references during compaction', async () => {
     const messages: CanonicalMessage[] = [
       { role: 'user', content: `Old request ${'detail '.repeat(200)}` },
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: `Older response ${'context '.repeat(200)}` }],
+      },
+      { role: 'user', content: 'Additional older request' },
       { role: 'assistant', content: [{ type: 'text', text: 'Recent response one' }] },
       { role: 'user', content: 'Recent request two' },
       { role: 'assistant', content: [{ type: 'text', text: 'Recent response three' }] },
@@ -373,8 +378,10 @@ describe('query engine', () => {
       expect(events[0]?.type).toBe('compact')
       expect(state.messages).toBe(ctx.messages)
       expect(state.messages).not.toBe(messages)
-      expect(JSON.stringify(state.messages[0])).toContain('<octo-compact-summary>')
-      expect(state.compactBoundary).toBe(1)
+      expect(state.messages[0]).toEqual(messages[0])
+      expect(JSON.stringify(state.messages[1])).toContain('<octo-compact-summary>')
+      expect(JSON.stringify(state.messages[1])).toContain('Dense compact summary.')
+      expect(state.compactBoundary).toBe(2)
       expect(state.compactConsecutiveFailures).toBe(0)
       expect(state.compactCircuitOpen).toBe(false)
     } finally {

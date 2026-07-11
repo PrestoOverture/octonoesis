@@ -66,27 +66,57 @@ describe('context compaction', () => {
     expect(selectKeepTail([])).toBe(0)
   })
 
+  it('skips compaction when pinning the first message leaves no older prefix', async () => {
+    const messages: CanonicalMessage[] = [
+      { role: 'user', content: 'original request' },
+      { role: 'assistant', content: [{ type: 'text', text: 'first response' }] },
+      { role: 'user', content: 'follow-up' },
+      { role: 'assistant', content: [{ type: 'text', text: 'latest response' }] },
+    ]
+    let forkCalls = 0
+
+    expect(selectKeepTail(messages)).toBe(1)
+    process.env.OCTONOESIS_COMPACT_THRESHOLD = '1'
+    expect(shouldCompact(messages, 'claude-sonnet-4-6')).toBe(false)
+    await expect(
+      compact(messages, {
+        systemPrompt: 'system',
+        forkFn: async () => {
+          forkCalls++
+          return {
+            text: 'unused summary',
+            usage: { input_tokens: 1, output_tokens: 1 },
+            turns: 1,
+            exitReason: 'completed',
+          }
+        },
+      }),
+    ).rejects.toThrow('No compactable message prefix')
+    expect(forkCalls).toBe(0)
+  })
+
   it('compacts only above the strict threshold and honors the disable switch', () => {
     const messages: CanonicalMessage[] = [
       { role: 'user', content: 'request' },
       { role: 'assistant', content: [{ type: 'text', text: 'response' }] },
       { role: 'user', content: 'follow-up' },
       { role: 'assistant', content: [{ type: 'text', text: 'latest' }] },
+      { role: 'user', content: 'latest user turn' },
     ]
     process.env.OCTONOESIS_COMPACT_THRESHOLD = '10'
 
-    expect(shouldCompact(messages, 'claude-sonnet-4-6', { tokens: 10, coveredCount: 4 })).toBe(
+    expect(shouldCompact(messages, 'claude-sonnet-4-6', { tokens: 10, coveredCount: 5 })).toBe(
       false,
     )
-    expect(shouldCompact(messages, 'claude-sonnet-4-6', { tokens: 11, coveredCount: 4 })).toBe(true)
+    expect(shouldCompact(messages, 'claude-sonnet-4-6', { tokens: 11, coveredCount: 5 })).toBe(true)
 
     process.env.OCTONOESIS_DISABLE_COMPACT = '1'
-    expect(shouldCompact(messages, 'claude-sonnet-4-6', { tokens: 11, coveredCount: 4 })).toBe(
+    expect(shouldCompact(messages, 'claude-sonnet-4-6', { tokens: 11, coveredCount: 5 })).toBe(
       false,
     )
 
     process.env.OCTONOESIS_DISABLE_COMPACT = 'false'
-    expect(shouldCompact(messages, 'claude-sonnet-4-6', { tokens: 11, coveredCount: 4 })).toBe(true)
+    expect(shouldCompact(messages, 'claude-sonnet-4-6', { tokens: 11, coveredCount: 5 })).toBe(true)
   })
 
   it('summarizes only the old prefix and accepts a smaller tagged replacement', async () => {
@@ -130,7 +160,7 @@ describe('context compaction', () => {
     expect(captured?.maxTurns).toBe(1)
     expect(captured?.signal).toBe(controller.signal)
     expect(captured && 'model' in captured).toBe(false)
-    expect(captured?.messages.slice(0, -1)).toEqual(messages.slice(0, 3))
+    expect(captured?.messages.slice(0, -1)).toEqual(messages.slice(1, 3))
 
     const instruction = captured?.messages.at(-1)
     expect(instruction?.role).toBe('user')
@@ -145,13 +175,34 @@ describe('context compaction', () => {
     expect(
       /exact.*(literal|identifier|canar)|verbatim/i.test(JSON.stringify(instructionText)),
     ).toBe(true)
+    expect(/only.*conversation/i.test(JSON.stringify(instructionText))).toBe(true)
+    expect(/system instructions/i.test(JSON.stringify(instructionText))).toBe(true)
+    expect(/project documentation/i.test(JSON.stringify(instructionText))).toBe(true)
+    expect(/infer.*reframe.*invent/i.test(JSON.stringify(instructionText))).toBe(true)
+    expect(/conversation.*truth/i.test(JSON.stringify(instructionText))).toBe(true)
+    expect(/processes.*phases.*actors/i.test(JSON.stringify(instructionText))).toBe(true)
 
     expect(observedUsage).toEqual(forkUsage)
     expect(result.summary).toBe(summary)
+    expect(result.pinnedHead).toEqual(messages[0])
     expect(result.messagesKept).toEqual(messages.slice(3))
+    const replacement = [
+      result.pinnedHead,
+      createCompactSummaryMessage(result.summary),
+      ...result.messagesKept,
+    ]
+    expect(replacement).toEqual([
+      messages[0],
+      createCompactSummaryMessage(summary),
+      ...messages.slice(3),
+    ])
     expect(result.preCompactTokens).toBe(contextTokensWithEstimation(messages))
     expect(result.postCompactTokens).toBe(
-      contextTokensWithEstimation([createCompactSummaryMessage(summary), ...messages.slice(3)]),
+      contextTokensWithEstimation([
+        messages[0] as CanonicalMessage,
+        createCompactSummaryMessage(summary),
+        ...messages.slice(3),
+      ]),
     )
     expect(result.postCompactTokens).toBeLessThan(result.preCompactTokens)
 
@@ -176,6 +227,7 @@ describe('context compaction', () => {
       { role: 'assistant', content: [{ type: 'text', text: 'old response '.repeat(80) }] },
       { role: 'user', content: 'recent one' },
       { role: 'assistant', content: [{ type: 'text', text: 'recent two' }] },
+      { role: 'user', content: 'latest follow-up' },
     ]
     const originalMessages = structuredClone(messages)
     let observedUsage: Usage | undefined
@@ -207,6 +259,7 @@ describe('context compaction', () => {
       { role: 'assistant', content: [{ type: 'text', text: 'old response '.repeat(80) }] },
       { role: 'user', content: 'recent one' },
       { role: 'assistant', content: [{ type: 'text', text: 'recent two' }] },
+      { role: 'user', content: 'latest follow-up' },
     ]
 
     await expect(
@@ -231,6 +284,7 @@ describe('context compaction', () => {
       { role: 'assistant', content: [{ type: 'text', text: 'recent response' }] },
       { role: 'user', content: 'recent follow-up' },
       { role: 'assistant', content: [{ type: 'text', text: 'latest response' }] },
+      { role: 'user', content: 'latest user turn' },
     ]
     const originalMessages = structuredClone(messages)
 
@@ -257,6 +311,7 @@ describe('context compaction', () => {
       { role: 'assistant', content: [{ type: 'text', text: 'old response '.repeat(40) }] },
       { role: 'user', content: 'recent follow-up' },
       { role: 'assistant', content: [{ type: 'text', text: 'latest response' }] },
+      { role: 'user', content: 'latest user turn' },
     ]
 
     await expect(

@@ -20,6 +20,12 @@ import type {
   StreamEvent as ProviderStreamEvent,
   Usage,
 } from '../providers'
+import {
+  appendSessionStats,
+  createSessionState,
+  flushSessionStats,
+  formatSessionSummary,
+} from '../state/session'
 import { bashTool } from '../tools/Bash'
 import { editTool } from '../tools/Edit'
 import { globTool } from '../tools/Glob'
@@ -30,11 +36,16 @@ import type { ToolContext } from '../tools/Tool'
 import { writeTool } from '../tools/Write'
 import { runTool } from '../tools/execute'
 import { getAllTools, registerTool } from '../tools/registry'
+import { estimateCost } from '../utils/cost'
 import { dbg } from '../utils/debug'
 import { getRepoRoot } from '../utils/path'
 import { zodToJsonSchema } from '../utils/schema'
 import type { ContextSnapshot } from '../utils/tokens'
-import { totalTokensFromUsage } from '../utils/tokens'
+import {
+  contextTokensWithEstimation,
+  getContextWindowSize,
+  totalTokensFromUsage,
+} from '../utils/tokens'
 import {
   CompactAbortError,
   CompactError,
@@ -43,7 +54,7 @@ import {
   selectKeepTail,
   shouldCompact,
 } from './compact'
-import type { ExitReason, QueryLoopContext, QueryResultV1, QueryState } from './types'
+import type { ExitReason, QueryLoopContext, QueryResultV1, QueryState, SessionState } from './types'
 
 const MAX_TURNS = 50
 
@@ -59,6 +70,7 @@ export type StreamEvent =
   | ProviderStreamEvent
   | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error' }
   | { type: 'compact'; preTokens: number; postTokens: number; durationMs: number }
+  | { type: 'session_state'; sessionState: SessionState; priced: boolean }
 
 export type QueryResult = QueryResultV1
 
@@ -73,6 +85,7 @@ export type EngineState = QueryState & {
   tools?: CanonicalTool[]
   compactConsecutiveFailures: number
   compactCircuitOpen: boolean
+  emitSessionState: boolean
 }
 
 type ReadyEngineState = EngineState & {
@@ -106,6 +119,41 @@ function addUsage(target: Usage, usage: Usage): void {
   }
 }
 
+function sessionStateSnapshot(sessionState: SessionState): SessionState {
+  return { ...sessionState, usage: { ...sessionState.usage } }
+}
+
+function currentSessionStateEvent(
+  state: EngineState,
+  ctx: QueryLoopContext,
+): Extract<StreamEvent, { type: 'session_state' }> {
+  const sessionState = ctx.sessionState
+  if (!sessionState) throw new Error('Session state was not initialized')
+
+  const pricing = estimateCost(sessionState.usage, sessionState.model)
+  sessionState.costUsd = pricing.costUsd
+  sessionState.contextUtilization =
+    contextTokensWithEstimation(state.messages, state.contextSnapshot) /
+    getContextWindowSize(state.model)
+  return {
+    type: 'session_state',
+    sessionState: sessionStateSnapshot(sessionState),
+    priced: pricing.priced,
+  }
+}
+
+function recordSessionTurn(
+  state: EngineState,
+  ctx: QueryLoopContext,
+  usage: Usage,
+): Extract<StreamEvent, { type: 'session_state' }> {
+  const sessionState = ctx.sessionState
+  if (!sessionState) throw new Error('Session state was not initialized')
+  addUsage(sessionState.usage, usage)
+  sessionState.turns++
+  return currentSessionStateEvent(state, ctx)
+}
+
 function cancellationResult(state: EngineState): QueryResult {
   return {
     exit_reason: 'user_cancel',
@@ -136,6 +184,9 @@ export async function initQueryState(
     ctx.sessionId = crypto.randomUUID()
   }
   setSessionId(ctx.sessionId)
+  const model = getResolvedModel()
+  const emitSessionState = ctx.sessionState !== undefined
+  ctx.sessionState ??= createSessionState(ctx.sessionId, model)
 
   const rules = await loadAllRules()
   ctx.injectedRules = ctx.injectedRules || []
@@ -153,7 +204,7 @@ export async function initQueryState(
     turn: 0,
     messages: ctx.messages,
     usage: { input_tokens: 0, output_tokens: 0 },
-    model: getResolvedModel(),
+    model,
     sessionId: ctx.sessionId,
     abortSignal: ctx.abortSignal,
     repoRoot: ctx.repoRoot,
@@ -163,6 +214,7 @@ export async function initQueryState(
     hooks: {},
     compactConsecutiveFailures: 0,
     compactCircuitOpen: false,
+    emitSessionState,
     input,
     inputDigest,
     rules,
@@ -223,9 +275,13 @@ export async function* maybeCompact(
       systemPrompt: state.system,
       signal: ctx.abortSignal,
       snapshot: state.contextSnapshot,
-      onForkUsage: (usage) => addUsage(state.usage, usage),
+      onForkUsage: (usage) => {
+        addUsage(state.usage, usage)
+        if (ctx.sessionState) addUsage(ctx.sessionState.usage, usage)
+      },
     })
     const replacement = [
+      compactResult.pinnedHead,
       createCompactSummaryMessage(compactResult.summary),
       ...compactResult.messagesKept,
     ]
@@ -233,13 +289,14 @@ export async function* maybeCompact(
     ctx.messages = replacement
     state.contextSnapshot = undefined
     state.compactConsecutiveFailures = 0
-    state.compactBoundary = 1
+    state.compactBoundary = 2
     const durationMs = Math.max(0, Math.round(performance.now() - compactStart))
     dbg('compact', 'Context compacted', {
       preTokens: compactResult.preCompactTokens,
       postTokens: compactResult.postCompactTokens,
       durationMs,
     })
+    if (ctx.sessionState) ctx.sessionState.compactCount++
     yield {
       type: 'compact',
       preTokens: compactResult.preCompactTokens,
@@ -365,6 +422,8 @@ export async function* streamFromProvider(
   const usage = finalUsage || { input_tokens: 0, output_tokens: 0 }
   addUsage(state.usage, usage)
   yield { type: 'message_end', usage }
+  const sessionStateEvent = recordSessionTurn(state, ctx, usage)
+  if (state.emitSessionState) yield sessionStateEvent
   state.messages.push({ role: 'assistant', content: assistantBlocks })
   return { kind: 'complete', assistantBlocks }
 }
@@ -526,7 +585,15 @@ export async function* query(
         return cancellationResult(readyState)
       }
 
+      const compactCountBefore = ctx.sessionState?.compactCount ?? 0
       const compactAction = yield* maybeCompact(readyState, ctx)
+      if (
+        readyState.emitSessionState &&
+        ctx.sessionState &&
+        ctx.sessionState.compactCount > compactCountBefore
+      ) {
+        yield currentSessionStateEvent(readyState, ctx)
+      }
       if (compactAction === 'restart_loop') continue
 
       const context = await assembleContext(readyState)
@@ -573,6 +640,14 @@ export async function* query(
       turns: readyState.turn,
     }
   } finally {
+    if (ctx.sessionState) {
+      const pricing = estimateCost(ctx.sessionState.usage, ctx.sessionState.model)
+      ctx.sessionState.costUsd = pricing.costUsd
+      appendSessionStats(ctx.sessionState, {
+        priced: pricing.priced,
+        durationMs: Math.max(0, Date.now() - ctx.sessionState.startTime),
+      })
+    }
     appendJournal({
       kind: 'session',
       exit_reason: exitReason,
@@ -619,7 +694,13 @@ export async function* query(
 
 /** Runs one-shot mode while preserving the established stdout format. */
 export async function runQuery(userPrompt: string): Promise<void> {
-  const ctx: ToolContext = { repoRoot: getRepoRoot() }
+  const sessionId = crypto.randomUUID()
+  const model = getResolvedModel()
+  const ctx: ToolContext = {
+    repoRoot: getRepoRoot(),
+    sessionId,
+    sessionState: createSessionState(sessionId, model),
+  }
   const generator = query(userPrompt, ctx)
 
   for await (const event of generator) {
@@ -638,5 +719,11 @@ export async function runQuery(userPrompt: string): Promise<void> {
       )
     }
   }
-  process.stdout.write('\n')
+  await flushSessionStats()
+  const priced = ctx.sessionState
+    ? estimateCost(ctx.sessionState.usage, ctx.sessionState.model).priced
+    : false
+  process.stdout.write(
+    ctx.sessionState ? `\n${formatSessionSummary(ctx.sessionState, priced)}\n` : '\n',
+  )
 }
