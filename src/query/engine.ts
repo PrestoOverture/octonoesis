@@ -1,4 +1,7 @@
 import crypto from 'node:crypto'
+import { extractMemories } from '../memory/auto/extract'
+import { findRelevantMemories } from '../memory/auto/recall'
+import { loadMemories } from '../memory/auto/store'
 import { runSessionEndCalibration } from '../memory/calibration/hook'
 import { runSessionEndEpisodes } from '../memory/episodes/hook'
 import { appendJournal, flushJournal, setSessionId } from '../memory/journal'
@@ -6,7 +9,8 @@ import { updateLifecycle } from '../memory/rules/lifecycle'
 import { findMatchingRules, formatMatchAdvice } from '../memory/rules/match'
 import { loadAllRules, saveRule } from '../memory/rules/store'
 import type { RuleFile } from '../memory/rules/types'
-import { buildSystemMessages } from '../prompts'
+import { assembleSessionContext } from '../prompts/context'
+import { buildStaticPrompt } from '../prompts/static'
 import { getProvider, getResolvedModel } from '../providers'
 import type {
   CanonicalMessage,
@@ -180,13 +184,23 @@ async function prepareQueryState(
     description: tool.description,
     inputSchema: zodToJsonSchema(tool.inputSchema) as Record<string, unknown>,
   }))
-  const { system, dynamicSystem } = await buildSystemMessages(ctx, state.model, state.usage)
-  ctx.firstTurnDynamicSystem = dynamicSystem
+  const memories = await loadMemories()
+  const recalledMemories = await findRelevantMemories(state.input, memories, {
+    systemPrompt: buildStaticPrompt(),
+    signal: ctx.abortSignal,
+  })
+  const compiledContext = await assembleSessionContext(
+    ctx,
+    state.model,
+    state.usage,
+    recalledMemories,
+  )
+  ctx.firstTurnDynamicSystem = compiledContext.preamble
 
   state.provider = provider
   state.tools = tools
-  state.system = system
-  state.dynamicSystem = dynamicSystem
+  state.system = compiledContext.systemStable
+  state.dynamicSystem = compiledContext.preamble
   return state as ReadyEngineState
 }
 
@@ -531,6 +545,7 @@ export async function* query(
       const stop = shouldStop(streamResult.assistantBlocks)
       if (stop) {
         await executeStopHooks(readyState)
+        await extractMemories(readyState, ctx)
         const assistantText = streamResult.assistantBlocks
           .filter((block) => block.type === 'text')
           .map((block) => block.text)
