@@ -7,6 +7,7 @@ import { getResolvedModel } from '../providers'
 import { type CanonicalMessage, type ToolContext, query } from '../query'
 import type { SessionState } from '../query/types'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
+import { rewriteSkillSlashCommand } from '../skills/execute'
 import { createSessionState } from '../state/session'
 import { estimateCost } from '../utils/cost'
 import { getRepoRoot } from '../utils/path'
@@ -311,7 +312,8 @@ export function App(props: AppProps) {
     // Execute query loop asynchronously in the background
     ;(async () => {
       try {
-        const generator = query(value, ctx, controller.signal)
+        const rewrittenValue = await rewriteSkillSlashCommand(value, ctx.repoRoot)
+        const generator = query(rewrittenValue, ctx, controller.signal)
         for await (const event of generator) {
           if (event.type === 'text_delta') {
             setStreamingText((prev) => prev + event.text)

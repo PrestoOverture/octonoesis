@@ -2,6 +2,11 @@
 declare const Bun: any
 
 import { createHash } from 'node:crypto'
+import { READ_ONLY_FORK_SKILL_TOOLS } from '../skills/execute'
+import { globTool } from '../tools/Glob'
+import { grepTool } from '../tools/Grep'
+import { readTool } from '../tools/Read'
+import type { Tool } from '../tools/Tool'
 import { type ForkResult, type PreparedFork, getForkDepth } from './fork'
 import { getProvider } from './index'
 import type {
@@ -23,8 +28,9 @@ const FORK_PURPOSES = new Set([
 ])
 
 interface ForkMockConfig {
-  text: string
+  text?: string
   delayMs?: number
+  scriptedEvents?: StreamEvent[][]
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -108,8 +114,8 @@ function parsePreparedFork(input: string): PreparedFork {
 
 function parseMockConfig(raw: string): ForkMockConfig {
   const parsed: unknown = JSON.parse(raw)
-  if (!isRecord(parsed) || typeof parsed.text !== 'string') {
-    throw new TypeError('OCTONOESIS_FORK_MOCK must contain a string text field')
+  if (!isRecord(parsed)) {
+    throw new TypeError('OCTONOESIS_FORK_MOCK must contain an object')
   }
   if (
     parsed.delayMs !== undefined &&
@@ -117,10 +123,40 @@ function parseMockConfig(raw: string): ForkMockConfig {
   ) {
     throw new TypeError('OCTONOESIS_FORK_MOCK delayMs must be a non-negative number')
   }
-  return {
-    text: parsed.text,
-    ...(parsed.delayMs === undefined ? {} : { delayMs: parsed.delayMs }),
+  let scriptedEvents: StreamEvent[][] | undefined
+  if (parsed.scriptedEvents !== undefined) {
+    if (
+      !Array.isArray(parsed.scriptedEvents) ||
+      !parsed.scriptedEvents.every(
+        (turn) => Array.isArray(turn) && turn.every((event) => isMockStreamEvent(event)),
+      )
+    ) {
+      throw new TypeError('OCTONOESIS_FORK_MOCK scriptedEvents must be valid event turns')
+    }
+    scriptedEvents = parsed.scriptedEvents as StreamEvent[][]
   }
+  if (typeof parsed.text !== 'string' && scriptedEvents === undefined) {
+    throw new TypeError('OCTONOESIS_FORK_MOCK must contain a string text field')
+  }
+  return {
+    ...(typeof parsed.text === 'string' ? { text: parsed.text } : {}),
+    ...(parsed.delayMs === undefined ? {} : { delayMs: parsed.delayMs }),
+    ...(scriptedEvents === undefined ? {} : { scriptedEvents }),
+  }
+}
+
+function isMockStreamEvent(value: unknown): value is StreamEvent {
+  if (!isRecord(value) || typeof value.type !== 'string') return false
+  if (value.type === 'text_delta') return typeof value.text === 'string'
+  if (value.type === 'tool_use') {
+    return typeof value.id === 'string' && typeof value.name === 'string' && 'input' in value
+  }
+  return (
+    value.type === 'message_end' &&
+    isRecord(value.usage) &&
+    typeof value.usage.input_tokens === 'number' &&
+    typeof value.usage.output_tokens === 'number'
+  )
 }
 
 function waitForMockDelay(delayMs: number, signal: AbortSignal): Promise<void> {
@@ -148,10 +184,11 @@ function waitForMockDelay(delayMs: number, signal: AbortSignal): Promise<void> {
  * deterministic and keyless while exercising the real child loop.
  */
 function createMockProvider(config: ForkMockConfig): LLMProvider {
+  let turn = 0
   return {
     name: 'anthropic',
     async *createMessageStream(
-      _messages: CanonicalMessage[],
+      messages: CanonicalMessage[],
       _tools,
       opts,
     ): AsyncIterable<StreamEvent> {
@@ -160,7 +197,42 @@ function createMockProvider(config: ForkMockConfig): LLMProvider {
       }
       if (opts.signal.aborted) return
 
-      yield { type: 'text_delta', text: config.text }
+      const scripted = config.scriptedEvents?.[turn++]
+      if (scripted) {
+        const latestTool = [...messages].reverse().find((message) => message.role === 'tool')
+        const latestToolText =
+          latestTool?.role === 'tool'
+            ? typeof latestTool.content === 'string'
+              ? latestTool.content
+              : latestTool.content
+                  .map((block) =>
+                    block.type === 'text'
+                      ? block.text
+                      : block.type === 'tool_result'
+                        ? block.content
+                        : '',
+                  )
+                  .join('')
+            : ''
+        const latestToolIsError =
+          latestTool?.role === 'tool' && Array.isArray(latestTool.content)
+            ? latestTool.content.some(
+                (block) => block.type === 'tool_result' && block.is_error === true,
+              )
+            : false
+        for (const event of scripted) {
+          yield event.type === 'text_delta'
+            ? {
+                ...event,
+                text: event.text
+                  .replaceAll('{{tool_result}}', latestToolText)
+                  .replaceAll('{{tool_is_error}}', String(latestToolIsError)),
+              }
+            : event
+        }
+        return
+      }
+      yield { type: 'text_delta', text: config.text ?? '' }
       yield {
         type: 'message_end',
         usage: { input_tokens: 0, output_tokens: 0 },
@@ -184,6 +256,62 @@ function appendTextBlock(content: ContentBlock[], text: string): void {
     lastBlock.text += text
   } else {
     content.push({ type: 'text', text })
+  }
+}
+
+const skillTools = new Map<string, Tool>([
+  [readTool.name, readTool],
+  [grepTool.name, grepTool],
+  [globTool.name, globTool],
+])
+
+async function executeSkillToolUses(
+  prepared: PreparedFork,
+  assistantContent: ContentBlock[],
+  messages: CanonicalMessage[],
+  signal: AbortSignal,
+): Promise<void> {
+  const preparedNames = new Set(prepared.tools.map((tool) => tool.name))
+  const safeNames = new Set<string>(READ_ONLY_FORK_SKILL_TOOLS)
+  for (const block of assistantContent) {
+    if (block.type !== 'tool_use') continue
+    const tool = skillTools.get(block.name)
+    let content: string
+    let isError = false
+    if (!preparedNames.has(block.name) || !safeNames.has(block.name) || !tool) {
+      content = `Tool ${block.name} is not available to this skill fork.`
+      isError = true
+    } else if (!tool.isReadOnly(block.input)) {
+      content = `Tool ${block.name} was refused because it is not read-only.`
+      isError = true
+    } else {
+      const parsed = tool.inputSchema.safeParse(block.input)
+      if (!parsed.success) {
+        content = `Invalid ${block.name} input: ${parsed.error.message}`
+        isError = true
+      } else {
+        const result = await tool.call(parsed.data, {
+          repoRoot: process.cwd(),
+          abortSignal: signal,
+        })
+        content = result.ok
+          ? typeof result.value === 'string'
+            ? result.value
+            : JSON.stringify(result.value)
+          : result.error
+        isError = !result.ok
+      }
+    }
+    messages.push({
+      role: 'tool',
+      tool_use_id: block.id,
+      content: isError
+        ? [
+            { type: 'tool_result', tool_use_id: block.id, content, is_error: true },
+            { type: 'text', text: content },
+          ]
+        : content,
+    })
   }
 }
 
@@ -270,9 +398,12 @@ export async function runForkLoop(
       return { text, usage, turns, exitReason: 'completed', systemPromptSha256 }
     }
 
-    // Batch 1 forks have no executable tools. Drain anomalous tool_use responses for
-    // usage accounting, then stop without executing anything.
-    return { text, usage, turns, exitReason: 'completed', systemPromptSha256 }
+    if (prepared.purpose !== 'skill') {
+      // Non-skill forks deliberately have no child execution loop. Drain the response
+      // for accounting and preserve their historical stop behavior.
+      return { text, usage, turns, exitReason: 'completed', systemPromptSha256 }
+    }
+    await executeSkillToolUses(prepared, assistantContent, messages, signal)
   }
 
   return { text, usage, turns, exitReason: 'max_turns', systemPromptSha256 }

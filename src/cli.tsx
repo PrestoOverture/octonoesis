@@ -10,6 +10,7 @@ import { runQuery } from './query'
 import type { SessionState } from './query/types.ts'
 import { assertSandboxAvailable, resolveSandboxConfig } from './sandbox/manager.ts'
 import type { ResolvedSandboxConfig } from './sandbox/types.ts'
+import { rewriteSkillSlashCommand } from './skills/execute.ts'
 import { flushSessionStats, formatSessionSummary } from './state/session.ts'
 import { App } from './ui/App'
 import { getMemoryDir, getRepoRoot } from './utils/path.ts'
@@ -156,7 +157,7 @@ program
     }
 
     try {
-      await runQuery(prompt, sandbox)
+      await runQuery(await rewriteSkillSlashCommand(prompt, getRepoRoot()), sandbox)
     } catch (error) {
       if (error instanceof Error) {
         console.error(`Error: ${error.message}`)

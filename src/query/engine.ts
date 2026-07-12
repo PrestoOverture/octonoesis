@@ -21,6 +21,7 @@ import type {
   Usage,
 } from '../providers'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
+import { loadSkills } from '../skills/loader'
 import {
   appendSessionStats,
   createSessionState,
@@ -32,6 +33,7 @@ import { editTool } from '../tools/Edit'
 import { globTool } from '../tools/Glob'
 import { grepTool } from '../tools/Grep'
 import { readTool } from '../tools/Read'
+import { SkillTool } from '../tools/SkillTool'
 import { todoWriteTool } from '../tools/TodoWrite'
 import type { ToolContext } from '../tools/Tool'
 import { writeTool } from '../tools/Write'
@@ -232,11 +234,7 @@ async function prepareQueryState(
   })
 
   const provider = getProvider()
-  const tools = getAllTools().map((tool) => ({
-    name: tool.name,
-    description: tool.description,
-    inputSchema: zodToJsonSchema(tool.inputSchema) as Record<string, unknown>,
-  }))
+  const skills = await loadSkills(ctx.repoRoot)
   const memories = await loadMemories()
   const recalledMemories = await findRelevantMemories(state.input, memories, {
     systemPrompt: buildStaticPrompt(),
@@ -247,7 +245,26 @@ async function prepareQueryState(
     state.model,
     state.usage,
     recalledMemories,
+    skills,
   )
+  if (skills.length > 0) {
+    registerTool(
+      new SkillTool(skills, {
+        systemPrompt: compiledContext.systemStable,
+        onForkUsage: (usage) => {
+          addUsage(state.usage, usage)
+          if (ctx.sessionState) addUsage(ctx.sessionState.usage, usage)
+        },
+      }),
+    )
+  }
+  const tools = getAllTools()
+    .filter((tool) => tool.name !== 'Skill' || skills.length > 0)
+    .map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: zodToJsonSchema(tool.inputSchema) as Record<string, unknown>,
+    }))
   ctx.firstTurnDynamicSystem = compiledContext.preamble
 
   state.provider = provider

@@ -4,6 +4,7 @@ import { loadMemoryIndex } from '../memory/auto/store'
 import type { MemoryFile } from '../memory/auto/types'
 import type { Usage } from '../providers/types'
 import type { QueryLoopContext } from '../query/types'
+import type { SkillDefinition } from '../skills/types'
 import { dbg } from '../utils/debug'
 import {
   type CompiledContext,
@@ -29,11 +30,27 @@ function formatRelevantMemories(memories: MemoryFile[]): string {
     .join('\n\n')
 }
 
+export function formatSkillCatalog(skills: readonly SkillDefinition[]): string {
+  const lines = [...skills]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(
+      (skill) =>
+        `- ${skill.name}: ${skill.description}${skill.context === 'fork' ? ' [fork]' : ''}`,
+    )
+  return [
+    '## Skills',
+    'Use the Skill tool to invoke a skill by name. Pass any user-supplied trailing text as args.',
+    '',
+    ...lines,
+  ].join('\n')
+}
+
 export async function buildSessionContextSources(
   ctx: QueryLoopContext,
   model: string,
   usage: Usage,
   recalledMemories: MemoryFile[],
+  skills: readonly SkillDefinition[] = [],
 ): Promise<ContextSource[]> {
   const [claudeMd, memoryIndex, dynamicSuffix] = await Promise.all([
     readOptionalFile(path.join(ctx.repoRoot, 'CLAUDE.md')),
@@ -66,6 +83,14 @@ export async function buildSessionContextSources(
       content: memoryIndex,
     })
   }
+  if (skills.length > 0) {
+    sources.push({
+      id: 'skill_catalog',
+      channel: 'systemStable',
+      priority: 'low',
+      content: formatSkillCatalog(skills),
+    })
+  }
   if (recalledMemories.length > 0) {
     sources.push({
       id: 'relevant_memories',
@@ -89,8 +114,9 @@ export async function assembleSessionContext(
   model: string,
   usage: Usage,
   recalledMemories: MemoryFile[],
+  skills: readonly SkillDefinition[] = [],
 ): Promise<CompiledContext> {
-  const sources = await buildSessionContextSources(ctx, model, usage, recalledMemories)
+  const sources = await buildSessionContextSources(ctx, model, usage, recalledMemories, skills)
   const compiled = compileContext(sources, DEFAULT_CONTEXT_BUDGET)
   if (compiled.dropped.length > 0) {
     dbg('context', 'Context sources were truncated or dropped', {
