@@ -4,6 +4,7 @@ import type { OctonoesisConfig } from '../config/schema'
 import { registerBuiltinHooks } from '../hooks/builtins'
 import { executeAttachedHooks } from '../hooks/execute'
 import { HookRegistry } from '../hooks/registry'
+import { cleanupMcp, initializeMcp } from '../mcp/registry'
 import { findRelevantMemories } from '../memory/auto/recall'
 import { loadMemories } from '../memory/auto/store'
 import { runSessionEndCalibration } from '../memory/calibration/hook'
@@ -31,6 +32,7 @@ import { bashTool } from '../tools/Bash'
 import { editTool } from '../tools/Edit'
 import { globTool } from '../tools/Glob'
 import { grepTool } from '../tools/Grep'
+import { MCPTool } from '../tools/MCPTool'
 import { readTool } from '../tools/Read'
 import { SkillTool } from '../tools/SkillTool'
 import { todoWriteTool } from '../tools/TodoWrite'
@@ -255,12 +257,16 @@ async function prepareQueryState(
       }),
     )
   }
+  await initializeMcp(ctx)
   const tools = getAllTools()
     .filter((tool) => tool.name !== 'Skill' || skills.length > 0)
     .map((tool) => ({
       name: tool.name,
       description: tool.description,
-      inputSchema: zodToJsonSchema(tool.inputSchema) as Record<string, unknown>,
+      inputSchema:
+        tool instanceof MCPTool
+          ? tool.providerInputSchema
+          : (zodToJsonSchema(tool.inputSchema) as Record<string, unknown>),
     }))
   ctx.firstTurnDynamicSystem = compiledContext.preamble
 
@@ -726,6 +732,8 @@ export async function* query(
       model: getResolvedModel(),
     })
     await flushJournal()
+
+    await cleanupMcp(ctx)
 
     try {
       if (ctx.sessionId) {

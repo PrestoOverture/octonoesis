@@ -11,6 +11,12 @@ export function registerTool(tool: Tool): void {
   registry.set(tool.name, tool)
 }
 
+/** Removes a tool, optionally only when the registered instance matches. */
+export function unregisterTool(name: string, expected?: Tool): void {
+  if (expected !== undefined && registry.get(name) !== expected) return
+  registry.delete(name)
+}
+
 /**
  * Looks up a registered tool by its name.
  *

@@ -6,6 +6,7 @@ import type { QueryLoopContext } from '../query/types'
 
 // In-memory allowlist of approved exact commands for this session
 const allowlist = new Set<string>()
+const MAX_BUFFERED_PERMISSION_LINES = 32
 
 /**
  * Computes a unique exact-input hash signature for a tool call.
@@ -68,7 +69,10 @@ function createFallbackPromptState(): FallbackPromptState {
       pauseFallbackPrompt(state)
       pending(line)
     } else {
-      state.bufferedLines.push(line)
+      if (state.bufferedLines.length < MAX_BUFFERED_PERMISSION_LINES) {
+        state.bufferedLines.push(line)
+      }
+      pauseFallbackPrompt(state)
     }
   })
   promptInterface.on('close', () => {
@@ -125,6 +129,11 @@ export function setPermissionInputStreamForTests(
 ): void {
   resetFallbackPromptState()
   fallbackPromptInput = input
+}
+
+/** Exposes the bounded one-shot queue size for flooding regression tests. */
+export function getBufferedPermissionLineCountForTests(): number {
+  return fallbackPromptState?.bufferedLines.length ?? 0
 }
 
 /**

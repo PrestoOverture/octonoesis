@@ -89,7 +89,7 @@ export async function getConfigTrustWarning(
   config: OctonoesisConfig,
 ): Promise<string | undefined> {
   if (await isActiveConfigTrusted(repoRoot, config)) return undefined
-  return 'Warning: tracked .octonoesis/config.json is untrusted; shell hooks and permission allowPatterns are disabled. Set trustTrackedConfig: true to override.'
+  return 'Warning: tracked .octonoesis/config.json is untrusted; shell hooks, MCP servers, and permission allowPatterns are disabled. Set trustTrackedConfig: true to override.'
 }
 
 export function clearConfigCacheForTests(): void {
