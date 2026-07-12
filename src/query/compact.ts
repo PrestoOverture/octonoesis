@@ -30,6 +30,7 @@ export interface CompactOpts {
   snapshot?: ContextSnapshot
   forkFn?: typeof forkAgent
   onForkUsage?: (usage: Usage) => void
+  minShrinkPercent?: number
 }
 
 export class CompactError extends Error {
@@ -139,6 +140,12 @@ export async function compact(
   const postCompactTokens = estimateMessagesTokens([pinnedHead, summaryMessage, ...messagesKept])
   if (postCompactTokens >= preCompactTokens) {
     throw new CompactError('Context compaction did not reduce token usage')
+  }
+  const shrinkPercent = ((preCompactTokens - postCompactTokens) / preCompactTokens) * 100
+  if (shrinkPercent < (opts.minShrinkPercent ?? 0)) {
+    throw new CompactError(
+      `Context compaction shrank ${shrinkPercent.toFixed(2)}%, below the configured minimum`,
+    )
   }
 
   appendJournal({

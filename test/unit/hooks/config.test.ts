@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { clearConfigCacheForTests } from '../../../src/config/load'
 import { ConfigValidationError } from '../../../src/config/schema'
 import { loadHooksConfig } from '../../../src/hooks/config'
 
@@ -14,6 +15,7 @@ async function root(): Promise<string> {
 }
 
 afterEach(async () => {
+  clearConfigCacheForTests()
   await Promise.all(roots.splice(0).map((value) => rm(value, { recursive: true, force: true })))
 })
 
@@ -22,7 +24,7 @@ describe('loadHooksConfig', () => {
     const repo = await root()
     expect(await loadHooksConfig(repo)).toEqual([])
     await mkdir(path.join(repo, '.octonoesis'), { recursive: true })
-    await writeFile(path.join(repo, '.octonoesis/config.json'), '{"futureKey":true}')
+    await writeFile(path.join(repo, '.octonoesis/config.json'), '{"maxTurns":2}')
     expect(await loadHooksConfig(repo)).toEqual([])
   })
 
@@ -32,7 +34,7 @@ describe('loadHooksConfig', () => {
     await writeFile(
       path.join(repo, '.octonoesis/config.json'),
       JSON.stringify({
-        ignoredUntilPhase33: true,
+        maxTurns: 2,
         hooks: [{ event: 'pre_tool_use', toolPattern: 'Bash', command: 'exit 2' }],
       }),
     )

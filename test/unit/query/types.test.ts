@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test'
+import { DEFAULT_CONFIG } from '../../../src/config/schema'
+import { HookRegistry } from '../../../src/hooks/registry'
 import type {
   ExitReason,
-  HookRegistry,
   McpConnection,
   QueryLoopContext,
   QueryResultV1,
@@ -54,7 +55,7 @@ describe('query v1 type contracts', () => {
       compactCount: 1,
       model: 'test-model',
     }
-    const hooks: HookRegistry = {}
+    const hooks = new HookRegistry()
     const task: TaskState = {
       id: 'task-1',
       type: 'shell',
@@ -78,6 +79,7 @@ describe('query v1 type contracts', () => {
       sessionId: 'session-1',
       sessionState,
       sandbox,
+      config: DEFAULT_CONFIG,
       hooks,
       tasks: new Map([[task.id, task]]),
       mcpConnections: new Map([[mcpConnection.name, mcpConnection]]),
@@ -88,6 +90,7 @@ describe('query v1 type contracts', () => {
 
     await mcpConnection.cleanup()
     expect(ctx.sessionState?.model).toBe('test-model')
+    expect(ctx.config).toBe(DEFAULT_CONFIG)
     expect(ctx.tasks?.get('task-1')?.status).toBe('pending')
   })
 
@@ -104,7 +107,7 @@ describe('query v1 type contracts', () => {
       injectedRules: [],
       recordedRuleOutcomes: new Set<string>(),
       tasks: new Map<string, TaskState>(),
-      hooks: {},
+      hooks: new HookRegistry(),
     }
 
     expect(state.turn).toBe(1)

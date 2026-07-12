@@ -3,7 +3,7 @@ declare const Bun: any
 
 import { appendJournal } from '../memory/journal'
 import { dbg } from '../utils/debug'
-import { type HookRegistry, getAttachedHookRegistry } from './registry'
+import type { HookRegistry } from './registry'
 import type {
   HookContext,
   HookExecutionOutcome,
@@ -210,11 +210,11 @@ export async function executeHooks(
 }
 
 export async function executeAttachedHooks(
-  context: object & { repoRoot: string; abortSignal?: AbortSignal },
+  context: object & { repoRoot: string; abortSignal?: AbortSignal; hooks?: HookRegistry },
   payload: HookPayload,
   state?: HookContext['state'],
 ): Promise<HookRunSummary> {
-  const registry = getAttachedHookRegistry(context)
+  const registry = context.hooks
   if (!registry) return { denied: false, results: [] }
   return executeHooks(registry, payload, {
     repoRoot: context.repoRoot,

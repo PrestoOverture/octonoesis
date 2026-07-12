@@ -1,3 +1,5 @@
+import type { OctonoesisConfig } from '../config/schema'
+import type { HookRegistry } from '../hooks/registry'
 import type { Fingerprint } from '../memory/fingerprint/extract'
 import type { RuleFile } from '../memory/rules/types'
 import type { VerifyResult } from '../memory/verifier'
@@ -40,7 +42,7 @@ export interface SessionState {
   model: string
 }
 
-export type HookRegistry = Record<string, never>
+export type { HookRegistry } from '../hooks/registry'
 
 export interface TaskState {
   id: string
@@ -76,6 +78,7 @@ export interface QueryToolContextFields {
   sessionState?: SessionState
   sandbox?: SandboxConfig
   hooks?: HookRegistry
+  config?: OctonoesisConfig
   tasks?: Map<string, TaskState>
   mcpConnections?: Map<string, McpConnection>
   injectedRules?: InjectedRule[]
@@ -95,6 +98,7 @@ export interface QueryState {
   /** Initialized concretely by the engine; optional here for Batch 0 construction compatibility. */
   compactConsecutiveFailures?: number
   compactCircuitOpen?: boolean
+  lastCompactTurn?: number
   injectedRules: InjectedRule[]
   recordedRuleOutcomes: Set<string>
   tasks: Map<string, TaskState>

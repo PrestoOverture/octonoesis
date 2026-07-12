@@ -38,6 +38,7 @@ export const permissionEventSchema = z.object({
   kind: z.literal('permission'),
   decision: z.enum(['allow_once', 'allow_always', 'deny']),
   key: z.string(),
+  via: z.literal('config').optional(),
 })
 
 export const turnEventSchema = z.object({

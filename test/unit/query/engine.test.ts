@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { HookRegistry } from '../../../src/hooks/registry'
 import { flushJournal } from '../../../src/memory/journal'
 import { setProvider } from '../../../src/providers'
 import type {
@@ -106,7 +107,7 @@ function makeState(overrides: Partial<QueryState> = {}): QueryState {
     injectedRules: [],
     recordedRuleOutcomes: new Set(),
     tasks: new Map(),
-    hooks: {},
+    hooks: new HookRegistry(),
     ...overrides,
   }
 }

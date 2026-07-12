@@ -29,7 +29,7 @@
     }
   ],
   "permissions": {
-    "allowPatterns": ["Read(*)", "Grep(*)"],
+    "allowPatterns": ["Read", "Grep"],
     "denyPatterns": ["Bash(rm -rf *)"]
   }
 }

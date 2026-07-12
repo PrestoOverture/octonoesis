@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { HookRegistry } from '../../../src/hooks/registry'
 import {
   assembleSessionContext,
   buildSessionContextSources,
@@ -32,7 +33,7 @@ describe('formatSkillCatalog', () => {
   test('emits a low-priority stable-system source iff skills exist', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'skill-catalog-'))
     process.env.OCTONOESIS_MEMORY_DIR = path.join(root, 'memory')
-    const ctx = { repoRoot: root, tasks: new Map(), hooks: {} }
+    const ctx = { repoRoot: root, tasks: new Map(), hooks: new HookRegistry() }
     try {
       const empty = await buildSessionContextSources(
         ctx,

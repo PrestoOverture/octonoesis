@@ -1,3 +1,6 @@
+import { existsSync, realpathSync } from 'node:fs'
+import path from 'node:path'
+import { getMemoryDir } from '../utils/path'
 import { DEFAULT_ALLOW_WRITE, type ResolvedSandboxConfig } from './types'
 
 const DEVICE_LITERALS = new Set(DEFAULT_ALLOW_WRITE.filter((entry) => entry.startsWith('/dev/')))
@@ -27,6 +30,9 @@ function pathSelectors(paths: string[], deviceLiterals = false): string[] {
  * operations stay allowed by default while writes, sensitive reads, and network access are confined.
  */
 export function buildProfile(config: ResolvedSandboxConfig): string {
+  const memoryDir = path.resolve(getMemoryDir())
+  const resolvedMemoryDir = existsSync(memoryDir) ? realpathSync.native(memoryDir) : memoryDir
+  const protectedWrites = [...new Set([config.protectedWrite, resolvedMemoryDir])]
   const lines = [
     '(version 1)',
     '(allow default)',
@@ -35,7 +41,7 @@ export function buildProfile(config: ResolvedSandboxConfig): string {
     ...pathSelectors(config.filesystem.allowWrite, true),
     ')',
     '(deny file-write*',
-    ...pathSelectors([config.protectedWrite]),
+    ...pathSelectors(protectedWrites),
     ')',
     '(deny file-read*',
     ...pathSelectors(config.filesystem.denyRead),

@@ -38,6 +38,9 @@ describe('Octonoesis config schema', () => {
       mcpServers: {},
       hooks: [],
       permissions: { allowPatterns: [], denyPatterns: [] },
+      projectInstructions: 'on',
+      compaction: { cooldownTurns: 0, minShrinkPercent: 0 },
+      trustTrackedConfig: false,
     }
 
     expect(parseConfig({})).toEqual(expected)
@@ -102,6 +105,32 @@ describe('Octonoesis config schema', () => {
       { permissions: { allowPatterns: 'Read', denyPatterns: [] } },
       'permissions.allowPatterns',
     )
+  })
+
+  it('validates the Phase 33 settings and permission pattern grammar', () => {
+    const parsed = parseConfig({
+      projectInstructions: 'off',
+      compaction: { cooldownTurns: 3, minShrinkPercent: 25 },
+      trustTrackedConfig: true,
+      permissions: {
+        allowPatterns: ['Edit', 'Bash(git status*)'],
+        denyPatterns: ['Write'],
+      },
+    })
+    expect(parsed.projectInstructions).toBe('off')
+    expect(parsed.compaction).toEqual({ cooldownTurns: 3, minShrinkPercent: 25 })
+    expect(parsed.trustTrackedConfig).toBe(true)
+
+    for (const [raw, path] of [
+      [{ projectInstructions: 'sometimes' }, 'projectInstructions'],
+      [{ compaction: { cooldownTurns: -1 } }, 'compaction.cooldownTurns'],
+      [{ compaction: { minShrinkPercent: 101 } }, 'compaction.minShrinkPercent'],
+      [{ permissions: { allowPatterns: ['Bash(git status)'] } }, 'permissions.allowPatterns.0'],
+      [{ permissions: { allowPatterns: ['Bash(git * status*)'] } }, 'permissions.allowPatterns.0'],
+      [{ permissions: { denyPatterns: ['Edit(*)'] } }, 'permissions.denyPatterns.0'],
+    ] as const) {
+      expectConfigError(raw, path)
+    }
   })
 
   it('reports every validation issue in a single error', () => {

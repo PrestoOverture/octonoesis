@@ -3,9 +3,11 @@ import path from 'node:path'
 import { Command } from 'commander'
 import { render } from 'ink'
 import React from 'react'
+import { getConfigTrustWarning, loadConfig } from './config/load.ts'
+import type { OctonoesisConfig } from './config/schema.ts'
 import { rebuildRules } from './memory/rules/rebuild.ts'
 import { getRulesDir } from './memory/rules/store.ts'
-import { getResolvedModel } from './providers/index.ts'
+import { getResolvedModel, setConfiguredModel } from './providers/index.ts'
 import { runQuery } from './query'
 import type { SessionState } from './query/types.ts'
 import { assertSandboxAvailable, resolveSandboxConfig } from './sandbox/manager.ts'
@@ -18,6 +20,18 @@ import { getMemoryDir, getRepoRoot } from './utils/path.ts'
 if (process.argv.includes('--fork-child')) {
   const { forkChildMain } = await import('./providers/forkChild.ts')
   process.exit(await forkChildMain())
+}
+
+const startupRepoRoot = getRepoRoot()
+let startupConfig: OctonoesisConfig
+try {
+  startupConfig = await loadConfig(startupRepoRoot)
+  setConfiguredModel(startupConfig.model)
+  const trustWarning = await getConfigTrustWarning(startupRepoRoot, startupConfig)
+  if (trustWarning) console.error(trustWarning)
+} catch (error) {
+  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
+  process.exit(1)
 }
 
 /**
@@ -107,14 +121,19 @@ program
   .argument('[prompt]', 'One-shot prompt to send to the model')
   .action(async (prompt?: string) => {
     let sandbox: ResolvedSandboxConfig | undefined
-    if (program.opts().sandbox) {
-      try {
-        sandbox = resolveSandboxConfig({ repoRoot: getRepoRoot(), cliEnabled: true })
+    try {
+      const resolved = resolveSandboxConfig({
+        repoRoot: startupRepoRoot,
+        cliEnabled: program.opts().sandbox,
+        config: startupConfig.sandbox,
+      })
+      if (resolved.enabled) {
+        sandbox = resolved
         assertSandboxAvailable()
-      } catch (error) {
-        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
-        process.exit(1)
       }
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
+      process.exit(1)
     }
     checkApiKey()
 
@@ -157,7 +176,11 @@ program
     }
 
     try {
-      await runQuery(await rewriteSkillSlashCommand(prompt, getRepoRoot()), sandbox)
+      await runQuery(
+        await rewriteSkillSlashCommand(prompt, startupRepoRoot),
+        sandbox,
+        startupConfig,
+      )
     } catch (error) {
       if (error instanceof Error) {
         console.error(`Error: ${error.message}`)

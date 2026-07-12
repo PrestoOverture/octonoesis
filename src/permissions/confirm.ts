@@ -1,6 +1,8 @@
 import crypto from 'node:crypto'
 import readline from 'node:readline'
+import { isActiveConfigTrusted } from '../config/load'
 import { appendJournal } from '../memory/journal'
+import type { QueryLoopContext } from '../query/types'
 
 // In-memory allowlist of approved exact commands for this session
 const allowlist = new Set<string>()
@@ -150,9 +152,30 @@ export function unregisterPromptHandler(): void {
 export async function requestPermission(
   toolName: string,
   input: unknown,
-  ctx?: unknown, // Accept optional context parameter
+  ctx?: QueryLoopContext,
 ): Promise<'allow_once' | 'allow_always' | 'deny'> {
   const key = getPermissionKey(toolName, input)
+
+  const matchesPattern = (pattern: string): boolean => {
+    if (!pattern.startsWith('Bash(')) return pattern === toolName
+    if (toolName !== 'Bash' || typeof input !== 'object' || input === null) return false
+    const command = 'command' in input ? input.command : undefined
+    if (typeof command !== 'string') return false
+    return command.startsWith(pattern.slice(5, -2))
+  }
+
+  const config = ctx?.config
+  if (config) {
+    if (config.permissions.denyPatterns.some(matchesPattern)) {
+      appendJournal({ kind: 'permission', decision: 'deny', key, via: 'config' })
+      return 'deny'
+    }
+    const allowPatternsTrusted = ctx ? await isActiveConfigTrusted(ctx.repoRoot, config) : true
+    if (allowPatternsTrusted && config.permissions.allowPatterns.some(matchesPattern)) {
+      appendJournal({ kind: 'permission', decision: 'allow_always', key, via: 'config' })
+      return 'allow_always'
+    }
+  }
 
   // If this exact parameters signature was already approved as 'always allow'
   if (allowlist.has(key)) {

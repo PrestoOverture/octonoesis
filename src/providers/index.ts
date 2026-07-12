@@ -7,6 +7,7 @@ export { DEFAULT_ANTHROPIC_MODEL } from './anthropic'
 export { DEFAULT_OPENAI_MODEL } from './openai'
 
 let activeProvider: LLMProvider | null = null
+let configuredModel: string | undefined
 
 /**
  * Resolves the configured provider instance based on LLM_PROVIDER.
@@ -40,6 +41,10 @@ export function setProvider(provider: LLMProvider | null): void {
   activeProvider = provider
 }
 
+export function setConfiguredModel(model?: string): void {
+  configuredModel = model
+}
+
 /**
  * Resolves the active model ID based on env configuration priorities:
  * MODEL > provider-specific model env var > default model constant.
@@ -54,10 +59,10 @@ export function getResolvedModel(): string {
   }
 
   if (providerEnv === 'anthropic') {
-    return process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL
+    return process.env.ANTHROPIC_MODEL || configuredModel || DEFAULT_ANTHROPIC_MODEL
   }
   if (providerEnv === 'openai') {
-    return process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL
+    return process.env.OPENAI_MODEL || configuredModel || DEFAULT_OPENAI_MODEL
   }
 
   return DEFAULT_ANTHROPIC_MODEL

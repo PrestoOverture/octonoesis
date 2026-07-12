@@ -1,8 +1,9 @@
 import crypto from 'node:crypto'
+import { isActiveConfigTrusted, loadConfig } from '../config/load'
+import type { OctonoesisConfig } from '../config/schema'
 import { registerBuiltinHooks } from '../hooks/builtins'
-import { loadHooksConfig } from '../hooks/config'
 import { executeAttachedHooks } from '../hooks/execute'
-import { HookRegistry, attachHookRegistry } from '../hooks/registry'
+import { HookRegistry } from '../hooks/registry'
 import { findRelevantMemories } from '../memory/auto/recall'
 import { loadMemories } from '../memory/auto/store'
 import { runSessionEndCalibration } from '../memory/calibration/hook'
@@ -14,7 +15,7 @@ import { loadAllRules, saveRule } from '../memory/rules/store'
 import type { RuleFile } from '../memory/rules/types'
 import { assembleSessionContext } from '../prompts/context'
 import { buildStaticPrompt } from '../prompts/static'
-import { getProvider, getResolvedModel } from '../providers'
+import { getProvider, getResolvedModel, setConfiguredModel } from '../providers'
 import type {
   CanonicalMessage,
   CanonicalTool,
@@ -56,8 +57,6 @@ import {
   shouldCompact,
 } from './compact'
 import type { ExitReason, QueryLoopContext, QueryResultV1, QueryState, SessionState } from './types'
-
-const MAX_TURNS = 50
 
 registerTool(readTool)
 registerTool(globTool)
@@ -212,7 +211,7 @@ export async function initQueryState(
     injectedRules: ctx.injectedRules,
     recordedRuleOutcomes: ctx.recordedRuleOutcomes,
     tasks: new Map(),
-    hooks: {},
+    hooks: ctx.hooks ?? new HookRegistry(),
     compactConsecutiveFailures: 0,
     compactCircuitOpen: false,
     emitSessionState,
@@ -276,8 +275,10 @@ async function prepareQueryState(
 async function initializeHooks(ctx: QueryLoopContext): Promise<void> {
   const hookRegistry = new HookRegistry()
   registerBuiltinHooks(hookRegistry)
-  attachHookRegistry(ctx, hookRegistry)
-  for (const hook of await loadHooksConfig(ctx.repoRoot)) {
+  ctx.hooks = hookRegistry
+  const config = ctx.config ?? (await loadConfig(ctx.repoRoot))
+  if (!(await isActiveConfigTrusted(ctx.repoRoot, config))) return
+  for (const hook of config.hooks) {
     hookRegistry.register({
       event: hook.event,
       ...(hook.toolPattern ? { toolPattern: hook.toolPattern } : {}),
@@ -291,8 +292,12 @@ export async function* maybeCompact(
   state: ReadyEngineState,
   ctx: QueryLoopContext,
 ): AsyncGenerator<StreamEvent, 'proceed' | 'restart_loop', undefined> {
+  const cooldownTurns = ctx.config?.compaction.cooldownTurns ?? 0
+  const coolingDown =
+    state.lastCompactTurn !== undefined && state.turn - state.lastCompactTurn <= cooldownTurns
   if (
     state.compactCircuitOpen ||
+    coolingDown ||
     !shouldCompact(state.messages, state.model, state.contextSnapshot) ||
     selectKeepTail(state.messages) <= 0
   ) {
@@ -309,6 +314,7 @@ export async function* maybeCompact(
         addUsage(state.usage, usage)
         if (ctx.sessionState) addUsage(ctx.sessionState.usage, usage)
       },
+      minShrinkPercent: ctx.config?.compaction.minShrinkPercent ?? 0,
     })
     const replacement = [
       compactResult.pinnedHead,
@@ -320,6 +326,7 @@ export async function* maybeCompact(
     state.contextSnapshot = undefined
     state.compactConsecutiveFailures = 0
     state.compactBoundary = 2
+    state.lastCompactTurn = state.turn
     const durationMs = Math.max(0, Math.round(performance.now() - compactStart))
     dbg('compact', 'Context compacted', {
       preTokens: compactResult.preCompactTokens,
@@ -393,7 +400,7 @@ export async function* streamFromProvider(
   ctx: QueryLoopContext,
 ): AsyncGenerator<StreamEvent, StreamPhaseResult, undefined> {
   state.turn++
-  dbg('query', `Starting turn ${state.turn}/${MAX_TURNS}`)
+  dbg('query', `Starting turn ${state.turn}/${ctx.config?.maxTurns ?? 50}`)
   appendJournal({ kind: 'turn', turn: state.turn })
 
   const assistantBlocks: ContentBlock[] = []
@@ -628,11 +635,13 @@ export async function* query(
   ctx: QueryLoopContext,
   signal?: AbortSignal,
 ): AsyncGenerator<StreamEvent, QueryResult, undefined> {
+  ctx.config ??= await loadConfig(ctx.repoRoot)
+  setConfiguredModel(ctx.config.model)
+  await initializeHooks(ctx)
   const state = await initQueryState(input, ctx, signal)
   let exitReason: ExitReason = 'fatal_error'
 
   try {
-    await initializeHooks(ctx)
     if (ctx.abortSignal?.aborted) {
       exitReason = 'user_cancel'
       recordCancellation(state)
@@ -641,7 +650,7 @@ export async function* query(
 
     const readyState = await prepareQueryState(state, ctx)
 
-    while (readyState.turn < MAX_TURNS) {
+    while (readyState.turn < ctx.config.maxTurns) {
       if (ctx.abortSignal?.aborted) {
         exitReason = 'user_cancel'
         recordCancellation(readyState)
@@ -752,14 +761,20 @@ export async function* query(
 }
 
 /** Runs one-shot mode while preserving the established stdout format. */
-export async function runQuery(userPrompt: string, sandbox?: ResolvedSandboxConfig): Promise<void> {
+export async function runQuery(
+  userPrompt: string,
+  sandbox?: ResolvedSandboxConfig,
+  config?: OctonoesisConfig,
+): Promise<void> {
   const sessionId = crypto.randomUUID()
+  if (config) setConfiguredModel(config.model)
   const model = getResolvedModel()
   const ctx: ToolContext = {
     repoRoot: getRepoRoot(),
     sessionId,
     sessionState: createSessionState(sessionId, model),
     sandbox,
+    config,
   }
   const generator = query(userPrompt, ctx)
 

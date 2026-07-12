@@ -52,7 +52,8 @@ export async function buildSessionContextSources(
   recalledMemories: MemoryFile[],
   skills: readonly SkillDefinition[] = [],
 ): Promise<ContextSource[]> {
-  const [claudeMd, memoryIndex, dynamicSuffix] = await Promise.all([
+  const [octonoesisMd, claudeMd, memoryIndex, dynamicSuffix] = await Promise.all([
+    readOptionalFile(path.join(ctx.repoRoot, 'OCTONOESIS.md')),
     readOptionalFile(path.join(ctx.repoRoot, 'CLAUDE.md')),
     loadMemoryIndex(),
     buildDynamicSuffix(ctx, model, usage),
@@ -67,12 +68,14 @@ export async function buildSessionContextSources(
     },
   ]
 
-  if (claudeMd !== undefined) {
+  const projectInstructions = octonoesisMd ?? claudeMd
+  if (ctx.config?.projectInstructions !== 'off' && projectInstructions !== undefined) {
+    const sourceName = octonoesisMd !== undefined ? 'OCTONOESIS.md' : 'CLAUDE.md'
     sources.push({
       id: 'claude_md',
       channel: 'systemStable',
       priority: 'high',
-      content: `## Project Instructions (CLAUDE.md)\n${claudeMd}`,
+      content: `## Project Instructions (${sourceName})\n${projectInstructions}`,
     })
   }
   if (memoryIndex.length > 0) {

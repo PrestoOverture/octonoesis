@@ -21,13 +21,3 @@ export class HookRegistry {
     )
   }
 }
-
-const registries = new WeakMap<object, HookRegistry>()
-
-export function attachHookRegistry(context: object, registry: HookRegistry): void {
-  registries.set(context, registry)
-}
-
-export function getAttachedHookRegistry(context: object): HookRegistry | undefined {
-  return registries.get(context)
-}

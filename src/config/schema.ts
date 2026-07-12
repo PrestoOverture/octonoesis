@@ -5,6 +5,11 @@ const positiveIntegerSchema = z
   .int({ error: 'expected positive integer' })
   .positive({ error: 'expected positive integer' })
 
+const nonNegativeIntegerSchema = z
+  .number({ error: 'expected non-negative integer' })
+  .int({ error: 'expected non-negative integer' })
+  .nonnegative({ error: 'expected non-negative integer' })
+
 const nonEmptyStringSchema = z.string().min(1, { error: 'expected non-empty string' })
 
 const filesystemSchema = z
@@ -52,10 +57,28 @@ export const hookSchema = z
   })
   .strict()
 
+const permissionPatternSchema = z
+  .string()
+  .refine(
+    (pattern) =>
+      /^[A-Za-z][A-Za-z0-9_]*$/.test(pattern) ||
+      (pattern.startsWith('Bash(') &&
+        pattern.endsWith('*)') &&
+        !/[()*]/.test(pattern.slice(5, -2))),
+    { error: 'expected a bare tool name or Bash(prefix*)' },
+  )
+
 const permissionsSchema = z
   .object({
-    allowPatterns: z.array(z.string()).default([]),
-    denyPatterns: z.array(z.string()).default([]),
+    allowPatterns: z.array(permissionPatternSchema).default([]),
+    denyPatterns: z.array(permissionPatternSchema).default([]),
+  })
+  .strict()
+
+const compactionSchema = z
+  .object({
+    cooldownTurns: nonNegativeIntegerSchema.default(0),
+    minShrinkPercent: z.number().min(0).max(100).default(0),
   })
   .strict()
 
@@ -67,6 +90,9 @@ export const octonoesisConfigSchema = z
     mcpServers: z.record(z.string(), mcpServerSchema).default({}),
     hooks: z.array(hookSchema).default([]),
     permissions: permissionsSchema.default({ allowPatterns: [], denyPatterns: [] }),
+    projectInstructions: z.enum(['on', 'off']).default('on'),
+    compaction: compactionSchema.default({ cooldownTurns: 0, minShrinkPercent: 0 }),
+    trustTrackedConfig: z.boolean().default(false),
   })
   .strict()
 
