@@ -53,6 +53,7 @@ describe('compact notice in the TUI', () => {
     forkMock: process.env.OCTONOESIS_FORK_MOCK,
     forkDepth: process.env.OCTONOESIS_FORK_DEPTH,
     disable: process.env.OCTONOESIS_DISABLE_COMPACT,
+    disableMemory: process.env.OCTONOESIS_DISABLE_MEMORY,
   }
   let originalMain: string
   let memoryDir: string
@@ -64,6 +65,7 @@ describe('compact notice in the TUI', () => {
     process.env.OCTONOESIS_MEMORY_DIR = memoryDir
     process.env.OCTONOESIS_COMPACT_THRESHOLD = '1000'
     process.env.OCTONOESIS_FORK_MOCK = JSON.stringify({ text: 'TUI compact summary' })
+    process.env.OCTONOESIS_DISABLE_MEMORY = '1'
     Reflect.deleteProperty(process.env, 'OCTONOESIS_FORK_DEPTH')
     Reflect.deleteProperty(process.env, 'OCTONOESIS_DISABLE_COMPACT')
     setProvider(new CompactingUiProvider())
@@ -79,6 +81,7 @@ describe('compact notice in the TUI', () => {
       OCTONOESIS_FORK_MOCK: originalEnv.forkMock,
       OCTONOESIS_FORK_DEPTH: originalEnv.forkDepth,
       OCTONOESIS_DISABLE_COMPACT: originalEnv.disable,
+      OCTONOESIS_DISABLE_MEMORY: originalEnv.disableMemory,
     })) {
       if (value === undefined) Reflect.deleteProperty(process.env, key)
       else process.env[key] = value

@@ -1,3 +1,4 @@
+import { executeAttachedHooks } from '../hooks/execute'
 import type { ToolContext } from '../tools/Tool'
 
 export interface PreToolUseDecision {
@@ -20,5 +21,14 @@ export async function preToolUseHook(
   input: unknown,
   ctx: ToolContext,
 ): Promise<PreToolUseDecision> {
+  const result = await executeAttachedHooks(ctx, {
+    event: 'pre_tool_use',
+    tool: toolName,
+    input,
+    sessionId: ctx.sessionId,
+  })
+  if (result.denied) {
+    return { action: 'deny', reason: result.reason ?? 'Blocked by pre_tool_use hook' }
+  }
   return { action: 'allow' }
 }

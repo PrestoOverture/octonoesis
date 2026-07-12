@@ -37,7 +37,7 @@ const mcpServerSchema = z
   })
   .strict()
 
-const hookSchema = z
+export const hookSchema = z
   .object({
     event: z.enum([
       'pre_tool_use',

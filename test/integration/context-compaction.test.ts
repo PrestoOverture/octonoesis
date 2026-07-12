@@ -124,6 +124,7 @@ describe('context auto-compression integration', () => {
     disable: process.env.OCTONOESIS_DISABLE_COMPACT,
     forkMock: process.env.OCTONOESIS_FORK_MOCK,
     forkDepth: process.env.OCTONOESIS_FORK_DEPTH,
+    disableMemory: process.env.OCTONOESIS_DISABLE_MEMORY,
   }
   let originalMain: string
   let originalSpawn: (...args: unknown[]) => unknown
@@ -137,6 +138,7 @@ describe('context auto-compression integration', () => {
     process.env.OCTONOESIS_MEMORY_DIR = memoryDir
     process.env.OCTONOESIS_COMPACT_THRESHOLD = '4000'
     process.env.OCTONOESIS_FORK_MOCK = JSON.stringify({ text: compactSummary })
+    process.env.OCTONOESIS_DISABLE_MEMORY = '1'
     Reflect.deleteProperty(process.env, 'OCTONOESIS_DISABLE_COMPACT')
     Reflect.deleteProperty(process.env, 'OCTONOESIS_FORK_DEPTH')
   })
@@ -152,6 +154,7 @@ describe('context auto-compression integration', () => {
       OCTONOESIS_DISABLE_COMPACT: originalEnv.disable,
       OCTONOESIS_FORK_MOCK: originalEnv.forkMock,
       OCTONOESIS_FORK_DEPTH: originalEnv.forkDepth,
+      OCTONOESIS_DISABLE_MEMORY: originalEnv.disableMemory,
     })) {
       if (value === undefined) Reflect.deleteProperty(process.env, key)
       else process.env[key] = value

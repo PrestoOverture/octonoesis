@@ -1,5 +1,8 @@
 import crypto from 'node:crypto'
-import { extractMemories } from '../memory/auto/extract'
+import { registerBuiltinHooks } from '../hooks/builtins'
+import { loadHooksConfig } from '../hooks/config'
+import { executeAttachedHooks } from '../hooks/execute'
+import { HookRegistry, attachHookRegistry } from '../hooks/registry'
 import { findRelevantMemories } from '../memory/auto/recall'
 import { loadMemories } from '../memory/auto/store'
 import { runSessionEndCalibration } from '../memory/calibration/hook'
@@ -22,12 +25,7 @@ import type {
 } from '../providers'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { loadSkills } from '../skills/loader'
-import {
-  appendSessionStats,
-  createSessionState,
-  flushSessionStats,
-  formatSessionSummary,
-} from '../state/session'
+import { createSessionState, flushSessionStats, formatSessionSummary } from '../state/session'
 import { bashTool } from '../tools/Bash'
 import { editTool } from '../tools/Edit'
 import { globTool } from '../tools/Glob'
@@ -271,7 +269,21 @@ async function prepareQueryState(
   state.tools = tools
   state.system = compiledContext.systemStable
   state.dynamicSystem = compiledContext.preamble
+  await executeAttachedHooks(ctx, { event: 'session_start', sessionId: ctx.sessionId }, state)
   return state as ReadyEngineState
+}
+
+async function initializeHooks(ctx: QueryLoopContext): Promise<void> {
+  const hookRegistry = new HookRegistry()
+  registerBuiltinHooks(hookRegistry)
+  attachHookRegistry(ctx, hookRegistry)
+  for (const hook of await loadHooksConfig(ctx.repoRoot)) {
+    hookRegistry.register({
+      event: hook.event,
+      ...(hook.toolPattern ? { toolPattern: hook.toolPattern } : {}),
+      handler: { type: 'shell', command: hook.command },
+    })
+  }
 }
 
 /** Phase 1: compact old context when needed and yield the inline compact event. */
@@ -315,6 +327,19 @@ export async function* maybeCompact(
       durationMs,
     })
     if (ctx.sessionState) ctx.sessionState.compactCount++
+    await executeAttachedHooks(
+      ctx,
+      {
+        event: 'compact',
+        outcome: {
+          preTokens: compactResult.preCompactTokens,
+          postTokens: compactResult.postCompactTokens,
+          durationMs,
+        },
+        sessionId: ctx.sessionId,
+      },
+      state,
+    )
     yield {
       type: 'compact',
       preTokens: compactResult.preCompactTokens,
@@ -446,9 +471,19 @@ export async function* streamFromProvider(
   return { kind: 'complete', assistantBlocks }
 }
 
-/** Phase 32 seam: post-tool-use hooks are intentionally a no-op until hooks land. */
-export async function executePostToolUseHooks(state: QueryState): Promise<void> {
-  void state
+/** Executes post-tool-use hooks after the canonical result has been appended. */
+export async function executePostToolUseHooks(
+  state: QueryState,
+  ctx: QueryLoopContext,
+  tool: string,
+  input: unknown,
+  outcome: unknown,
+): Promise<void> {
+  await executeAttachedHooks(
+    ctx,
+    { event: 'post_tool_use', tool, input, outcome, sessionId: ctx.sessionId },
+    state,
+  )
 }
 
 /** Phase 4: execute every requested tool serially and append canonical tool results. */
@@ -542,13 +577,22 @@ export async function* executeTools(
     state.messages.push({
       role: 'tool',
       tool_use_id: toolUse.id,
-      content: toolResultContent,
+      content: isError
+        ? [
+            {
+              type: 'tool_result',
+              tool_use_id: toolUse.id,
+              content: toolResultContent,
+              is_error: true,
+            },
+            { type: 'text', text: toolResultContent },
+          ]
+        : toolResultContent,
     })
 
-    void isError
+    await executePostToolUseHooks(state, ctx, toolUse.name, toolUse.input, toolResult)
   }
 
-  await executePostToolUseHooks(state)
   return { restartLoop: ctx.abortSignal?.aborted === true }
 }
 
@@ -557,9 +601,9 @@ export function shouldStop(assistantBlocks: ContentBlock[]): boolean {
   return !assistantBlocks.some((block) => block.type === 'tool_use')
 }
 
-/** Phase 32 seam: stop hooks are intentionally a no-op until hooks land. */
-export async function executeStopHooks(state: QueryState): Promise<void> {
-  void state
+/** Executes clean-stop hooks before the completed QueryResult is returned. */
+export async function executeStopHooks(state: QueryState, ctx: QueryLoopContext): Promise<void> {
+  await executeAttachedHooks(ctx, { event: 'stop', sessionId: ctx.sessionId }, state)
 }
 
 /** Phase 6: return a terminal result when cumulative billed usage exceeds the configured cap. */
@@ -588,6 +632,7 @@ export async function* query(
   let exitReason: ExitReason = 'fatal_error'
 
   try {
+    await initializeHooks(ctx)
     if (ctx.abortSignal?.aborted) {
       exitReason = 'user_cancel'
       recordCancellation(state)
@@ -629,8 +674,7 @@ export async function* query(
 
       const stop = shouldStop(streamResult.assistantBlocks)
       if (stop) {
-        await executeStopHooks(readyState)
-        await extractMemories(readyState, ctx)
+        await executeStopHooks(readyState, ctx)
         const assistantText = streamResult.assistantBlocks
           .filter((block) => block.type === 'text')
           .map((block) => block.text)
@@ -658,14 +702,11 @@ export async function* query(
       turns: readyState.turn,
     }
   } finally {
-    if (ctx.sessionState) {
-      const pricing = estimateCost(ctx.sessionState.usage, ctx.sessionState.model)
-      ctx.sessionState.costUsd = pricing.costUsd
-      appendSessionStats(ctx.sessionState, {
-        priced: pricing.priced,
-        durationMs: Math.max(0, Date.now() - ctx.sessionState.startTime),
-      })
-    }
+    await executeAttachedHooks(
+      ctx,
+      { event: 'session_end', outcome: { exitReason }, sessionId: ctx.sessionId },
+      state,
+    )
     appendJournal({
       kind: 'session',
       exit_reason: exitReason,

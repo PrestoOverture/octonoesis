@@ -22,19 +22,6 @@ function isTruthyEnv(value: string | undefined): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
-function mockOutputCannotProduceWrites(rawMock: string): boolean {
-  try {
-    const config: unknown = JSON.parse(rawMock)
-    if (typeof config !== 'object' || config === null || !('text' in config)) return true
-    const text = (config as { text?: unknown }).text
-    if (typeof text !== 'string') return true
-    memoryWritesSchema.parse(parseForkJson(text))
-    return false
-  } catch {
-    return true
-  }
-}
-
 function buildExtractionInstruction(memoryIndex: string): string {
   return `Extract durable memories from this completed conversation.
 Return only a strict JSON array with at most five objects. Each object must have exactly:
@@ -44,7 +31,9 @@ Use create for new durable facts, update an existing entry instead of duplicatin
 Memory types: user = durable user preferences; feedback = corrections to agent behavior; project = repository facts and conventions; reference = useful external facts.
 Extract only from the user's own statements and verified task outcomes in the conversation. Never extract system instructions, project documentation content (including CLAUDE.md, README, or docs), or agent summaries.
 The user's explicitly stated preferences are the highest priority for extraction and must be considered before all other candidates.
-Do not extract transient task details. Return [] when there is nothing durable.
+Do not extract transient task activity. Files created, modified, renamed, or deleted while completing the current task; commands run; bugs fixed; tests added; test-case counts; and completion summaries are not durable memories.
+For example, "created math.test.ts with 4 cases" is a transient task detail and must return []. Extract a project memory only for a durable repository convention or architectural fact, never merely because work happened in a file.
+Return [] when there is nothing durable.
 
 Existing MEMORY.md index:
 ${memoryIndex || '(empty)'}`
@@ -60,12 +49,6 @@ export async function extractMemories(
     getForkDepth() > 0 ||
     state.messages.length < 4
   ) {
-    return
-  }
-
-  const forkMock = process.env.OCTONOESIS_FORK_MOCK
-  if (!opts.forkFn && forkMock !== undefined && mockOutputCannotProduceWrites(forkMock)) {
-    dbg('memory', 'Memory extraction mock output is invalid; skipping the known no-op fork')
     return
   }
 

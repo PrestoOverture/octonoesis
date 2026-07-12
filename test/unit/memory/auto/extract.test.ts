@@ -135,6 +135,9 @@ describe('auto-memory extraction', () => {
     expect(/explicitly stated preferences.*highest priority/i.test(extractionInstruction)).toBe(
       true,
     )
+    expect(/files? created.*modified.*deleted/i.test(extractionInstruction)).toBe(true)
+    expect(extractionInstruction).toContain('created math.test.ts with 4 cases')
+    expect(/must.*return \[\]/i.test(extractionInstruction)).toBe(true)
   })
 
   it('tolerates a fenced write array and caps each extraction at five writes', async () => {
@@ -154,6 +157,36 @@ describe('auto-memory extraction', () => {
       'memory-5',
     ])
     expect(await loadMemoryIndex()).not.toContain('memory-6')
+  })
+
+  it('rejects the observed created-test-file transient detail class', async () => {
+    await extractMemories(
+      { system: 'system', messages: conversation() },
+      { repoRoot: tempDir },
+      {
+        forkFn: async (options) => {
+          const instruction = JSON.stringify(options.messages.at(-1))
+          const rejectsObservedClass =
+            instruction.includes('created math.test.ts with 4 cases') &&
+            /must.*return \[\]/i.test(instruction)
+          return result(
+            rejectsObservedClass
+              ? '[]'
+              : JSON.stringify([
+                  write({
+                    name: 'math-add-test-created',
+                    type: 'project',
+                    description: 'Created math.test.ts',
+                    content: 'Created math.test.ts with 4 cases.',
+                  }),
+                ]),
+          )
+        },
+      },
+    )
+
+    expect(await loadMemories()).toEqual([])
+    expect(await loadMemoryIndex()).toBe('')
   })
 
   it('applies nothing for malformed, invalid, or failed fork output', async () => {
