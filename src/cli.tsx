@@ -8,9 +8,11 @@ import { getRulesDir } from './memory/rules/store.ts'
 import { getResolvedModel } from './providers/index.ts'
 import { runQuery } from './query'
 import type { SessionState } from './query/types.ts'
+import { assertSandboxAvailable, resolveSandboxConfig } from './sandbox/manager.ts'
+import type { ResolvedSandboxConfig } from './sandbox/types.ts'
 import { flushSessionStats, formatSessionSummary } from './state/session.ts'
 import { App } from './ui/App'
-import { getMemoryDir } from './utils/path.ts'
+import { getMemoryDir, getRepoRoot } from './utils/path.ts'
 
 if (process.argv.includes('--fork-child')) {
   const { forkChildMain } = await import('./providers/forkChild.ts')
@@ -100,8 +102,19 @@ program
 program
   .option('--stats', 'Display calibration statistics')
   .option('--debug', 'Enable debug logging')
+  .option('--sandbox', 'Run Bash tool commands inside macOS sandbox-exec')
   .argument('[prompt]', 'One-shot prompt to send to the model')
   .action(async (prompt?: string) => {
+    let sandbox: ResolvedSandboxConfig | undefined
+    if (program.opts().sandbox) {
+      try {
+        sandbox = resolveSandboxConfig({ repoRoot: getRepoRoot(), cliEnabled: true })
+        assertSandboxAvailable()
+      } catch (error) {
+        console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
+        process.exit(1)
+      }
+    }
     checkApiKey()
 
     if (program.opts().stats) {
@@ -127,6 +140,7 @@ program
       let latestSession: { sessionState: SessionState; priced: boolean } | undefined
       const { waitUntilExit } = render(
         <App
+          sandbox={sandbox}
           onSessionState={(sessionState, priced) => {
             latestSession = { sessionState, priced }
           }}
@@ -142,7 +156,7 @@ program
     }
 
     try {
-      await runQuery(prompt)
+      await runQuery(prompt, sandbox)
     } catch (error) {
       if (error instanceof Error) {
         console.error(`Error: ${error.message}`)

@@ -6,6 +6,7 @@ import { registerPromptHandler, unregisterPromptHandler } from '../permissions/c
 import { getResolvedModel } from '../providers'
 import { type CanonicalMessage, type ToolContext, query } from '../query'
 import type { SessionState } from '../query/types'
+import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { createSessionState } from '../state/session'
 import { estimateCost } from '../utils/cost'
 import { getRepoRoot } from '../utils/path'
@@ -21,6 +22,7 @@ export interface AppProps {
   streamingText?: string
   streamingToolUses?: { name: string; status?: 'running' | 'done' | 'error'; input?: unknown }[]
   placeholder?: string
+  sandbox?: ResolvedSandboxConfig
   onSessionState?: (sessionState: SessionState, priced: boolean) => void
 }
 
@@ -172,6 +174,7 @@ export function App(props: AppProps) {
     streamingText: initialStreamingText = '',
     streamingToolUses: initialStreamingToolUses = [],
     placeholder = 'Type a message...',
+    sandbox,
     onSessionState,
   } = props
   const [ctx] = useState<ToolContext>(() => {
@@ -182,6 +185,7 @@ export function App(props: AppProps) {
       messages: initialMessages,
       sessionId,
       sessionState: createSessionState(sessionId, model),
+      sandbox,
     }
   })
 

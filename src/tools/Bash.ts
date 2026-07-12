@@ -1,6 +1,9 @@
 // biome-ignore lint/suspicious/noExplicitAny: global environment type bypass
 declare const Bun: any
 import { z } from 'zod'
+import { resolveSandboxConfig } from '../sandbox/manager'
+import type { ResolvedSandboxConfig } from '../sandbox/types'
+import { wrapWithSandbox } from '../sandbox/wrapper'
 import type { Tool, ToolContext, ToolResult } from './Tool'
 export const activeSubprocesses = new Set<unknown>()
 
@@ -27,6 +30,22 @@ export function isBlockedCommand(command: string): string | null {
     if (pattern.test(normalized)) return label
   }
   return null
+}
+
+function resolveToolSandbox(ctx: ToolContext): ResolvedSandboxConfig | undefined {
+  if (!ctx.sandbox?.enabled) return undefined
+
+  if (
+    'repoRoot' in ctx.sandbox &&
+    'protectedWrite' in ctx.sandbox &&
+    ctx.sandbox.filesystem?.allowWrite &&
+    ctx.sandbox.filesystem.denyRead &&
+    ctx.sandbox.network?.allowedDomains
+  ) {
+    return ctx.sandbox as ResolvedSandboxConfig
+  }
+
+  return resolveSandboxConfig({ repoRoot: ctx.repoRoot, config: ctx.sandbox })
 }
 
 class BashTool implements Tool<BashInput, string> {
@@ -85,6 +104,8 @@ class BashTool implements Tool<BashInput, string> {
     }
 
     try {
+      const sandbox = resolveToolSandbox(ctx)
+
       // 2. Register abort listener if signal is present
       if (ctx.abortSignal) {
         if (ctx.abortSignal.aborted) {
@@ -106,7 +127,7 @@ class BashTool implements Tool<BashInput, string> {
 
       // 4. Spawn process using Bun.spawn
       proc = Bun.spawn({
-        cmd: ['bash', '-c', input.command],
+        cmd: sandbox ? wrapWithSandbox(input.command, sandbox) : ['bash', '-c', input.command],
         cwd: ctx.repoRoot,
         stdout: 'pipe',
         stderr: 'pipe',
@@ -135,10 +156,21 @@ class BashTool implements Tool<BashInput, string> {
       }
 
       // 7. Format structured output back to the model as a JSON string
+      let returnedStderr = stderrText
+      if (
+        sandbox &&
+        exitCode !== 0 &&
+        /operation not permitted|deny/i.test(stderrText) &&
+        !stderrText.includes('[octonoesis-sandbox]')
+      ) {
+        const separator = stderrText.length > 0 && !stderrText.endsWith('\n') ? '\n' : ''
+        returnedStderr = `${stderrText}${separator}[octonoesis-sandbox] This failure may be a sandbox denial rather than a code bug.\n`
+      }
+
       const resultObj = {
         code: exitCode,
         stdout: stdoutText,
-        stderr: stderrText,
+        stderr: returnedStderr,
       }
 
       return { ok: true, value: JSON.stringify(resultObj) }

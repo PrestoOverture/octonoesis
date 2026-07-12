@@ -233,7 +233,7 @@ export async function runTool(
         let toolResult: ToolResult
         let verifyResult: VerifyResult & { isVerificationRun: boolean }
 
-        if (isVerificationRun) {
+        if (isVerificationRun && !ctx.sandbox?.enabled) {
           try {
             const vr = await verify(command, ctx.repoRoot, ctx.abortSignal, true)
             verifyResult = {
@@ -289,6 +289,16 @@ export async function runTool(
             stdout: stdoutText,
             stderr: stderrText,
             isVerificationRun,
+          }
+          if (isVerificationRun) {
+            appendJournal({
+              kind: 'verify',
+              verdict: verifyResult.verdict,
+              fingerprints: verifyResult.fingerprints,
+              command: verifyResult.command,
+              exit_code: verifyResult.exit_code,
+              stale: verifyResult.stale,
+            })
           }
         }
 
@@ -351,6 +361,7 @@ export async function runTool(
     duration_ms: durationMs,
     path: targetPath,
     cmd: targetCmd,
+    sandboxed: name === 'Bash' && ctx.sandbox?.enabled === true ? true : undefined,
     exit_code: exitCode,
     fingerprints,
   })

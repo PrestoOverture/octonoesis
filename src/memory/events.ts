@@ -16,6 +16,7 @@ export const toolEventSchema = z.object({
   duration_ms: z.number(),
   path: z.string().optional(),
   cmd: z.string().optional(),
+  sandboxed: z.boolean().optional(),
   exit_code: z.number().optional(),
   fingerprints: z
     .array(

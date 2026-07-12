@@ -20,6 +20,7 @@ import type {
   StreamEvent as ProviderStreamEvent,
   Usage,
 } from '../providers'
+import type { ResolvedSandboxConfig } from '../sandbox/types'
 import {
   appendSessionStats,
   createSessionState,
@@ -693,13 +694,14 @@ export async function* query(
 }
 
 /** Runs one-shot mode while preserving the established stdout format. */
-export async function runQuery(userPrompt: string): Promise<void> {
+export async function runQuery(userPrompt: string, sandbox?: ResolvedSandboxConfig): Promise<void> {
   const sessionId = crypto.randomUUID()
   const model = getResolvedModel()
   const ctx: ToolContext = {
     repoRoot: getRepoRoot(),
     sessionId,
     sessionState: createSessionState(sessionId, model),
+    sandbox,
   }
   const generator = query(userPrompt, ctx)
 
