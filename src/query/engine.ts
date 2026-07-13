@@ -28,7 +28,7 @@ import type {
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { loadSkills } from '../skills/loader'
 import { createSessionState, flushSessionStats, formatSessionSummary } from '../state/session'
-import { cleanupLocalAgents } from '../tasks/localAgent'
+import { cleanupTasks, drainTaskNotifications } from '../tasks/framework'
 import { AgentTool } from '../tools/AgentTool'
 import { bashTool } from '../tools/Bash'
 import { editTool } from '../tools/Edit'
@@ -234,6 +234,7 @@ async function prepareQueryState(
   state: EngineState,
   ctx: QueryLoopContext,
 ): Promise<ReadyEngineState> {
+  await injectTaskNotifications(state, ctx)
   state.messages.push({
     role: 'user',
     content: [{ type: 'text', text: state.input }],
@@ -295,6 +296,15 @@ async function prepareQueryState(
   state.dynamicSystem = compiledContext.preamble
   await executeAttachedHooks(ctx, { event: 'session_start', sessionId: ctx.sessionId }, state)
   return state as ReadyEngineState
+}
+
+async function injectTaskNotifications(
+  state: Pick<QueryState, 'messages'>,
+  ctx: QueryLoopContext,
+): Promise<void> {
+  for (const notification of await drainTaskNotifications(ctx)) {
+    state.messages.push({ role: 'user', content: notification })
+  }
 }
 
 async function initializeHooks(ctx: QueryLoopContext): Promise<void> {
@@ -682,6 +692,7 @@ export async function* query(
         return cancellationResult(readyState)
       }
 
+      await injectTaskNotifications(readyState, ctx)
       const compactCountBefore = ctx.sessionState?.compactCount ?? 0
       const compactAction = yield* maybeCompact(readyState, ctx)
       if (
@@ -736,11 +747,6 @@ export async function* query(
       turns: readyState.turn,
     }
   } finally {
-    try {
-      await cleanupLocalAgents(ctx)
-    } catch (error) {
-      dbg('query', 'Failed to clean up background agents', error)
-    }
     const agentTools = sessionAgentTools.get(ctx)
     sessionAgentTools.delete(ctx)
     if (agentTools) {
@@ -815,21 +821,25 @@ export async function runQuery(
   }
   const generator = query(userPrompt, ctx)
 
-  for await (const event of generator) {
-    if (event.type === 'text_delta') {
-      process.stdout.write(event.text)
-    } else if (event.type === 'tool_use') {
-      let inputStr = ''
-      if (event.input && typeof event.input === 'object') {
-        const values = Object.values(event.input)
-        if (values.length > 0) inputStr = ` ${values[0]}`
+  try {
+    for await (const event of generator) {
+      if (event.type === 'text_delta') {
+        process.stdout.write(event.text)
+      } else if (event.type === 'tool_use') {
+        let inputStr = ''
+        if (event.input && typeof event.input === 'object') {
+          const values = Object.values(event.input)
+          if (values.length > 0) inputStr = ` ${values[0]}`
+        }
+        process.stdout.write(`\n[Tool Call] ${event.name}${inputStr}...\n`)
+      } else if (event.type === 'compact') {
+        process.stdout.write(
+          `\n✻ Context compacted: ${event.preTokens.toLocaleString('en-US')} → ${event.postTokens.toLocaleString('en-US')} tokens\n`,
+        )
       }
-      process.stdout.write(`\n[Tool Call] ${event.name}${inputStr}...\n`)
-    } else if (event.type === 'compact') {
-      process.stdout.write(
-        `\n✻ Context compacted: ${event.preTokens.toLocaleString('en-US')} → ${event.postTokens.toLocaleString('en-US')} tokens\n`,
-      )
     }
+  } finally {
+    await cleanupTasks(ctx)
   }
   await flushSessionStats()
   const priced = ctx.sessionState

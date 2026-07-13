@@ -14,6 +14,7 @@ import { getRepoRoot } from '../utils/path'
 import { CompactNotice } from './CompactNotice'
 import { ConfirmDialog } from './ConfirmDialog'
 import { StatusBar } from './StatusBar'
+import { TaskChip } from './TaskChip'
 import { TodoPanel } from './TodoPanel'
 import { ToolCard } from './ToolCard'
 export type { CanonicalMessage } from '../query'
@@ -24,6 +25,7 @@ export interface AppProps {
   streamingToolUses?: { name: string; status?: 'running' | 'done' | 'error'; input?: unknown }[]
   placeholder?: string
   sandbox?: ResolvedSandboxConfig
+  ctx?: ToolContext
   onSessionState?: (sessionState: SessionState, priced: boolean) => void
 }
 
@@ -176,9 +178,14 @@ export function App(props: AppProps) {
     streamingToolUses: initialStreamingToolUses = [],
     placeholder = 'Type a message...',
     sandbox,
+    ctx: providedCtx,
     onSessionState,
   } = props
   const [ctx] = useState<ToolContext>(() => {
+    if (providedCtx) {
+      providedCtx.messages ??= initialMessages
+      return providedCtx
+    }
     const sessionId = crypto.randomUUID()
     const model = getResolvedModel()
     return {
@@ -406,6 +413,7 @@ export function App(props: AppProps) {
         priced={sessionView?.priced ?? initialPricing.priced}
         contextUtilization={sessionView?.sessionState.contextUtilization ?? 0}
       />
+      <TaskChip ctx={ctx} />
     </Box>
   )
 }

@@ -27,8 +27,9 @@ import type {
   LLMProvider,
   StreamEvent,
 } from '../../src/providers/types'
-import { type QueryResult, query } from '../../src/query/engine'
+import { type QueryResult, query, runQuery } from '../../src/query/engine'
 import type { QueryLoopContext } from '../../src/query/types'
+import { cleanupTasks, drainTaskNotifications } from '../../src/tasks/framework'
 import {
   cleanupLocalAgents,
   clearLocalAgentsForTests,
@@ -353,6 +354,12 @@ describe('multi-agent real child integration', () => {
     expect(record.task.status).toBe('completed')
     expect(record.task.usage).toEqual({ input_tokens: 5, output_tokens: 3 })
     expect(usageCalls).toBe(1)
+    expect(await fs.readFile(record.task.logPath ?? '', 'utf8')).toContain('committed-head-canary')
+    const notifications = await drainTaskNotifications(ctx)
+    expect(notifications.length).toBe(1)
+    expect(notifications[0]).toContain(`<task_id>${agentId}</task_id>`)
+    expect(notifications[0]).toContain('<task_type>agent</task_type>')
+    expect(notifications[0]).toContain('<status>completed</status>')
     await flushJournal()
     const journal = await fs.readFile(path.join(memoryDir, 'journal.jsonl'), 'utf8')
     const taskStatuses = journal
@@ -374,15 +381,17 @@ describe('multi-agent real child integration', () => {
     const killedId = typeof killedValue === 'object' ? killedValue.agentId : ''
     const killed = requiredAgent(killedId)
     expect(isAlive(killed.handle.pid)).toBe(true)
-    await cleanupLocalAgents(ctx)
+    const killedLogPath = killed.task.logPath ?? ''
+    await cleanupTasks(ctx)
     expect(killed.task.status).toBe('killed')
     expect(isAlive(killed.handle.pid)).toBe(false)
     expect(await git(root, 'worktree', 'list', '--porcelain')).not.toContain(killed.worktree.path)
+    await expect(fs.access(killedLogPath)).rejects.toThrow()
     const killedMessage = await new SendMessageTool().call({
       agentId: killedId,
       message: 'after cleanup',
     })
-    expect(killedMessage.ok ? '' : killedMessage.error).toContain('killed')
+    expect(killedMessage.ok ? '' : killedMessage.error).toContain('Unknown background agent')
     await flushJournal()
     expect(await fs.readFile(path.join(memoryDir, 'journal.jsonl'), 'utf8')).toContain(
       `"task_id":"${killedId}","type":"agent","status":"killed"`,
@@ -425,5 +434,58 @@ describe('multi-agent real child integration', () => {
     expect(late.ok).toBe(false)
     expect(late.ok ? '' : late.error).toContain('completed')
     await cleanupLocalAgents(ctx)
+  })
+
+  it('one-shot runQuery kills a running agent and evicts its task log', async () => {
+    const root = await makeRoot(true)
+    await fs.writeFile(path.join(root, 'canary.txt'), 'one-shot-agent')
+    await git(root, 'add', 'canary.txt')
+    await git(root, 'commit', '-qm', 'canary')
+    process.chdir(root)
+    process.env.OCTONOESIS_FORK_MOCK = JSON.stringify({
+      text: 'must be killed at one-shot session end',
+      delayMs: 10_000,
+    })
+    let turn = 0
+    setProvider({
+      name: 'anthropic',
+      async *createMessageStream(): AsyncIterable<StreamEvent> {
+        turn++
+        if (turn === 1) {
+          yield {
+            type: 'tool_use',
+            id: 'one-shot-background-agent',
+            name: 'Agent',
+            input: { description: 'Long agent', prompt: 'Wait', background: true },
+          }
+        } else {
+          yield { type: 'text_delta', text: 'Agent launched.' }
+        }
+        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      },
+    })
+    registerPromptHandler(async () => 'allow_once')
+
+    await runQuery('Launch an agent in the background')
+    await flushJournal()
+
+    const journal = await fs.readFile(path.join(memoryDir, 'journal.jsonl'), 'utf8')
+    const agentStatuses = journal
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { kind: string; type?: string; status?: string })
+      .filter((event) => event.kind === 'task' && event.type === 'agent')
+      .map((event) => event.status)
+    expect(agentStatuses).toEqual(['running', 'killed'])
+    const remainingLogs = await fs
+      .readdir(path.join(root, '.octonoesis', 'tasks'))
+      .catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return []
+        throw error
+      })
+    expect(remainingLogs).toEqual([])
+    expect(await git(root, 'worktree', 'list', '--porcelain')).not.toContain(
+      'octonoesis-worktrees/agent-',
+    )
   })
 })

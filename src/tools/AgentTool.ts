@@ -103,6 +103,7 @@ export class AgentTool
           ctx,
           forkOptions,
           onForkUsage: this.options.onForkUsage,
+          description: input.description,
         })
         return { ok: true, value: { agentId: record.agentId, status: 'running' } }
       }

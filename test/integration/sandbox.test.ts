@@ -11,8 +11,10 @@ import {
 import { setProvider } from '../../src/providers'
 import type { LLMProvider, StreamEvent } from '../../src/providers/types'
 import { runQuery } from '../../src/query'
+import type { QueryLoopContext } from '../../src/query/types'
 import { resolveSandboxConfig } from '../../src/sandbox/manager'
 import type { ResolvedSandboxConfig } from '../../src/sandbox/types'
+import { cleanupTasks } from '../../src/tasks/framework'
 import { activeSubprocesses, bashTool } from '../../src/tools/Bash'
 import { runTool } from '../../src/tools/execute'
 import { registerTool } from '../../src/tools/registry'
@@ -53,6 +55,16 @@ async function pathExists(filePath: string): Promise<boolean> {
   } catch {
     return false
   }
+}
+
+async function waitForTerminalTask(ctx: QueryLoopContext, taskId: string) {
+  const deadline = Date.now() + 2_000
+  while (Date.now() < deadline) {
+    const task = ctx.tasks?.get(taskId)
+    if (task && task.status !== 'running' && task.status !== 'pending') return task
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  throw new Error(`Timed out waiting for background task ${taskId}`)
 }
 
 describeDarwin('macOS sandbox escape policy', () => {
@@ -183,6 +195,43 @@ describeDarwin('macOS sandbox escape policy', () => {
       expect(JSON.parse(normalResult.value).code).toBe(0)
     }
     expect(await readFile(normalPath, 'utf8')).toBe('allowed')
+  })
+
+  it('applies the same sandbox wrapper to denied and allowed background commands', async () => {
+    const escapedPath = path.join(homeDir, 'background-escape.txt')
+    const allowedPath = path.join(repoRoot, 'background-allowed.txt')
+    const ctx: QueryLoopContext = { repoRoot, sandbox, tasks: new Map() }
+
+    const deniedStart = await bashTool.call(
+      {
+        command: `printf escaped > ${shellQuote(escapedPath)}`,
+        run_in_background: true,
+      },
+      ctx,
+    )
+    if (!deniedStart.ok) throw new Error(deniedStart.error)
+    const deniedId = JSON.parse(deniedStart.value).task_id as string
+    const denied = await waitForTerminalTask(ctx, deniedId)
+
+    expect(denied.status).toBe('failed')
+    expect(denied.exitCode).not.toBe(0)
+    expect(await pathExists(escapedPath)).toBe(false)
+
+    const allowedStart = await bashTool.call(
+      {
+        command: `printf allowed > ${shellQuote(allowedPath)}`,
+        run_in_background: true,
+      },
+      ctx,
+    )
+    if (!allowedStart.ok) throw new Error(allowedStart.error)
+    const allowedId = JSON.parse(allowedStart.value).task_id as string
+    const allowed = await waitForTerminalTask(ctx, allowedId)
+
+    expect(allowed.status).toBe('completed')
+    expect(allowed.exitCode).toBe(0)
+    expect(await readFile(allowedPath, 'utf8')).toBe('allowed')
+    await cleanupTasks(ctx)
   })
 
   it('allows writes under the resolved TMPDIR', async () => {

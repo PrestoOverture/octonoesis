@@ -1,5 +1,5 @@
 import crypto from 'node:crypto'
-import { appendJournal } from '../memory/journal'
+import fs from 'node:fs/promises'
 import {
   type ForkHandle,
   type ForkOptions,
@@ -9,6 +9,7 @@ import {
 import type { Usage } from '../providers/types'
 import type { QueryLoopContext, TaskState } from '../query/types'
 import { type AgentWorktree, createAgentWorktree, removeAgentWorktree } from '../utils/worktree'
+import { recordTaskTransition, registerTask, taskLogPath } from './framework'
 
 export const MAX_BACKGROUND_AGENTS = 4
 
@@ -19,6 +20,7 @@ export interface LocalAgentRecord {
   handle: ForkHandle
   worktree: AgentWorktree
   worktreeRemoved: boolean
+  removeWorktree: typeof removeAgentWorktree
   result: Promise<ForkResult>
 }
 
@@ -27,25 +29,13 @@ export interface StartLocalAgentOptions {
   forkOptions: ForkOptions
   onForkUsage?: (usage: Usage) => void
   createWorktree?: typeof createAgentWorktree
+  removeWorktree?: typeof removeAgentWorktree
   startFork?: typeof startForkAgent
+  description?: string
 }
 
 const agents = new Map<string, LocalAgentRecord>()
 const liveSessions = new WeakSet<QueryLoopContext>()
-
-function durationMs(task: TaskState): number {
-  return Math.max(0, (task.endTime ?? Date.now()) - task.startTime)
-}
-
-function journalTask(task: TaskState): void {
-  appendJournal({
-    kind: 'task',
-    task_id: task.id,
-    type: 'agent',
-    status: task.status,
-    duration_ms: durationMs(task),
-  })
-}
 
 export async function startLocalAgent(options: StartLocalAgentOptions): Promise<LocalAgentRecord> {
   const runningCount = Array.from(agents.values()).filter(
@@ -60,6 +50,15 @@ export async function startLocalAgent(options: StartLocalAgentOptions): Promise<
     options.ctx.repoRoot,
     agentId,
   )
+  const removeWorktree = options.removeWorktree ?? removeAgentWorktree
+  let logPath: string
+  try {
+    logPath = await taskLogPath(options.ctx.repoRoot, agentId)
+    await fs.writeFile(logPath, '')
+  } catch (error) {
+    await removeWorktree(worktree)
+    throw error
+  }
   let handle: ForkHandle
   try {
     handle = (options.startFork ?? startForkAgent)({
@@ -67,7 +66,8 @@ export async function startLocalAgent(options: StartLocalAgentOptions): Promise<
       repoRoot: worktree.path,
     })
   } catch (error) {
-    await removeAgentWorktree(worktree)
+    await fs.rm(logPath, { force: true })
+    await removeWorktree(worktree)
     throw error
   }
 
@@ -76,15 +76,11 @@ export async function startLocalAgent(options: StartLocalAgentOptions): Promise<
     type: 'agent',
     status: 'running',
     startTime: Date.now(),
-    command:
-      options.forkOptions.messages.at(-1)?.role === 'user'
-        ? JSON.stringify(options.forkOptions.messages.at(-1))
-        : undefined,
+    command: options.description ?? 'background agent',
+    logPath,
   }
-  options.ctx.tasks ??= new Map()
-  options.ctx.tasks.set(agentId, task)
   liveSessions.add(options.ctx)
-  journalTask(task)
+  registerTask(options.ctx, task)
 
   const record = {} as LocalAgentRecord
   record.agentId = agentId
@@ -93,7 +89,8 @@ export async function startLocalAgent(options: StartLocalAgentOptions): Promise<
   record.handle = handle
   record.worktree = worktree
   record.worktreeRemoved = false
-  record.result = handle.result.then((result) => {
+  record.removeWorktree = removeWorktree
+  record.result = handle.result.then(async (result) => {
     if (task.status === 'killed') return result
     task.endTime = Date.now()
     task.output = result.text
@@ -104,8 +101,12 @@ export async function startLocalAgent(options: StartLocalAgentOptions): Promise<
       task.status = 'failed'
       task.error = result.error ?? `Agent exited: ${result.exitReason}`
     }
+    await fs.writeFile(
+      task.logPath ?? logPath,
+      task.status === 'completed' ? result.text : (task.error ?? result.text),
+    )
     if (liveSessions.has(options.ctx)) options.onForkUsage?.(result.usage)
-    journalTask(task)
+    recordTaskTransition(options.ctx, task)
     return result
   })
   agents.set(agentId, record)
@@ -136,14 +137,25 @@ export async function cleanupLocalAgents(ctx: QueryLoopContext): Promise<void> {
       record.task.status = 'killed'
       record.task.endTime = Date.now()
       record.task.error = 'Agent killed at session end.'
-      journalTask(record.task)
+      await fs.writeFile(record.task.logPath ?? '', record.task.error)
+      recordTaskTransition(ctx, record.task)
       await record.handle.kill()
     }
     if (!record.worktreeRemoved) {
-      await removeAgentWorktree(record.worktree)
+      await record.removeWorktree(record.worktree)
       record.worktreeRemoved = true
     }
   }
+}
+
+export async function evictLocalAgent(agentId: string): Promise<void> {
+  const record = agents.get(agentId)
+  if (!record) return
+  if (!record.worktreeRemoved) {
+    await record.removeWorktree(record.worktree)
+    record.worktreeRemoved = true
+  }
+  agents.delete(agentId)
 }
 
 export function clearLocalAgentsForTests(): void {

@@ -4,12 +4,19 @@ import { z } from 'zod'
 import { resolveSandboxConfig } from '../sandbox/manager'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { wrapWithSandbox } from '../sandbox/wrapper'
+import { startLocalShellTask } from '../tasks/localShell'
 import type { Tool, ToolContext, ToolResult } from './Tool'
 export const activeSubprocesses = new Set<unknown>()
 
 // Input validation schema using Zod
 const BashInputSchema = z.object({
   command: z.string().min(1, 'command is required'),
+  run_in_background: z
+    .boolean()
+    .optional()
+    .describe(
+      'Run a long command without blocking the conversation. The task returns immediately and a completion notification arrives on a later turn.',
+    ),
 })
 
 type BashInput = z.infer<typeof BashInputSchema>
@@ -50,7 +57,8 @@ function resolveToolSandbox(ctx: ToolContext): ResolvedSandboxConfig | undefined
 
 class BashTool implements Tool<BashInput, string> {
   name = 'Bash'
-  description = 'Execute a shell command in a non-interactive bash session.'
+  description =
+    'Execute a shell command in a non-interactive bash session. Long commands can run in the background and notify you when they finish.'
   inputSchema = BashInputSchema
 
   isConcurrencySafe(): boolean {
@@ -67,6 +75,26 @@ class BashTool implements Tool<BashInput, string> {
       return {
         ok: false,
         error: `blocked_command: Command contains forbidden operation "${blocked}".`,
+      }
+    }
+
+    if (input.run_in_background) {
+      try {
+        const record = await startLocalShellTask({
+          ctx,
+          command: input.command,
+          sandbox: resolveToolSandbox(ctx),
+        })
+        return {
+          ok: true,
+          value: JSON.stringify({
+            task_id: record.task.id,
+            status: 'running',
+            output_log: `.octonoesis/tasks/${record.task.id}.log`,
+          }),
+        }
+      } catch (error) {
+        return { ok: false, error: `execution_error: ${(error as Error).message}` }
       }
     }
 

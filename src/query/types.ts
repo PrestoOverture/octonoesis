@@ -55,6 +55,9 @@ export interface TaskState {
   output?: string
   error?: string
   usage?: Usage
+  notified?: boolean
+  exitCode?: number
+  logPath?: string
 }
 
 export interface SandboxConfig {

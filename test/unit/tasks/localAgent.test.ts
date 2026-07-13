@@ -5,9 +5,11 @@ import path from 'node:path'
 import { flushJournal } from '../../../src/memory/journal'
 import type { ForkHandle, ForkOptions, ForkResult } from '../../../src/providers/fork'
 import type { QueryLoopContext } from '../../../src/query/types'
+import { drainTaskNotifications } from '../../../src/tasks/framework'
 import {
   MAX_BACKGROUND_AGENTS,
   clearLocalAgentsForTests,
+  getLocalAgent,
   sendLocalAgentMessage,
   startLocalAgent,
 } from '../../../src/tasks/localAgent'
@@ -76,7 +78,7 @@ describe('local background agent registry', () => {
       error: 'Unknown background agent: missing',
     })
 
-    const ctx: QueryLoopContext = { repoRoot: '/repo' }
+    const ctx: QueryLoopContext = { repoRoot: memoryDir }
     const done = deferred<ForkResult>()
     const record = await startLocalAgent(options(ctx, done.promise))
     done.resolve(completed)
@@ -94,7 +96,7 @@ describe('local background agent registry', () => {
   })
 
   it('enforces the four-running-agent cap', async () => {
-    const ctx: QueryLoopContext = { repoRoot: '/repo' }
+    const ctx: QueryLoopContext = { repoRoot: memoryDir }
     const waiting = deferred<ForkResult>()
     for (let index = 0; index < MAX_BACKGROUND_AGENTS; index++) {
       await startLocalAgent(options(ctx, waiting.promise))
@@ -102,5 +104,51 @@ describe('local background agent registry', () => {
     await expect(startLocalAgent(options(ctx, waiting.promise))).rejects.toThrow(
       'Background agent limit reached (4)',
     )
+  })
+
+  it('persists completion, notifies once, and evicts the delivered agent', async () => {
+    const ctx: QueryLoopContext = { repoRoot: memoryDir, tasks: new Map() }
+    const done = deferred<ForkResult>()
+    let removed = 0
+    const record = await startLocalAgent({
+      ...options(ctx, done.promise),
+      description: 'Inspect the repo',
+      removeWorktree: async () => {
+        removed++
+      },
+    })
+
+    done.resolve(completed)
+    await record.result
+
+    expect(record.task.status).toBe('completed')
+    expect(await fs.readFile(record.task.logPath ?? '', 'utf8')).toBe('done')
+    const notifications = await drainTaskNotifications(ctx)
+    expect(notifications.length).toBe(1)
+    expect(notifications[0]).toContain('<task_type>agent</task_type>')
+    expect(notifications[0]).toContain('<summary>Task "Inspect the repo" completed</summary>')
+    expect(getLocalAgent(record.agentId)).toBeUndefined()
+    expect(sendLocalAgentMessage(record.agentId, 'late')).toEqual({
+      ok: false,
+      error: `Unknown background agent: ${record.agentId}`,
+    })
+    expect(removed).toBe(1)
+  })
+
+  it('removes the worktree if task-log setup fails before the child starts', async () => {
+    const invalidRoot = path.join(memoryDir, 'not-a-directory')
+    await fs.writeFile(invalidRoot, 'file')
+    const ctx: QueryLoopContext = { repoRoot: invalidRoot, tasks: new Map() }
+    let removed = 0
+
+    await expect(
+      startLocalAgent({
+        ...options(ctx, Promise.resolve(completed)),
+        removeWorktree: async () => {
+          removed++
+        },
+      }),
+    ).rejects.toThrow()
+    expect(removed).toBe(1)
   })
 })

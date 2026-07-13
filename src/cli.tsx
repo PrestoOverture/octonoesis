@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import crypto from 'node:crypto'
 import path from 'node:path'
 import { Command } from 'commander'
 import { render } from 'ink'
@@ -8,12 +9,13 @@ import type { OctonoesisConfig } from './config/schema.ts'
 import { rebuildRules } from './memory/rules/rebuild.ts'
 import { getRulesDir } from './memory/rules/store.ts'
 import { getResolvedModel, setConfiguredModel } from './providers/index.ts'
-import { runQuery } from './query'
+import { type ToolContext, runQuery } from './query'
 import type { SessionState } from './query/types.ts'
 import { assertSandboxAvailable, resolveSandboxConfig } from './sandbox/manager.ts'
 import type { ResolvedSandboxConfig } from './sandbox/types.ts'
 import { rewriteSkillSlashCommand } from './skills/execute.ts'
-import { flushSessionStats, formatSessionSummary } from './state/session.ts'
+import { createSessionState, flushSessionStats, formatSessionSummary } from './state/session.ts'
+import { cleanupTasks } from './tasks/framework.ts'
 import { App } from './ui/App'
 import { getMemoryDir, getRepoRoot } from './utils/path.ts'
 
@@ -158,9 +160,19 @@ program
 
     if (!prompt) {
       let latestSession: { sessionState: SessionState; priced: boolean } | undefined
+      const sessionId = crypto.randomUUID()
+      const tuiCtx: ToolContext = {
+        repoRoot: startupRepoRoot,
+        messages: [],
+        sessionId,
+        sessionState: createSessionState(sessionId, getResolvedModel()),
+        sandbox,
+        config: startupConfig,
+        tasks: new Map(),
+      }
       const { waitUntilExit } = render(
         <App
-          sandbox={sandbox}
+          ctx={tuiCtx}
           onSessionState={(sessionState, priced) => {
             latestSession = { sessionState, priced }
           }}
@@ -168,6 +180,7 @@ program
         { exitOnCtrlC: false },
       )
       await waitUntilExit()
+      await cleanupTasks(tuiCtx)
       await flushSessionStats()
       if (latestSession) {
         console.log(formatSessionSummary(latestSession.sessionState, latestSession.priced))
