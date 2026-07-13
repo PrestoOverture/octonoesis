@@ -36,13 +36,19 @@ export async function verify(
 ): Promise<VerifyResult> {
   const hookResult = await preToolUseHook('Bash', { command }, { repoRoot, abortSignal: signal })
   if (hookResult.action === 'deny') {
-    throw new Error(`permission_denied: ${hookResult.reason ?? 'Pre-tool hook rejected verification command.'}`)
+    throw new Error(
+      `permission_denied: ${hookResult.reason ?? 'Pre-tool hook rejected verification command.'}`,
+    )
   }
-  const effectiveCommand = hookResult.action === 'modify' && hookResult.modifiedInput
-    ? (hookResult.modifiedInput as { command: string }).command
-    : command
+  const effectiveCommand =
+    hookResult.action === 'modify' && hookResult.modifiedInput
+      ? (hookResult.modifiedInput as { command: string }).command
+      : command
 
-  const result = await bashTool.call({ command: effectiveCommand }, { repoRoot, abortSignal: signal })
+  const result = await bashTool.call(
+    { command: effectiveCommand },
+    { repoRoot, abortSignal: signal },
+  )
   if (!result.ok) {
     throw new Error(result.error)
   }

@@ -4,7 +4,11 @@ import { mcNemarExactTest } from '../../demo/live-ab.ts'
 // Builds paired boolean arrays with exactly `b` "control succeeded, treatment failed" pairs,
 // `c` "control failed, treatment succeeded" pairs, and the rest concordant (both true), so the
 // concordant pairs are present but contribute nothing to the discordant counts under test.
-function pairsWithDiscordance(b: number, c: number, concordant = 0): { control: boolean[]; treatment: boolean[] } {
+function pairsWithDiscordance(
+  b: number,
+  c: number,
+  concordant = 0,
+): { control: boolean[]; treatment: boolean[] } {
   const control: boolean[] = []
   const treatment: boolean[] = []
   for (let i = 0; i < b; i++) {

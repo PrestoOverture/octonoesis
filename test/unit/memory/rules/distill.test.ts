@@ -142,14 +142,12 @@ describe('Rule Distillation', () => {
       model: 'mock-model',
       extractorVersion: '0.2.0',
       evidence: {
-        errorExcerpt: 'TypeError: Cannot read properties of null (reading \'foo\')',
+        errorExcerpt: "TypeError: Cannot read properties of null (reading 'foo')",
         fixDiff: 'obj.foo -> obj?.foo',
       },
     })
 
-    expect(capturedPrompt).toContain(
-      "TypeError: Cannot read properties of null (reading 'foo')",
-    )
+    expect(capturedPrompt).toContain("TypeError: Cannot read properties of null (reading 'foo')")
     expect(capturedPrompt).toContain('obj.foo -> obj?.foo')
   })
 
@@ -203,7 +201,11 @@ describe('Rule Distillation', () => {
   })
 
   it('should distinguish stable repo facts from one-off instance detail in the prompt template', () => {
-    expect(DISTILL_PROMPT_TEMPLATE).toContain('Stable repo-structural fact revealed by the evidence')
-    expect(DISTILL_PROMPT_TEMPLATE).toContain('One-off instance detail with no stable fact behind it')
+    expect(DISTILL_PROMPT_TEMPLATE).toContain(
+      'Stable repo-structural fact revealed by the evidence',
+    )
+    expect(DISTILL_PROMPT_TEMPLATE).toContain(
+      'One-off instance detail with no stable fact behind it',
+    )
   })
 })

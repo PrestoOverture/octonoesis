@@ -1,7 +1,15 @@
 {
   "$schema": "https://biomejs.dev/schemas/1.8.0/schema.json",
   "files": {
-    "ignore": ["node_modules/**", "dist/**", "cc-src/**", "book/**"]
+    "ignore": [
+      "node_modules/**",
+      "dist/**",
+      "cc-src/**",
+      "book/**",
+      ".claude/**",
+      "test/demo/seed-rules/**",
+      "test/demo/seed-rules-selfloop/**"
+    ]
   },
   "linter": {
     "enabled": true,
