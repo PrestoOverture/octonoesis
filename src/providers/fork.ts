@@ -1,11 +1,18 @@
 // biome-ignore lint/suspicious/noExplicitAny: Bun globals are provided by the runtime.
 declare const Bun: any
 
+import { realpathSync } from 'node:fs'
 import type { ExitReason } from '../query/types'
 import { getCheapestModel } from './index'
 import type { CanonicalMessage, CanonicalTool, Usage } from './types'
 
-export type ForkPurpose = 'compact' | 'memory_extract' | 'memory_recall' | 'skill' | 'tool_summary'
+export type ForkPurpose =
+  | 'compact'
+  | 'memory_extract'
+  | 'memory_recall'
+  | 'skill'
+  | 'tool_summary'
+  | 'agent'
 
 export interface ForkOptions {
   systemPrompt: string
@@ -17,6 +24,7 @@ export interface ForkOptions {
   timeoutMs?: number
   signal?: AbortSignal
   forkPurpose: ForkPurpose
+  repoRoot?: string
 }
 
 export interface ForkResult {
@@ -29,6 +37,7 @@ export interface ForkResult {
 }
 
 export interface PreparedFork {
+  repoRoot: string
   systemPrompt: string
   messages: CanonicalMessage[]
   tools: CanonicalTool[]
@@ -46,6 +55,7 @@ export const FORK_TOOL_ALLOWLISTS: Record<Exclude<ForkPurpose, 'skill'>, readonl
   memory_extract: ['Read', 'Grep', 'Glob', 'Write'],
   memory_recall: [],
   tool_summary: [],
+  agent: ['Read', 'Grep', 'Glob'],
 }
 
 export const MEMORY_EXTRACT_WRITE_SCOPE = '.octonoesis/memory/'
@@ -63,6 +73,13 @@ interface ForkSubprocess {
   stderr: ReadableStream<Uint8Array>
   exited: Promise<number>
   kill(signal?: NodeJS.Signals): void
+}
+
+export interface ForkHandle {
+  pid: number
+  result: Promise<ForkResult>
+  sendMessage(message: string): { ok: true } | { ok: false; error: string }
+  kill(): Promise<void>
 }
 
 const activeForkChildren = new Set<ForkSubprocess>()
@@ -115,6 +132,7 @@ export function prepareForkInput(opts: ForkOptions): PreparedFork {
   }
 
   return {
+    repoRoot: realpathSync(opts.repoRoot ?? process.cwd()),
     systemPrompt: opts.systemPrompt,
     messages: structuredClone(opts.messages),
     tools: structuredClone(opts.tools),
@@ -247,6 +265,19 @@ async function terminateForkChild(child: ForkSubprocess): Promise<void> {
   await child.exited
 }
 
+function spawnForkChild(prepared: PreparedFork): ForkSubprocess {
+  const child = Bun.spawn({
+    cmd: buildForkCommand(),
+    cwd: prepared.repoRoot,
+    env: { ...process.env, ...prepared.childEnv },
+    stdin: 'pipe',
+    stdout: 'pipe',
+    stderr: 'pipe',
+  }) as ForkSubprocess
+  activeForkChildren.add(child)
+  return child
+}
+
 export async function forkAgent(opts: ForkOptions): Promise<ForkResult> {
   const prepared = prepareForkInput(opts)
   if (opts.signal?.aborted) return userCancellation()
@@ -285,15 +316,7 @@ export async function forkAgent(opts: ForkOptions): Promise<ForkResult> {
 
   try {
     const payload = serializeForkPayload(prepared)
-    child = Bun.spawn({
-      cmd: buildForkCommand(),
-      cwd: process.cwd(),
-      env: { ...process.env, ...prepared.childEnv },
-      stdin: 'pipe',
-      stdout: 'pipe',
-      stderr: 'pipe',
-    }) as ForkSubprocess
-    activeForkChildren.add(child)
+    child = spawnForkChild(prepared)
 
     stdoutPromise = new Response(child.stdout).text()
     stderrPromise = new Response(child.stderr).text()
@@ -333,5 +356,102 @@ export async function forkAgent(opts: ForkOptions): Promise<ForkResult> {
       opts.signal.removeEventListener('abort', handleAbort)
     }
     if (child) activeForkChildren.delete(child)
+  }
+}
+
+/** Starts an agent fork with stdin kept open for bounded NDJSON message delivery. */
+export function startForkAgent(opts: ForkOptions): ForkHandle {
+  if (opts.forkPurpose !== 'agent') {
+    throw new ForkInvariantError('tool_not_allowed')
+  }
+  const prepared = prepareForkInput(opts)
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_FORK_TIMEOUT_MS
+  if (!Number.isFinite(timeoutMs) || timeoutMs < 0) {
+    throw new RangeError('Fork timeoutMs must be a non-negative finite number')
+  }
+
+  const child = spawnForkChild(prepared)
+  child.stdin.write(`${serializeForkPayload(prepared)}\n`)
+
+  const stdoutPromise = new Response(child.stdout).text()
+  const stderrPromise = new Response(child.stderr).text()
+  let sentMessages = 0
+  let finished = false
+  let timeoutTimer: ReturnType<typeof setTimeout> | undefined
+  let handleAbort: (() => void) | undefined
+
+  const result = (async (): Promise<ForkResult> => {
+    type ControlOutcome = { kind: 'abort' } | { kind: 'timeout' }
+    const controls: Promise<ControlOutcome>[] = [
+      new Promise((resolve) => {
+        timeoutTimer = setTimeout(() => resolve({ kind: 'timeout' }), timeoutMs)
+        timeoutTimer.unref()
+      }),
+    ]
+    if (opts.signal) {
+      controls.push(
+        new Promise((resolve) => {
+          handleAbort = () => resolve({ kind: 'abort' })
+          if (opts.signal?.aborted) handleAbort()
+          else opts.signal?.addEventListener('abort', handleAbort, { once: true })
+        }),
+      )
+    }
+
+    const completion = (async () => {
+      const exitCode = await child.exited
+      const [stdout, stderr] = await Promise.all([stdoutPromise, stderrPromise])
+      return { kind: 'exit' as const, exitCode, stdout, stderr }
+    })()
+
+    try {
+      const outcome = await Promise.race([completion, ...controls])
+      if (outcome.kind !== 'exit') {
+        await terminateForkChild(child)
+        await Promise.allSettled([completion, stdoutPromise, stderrPromise])
+        return outcome.kind === 'abort'
+          ? userCancellation()
+          : runtimeFailure(`Fork timed out after ${timeoutMs}ms`)
+      }
+      if (outcome.exitCode !== 0) {
+        return runtimeFailure(
+          outcome.stderr.trim() || `Fork child exited with code ${outcome.exitCode}`,
+        )
+      }
+      return parseForkResult(outcome.stdout)
+    } catch (error) {
+      try {
+        await terminateForkChild(child)
+      } catch {}
+      return runtimeFailure(error)
+    } finally {
+      finished = true
+      if (timeoutTimer) clearTimeout(timeoutTimer)
+      if (opts.signal && handleAbort) opts.signal.removeEventListener('abort', handleAbort)
+      activeForkChildren.delete(child)
+      try {
+        await child.stdin.end()
+      } catch {}
+    }
+  })()
+
+  return {
+    pid: child.pid,
+    result,
+    sendMessage(message) {
+      if (finished) return { ok: false, error: 'Agent is no longer running.' }
+      if (sentMessages >= 16) return { ok: false, error: 'Agent message queue is full.' }
+      try {
+        child.stdin.write(`${JSON.stringify({ type: 'message', text: message })}\n`)
+        sentMessages++
+        return { ok: true }
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : String(error) }
+      }
+    },
+    async kill() {
+      if (!finished) await terminateForkChild(child)
+      await result
+    },
   }
 }

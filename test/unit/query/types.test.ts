@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'bun:test'
 import { DEFAULT_CONFIG } from '../../../src/config/schema'
 import { HookRegistry } from '../../../src/hooks/registry'
+import type { McpClientConnection } from '../../../src/mcp/types'
 import type {
   ExitReason,
-  McpConnection,
   QueryLoopContext,
   QueryResultV1,
   QueryState,
@@ -62,9 +62,13 @@ describe('query v1 type contracts', () => {
       status: 'pending',
       startTime: 1,
     }
-    const mcpConnection: McpConnection = {
+    const mcpConnection: McpClientConnection = {
       name: 'sqlite',
       status: 'connected',
+      client: null as unknown as McpClientConnection['client'],
+      transport: null as unknown as McpClientConnection['transport'],
+      tools: [],
+      timeoutMs: 5000,
       cleanup: async () => {},
     }
     const sandbox: SandboxConfig = {
@@ -149,7 +153,7 @@ describe('query v1 type contracts', () => {
     expect(full._lastVerifyResult?.isVerificationRun).toBe(true)
   })
 
-  it('exports forward-looking result and placeholder types', () => {
+  it('exports forward-looking result and concrete context types', () => {
     const result: QueryResultV1 = {
       exit_reason: 'budget_exceeded',
       usage: { input_tokens: 1, output_tokens: 2 },
@@ -162,9 +166,13 @@ describe('query v1 type contracts', () => {
       startTime: 1,
     }
     const sandbox: SandboxConfig = { enabled: false }
-    const mcp: McpConnection = {
+    const mcp: McpClientConnection = {
       name: 'server',
       status: 'closed',
+      client: null as unknown as McpClientConnection['client'],
+      transport: null as unknown as McpClientConnection['transport'],
+      tools: [],
+      timeoutMs: 5000,
       cleanup: async () => {},
     }
 

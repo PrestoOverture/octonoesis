@@ -114,6 +114,7 @@ describe('fork tool-allowlist invariant', () => {
       memory_extract: ['Read', 'Grep', 'Glob', 'Write'],
       memory_recall: [],
       tool_summary: [],
+      agent: ['Read', 'Grep', 'Glob'],
     })
     expect(MEMORY_EXTRACT_WRITE_SCOPE).toBe('.octonoesis/memory/')
     expect(Object.values(FORK_TOOL_ALLOWLISTS).flat()).not.toContain('Agent')

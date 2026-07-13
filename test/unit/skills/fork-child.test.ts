@@ -20,6 +20,7 @@ describe('skill fork child loop', () => {
       },
     }
     const prepared: PreparedFork = {
+      repoRoot: process.cwd(),
       purpose: 'skill',
       systemPrompt: 'parent stable',
       messages: [{ role: 'user', content: 'inspect' }],
@@ -61,6 +62,7 @@ describe('skill fork child loop', () => {
       },
     }
     const prepared: PreparedFork = {
+      repoRoot: process.cwd(),
       purpose: 'skill',
       systemPrompt: 'stable',
       messages: [{ role: 'user', content: 'inspect' }],

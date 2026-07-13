@@ -28,18 +28,21 @@ import type {
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { loadSkills } from '../skills/loader'
 import { createSessionState, flushSessionStats, formatSessionSummary } from '../state/session'
+import { cleanupLocalAgents } from '../tasks/localAgent'
+import { AgentTool } from '../tools/AgentTool'
 import { bashTool } from '../tools/Bash'
 import { editTool } from '../tools/Edit'
 import { globTool } from '../tools/Glob'
 import { grepTool } from '../tools/Grep'
 import { MCPTool } from '../tools/MCPTool'
 import { readTool } from '../tools/Read'
+import { SendMessageTool } from '../tools/SendMessageTool'
 import { SkillTool } from '../tools/SkillTool'
 import { todoWriteTool } from '../tools/TodoWrite'
 import type { ToolContext } from '../tools/Tool'
 import { writeTool } from '../tools/Write'
 import { runTool } from '../tools/execute'
-import { getAllTools, registerTool } from '../tools/registry'
+import { getAllTools, registerTool, unregisterTool } from '../tools/registry'
 import { estimateCost } from '../utils/cost'
 import { dbg } from '../utils/debug'
 import { getRepoRoot } from '../utils/path'
@@ -67,6 +70,8 @@ registerTool(writeTool)
 registerTool(editTool)
 registerTool(grepTool)
 registerTool(todoWriteTool)
+
+const sessionAgentTools = new WeakMap<QueryLoopContext, [AgentTool, SendMessageTool]>()
 
 export type StreamEvent =
   | ProviderStreamEvent
@@ -202,6 +207,8 @@ export async function initQueryState(
     ctx.abortSignal = signal
   }
 
+  const tasks = ctx.tasks ?? new Map()
+  ctx.tasks = tasks
   return {
     turn: 0,
     messages: ctx.messages,
@@ -212,7 +219,7 @@ export async function initQueryState(
     repoRoot: ctx.repoRoot,
     injectedRules: ctx.injectedRules,
     recordedRuleOutcomes: ctx.recordedRuleOutcomes,
-    tasks: new Map(),
+    tasks,
     hooks: ctx.hooks ?? new HookRegistry(),
     compactConsecutiveFailures: 0,
     compactCircuitOpen: false,
@@ -257,6 +264,18 @@ async function prepareQueryState(
       }),
     )
   }
+  const agentTool = new AgentTool({
+    systemPrompt: compiledContext.systemStable,
+    model: state.model,
+    onForkUsage: (usage) => {
+      addUsage(state.usage, usage)
+      if (ctx.sessionState) addUsage(ctx.sessionState.usage, usage)
+    },
+  })
+  const sendMessageTool = new SendMessageTool()
+  registerTool(agentTool)
+  registerTool(sendMessageTool)
+  sessionAgentTools.set(ctx, [agentTool, sendMessageTool])
   await initializeMcp(ctx)
   const tools = getAllTools()
     .filter((tool) => tool.name !== 'Skill' || skills.length > 0)
@@ -717,6 +736,16 @@ export async function* query(
       turns: readyState.turn,
     }
   } finally {
+    try {
+      await cleanupLocalAgents(ctx)
+    } catch (error) {
+      dbg('query', 'Failed to clean up background agents', error)
+    }
+    const agentTools = sessionAgentTools.get(ctx)
+    sessionAgentTools.delete(ctx)
+    if (agentTools) {
+      for (const tool of agentTools) unregisterTool(tool.name, tool)
+    }
     await executeAttachedHooks(
       ctx,
       { event: 'session_end', outcome: { exitReason }, sessionId: ctx.sessionId },

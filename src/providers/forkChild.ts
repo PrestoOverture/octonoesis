@@ -2,6 +2,7 @@
 declare const Bun: any
 
 import { createHash } from 'node:crypto'
+import readline from 'node:readline'
 import { READ_ONLY_FORK_SKILL_TOOLS } from '../skills/execute'
 import { globTool } from '../tools/Glob'
 import { grepTool } from '../tools/Grep'
@@ -25,12 +26,20 @@ const FORK_PURPOSES = new Set([
   'memory_recall',
   'skill',
   'tool_summary',
+  'agent',
 ])
+
+export const MAX_FORK_PENDING_MESSAGES = 16
+
+export interface ForkMessageChannel {
+  drain(): string[]
+}
 
 interface ForkMockConfig {
   text?: string
   delayMs?: number
   scriptedEvents?: StreamEvent[][]
+  validatePairing?: boolean
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -90,6 +99,8 @@ function isPreparedFork(value: unknown): value is PreparedFork {
   const maxTokens = value.budget.maxTokens
   return (
     typeof value.systemPrompt === 'string' &&
+    typeof value.repoRoot === 'string' &&
+    value.repoRoot.length > 0 &&
     Array.isArray(value.messages) &&
     value.messages.every(isCanonicalMessage) &&
     Array.isArray(value.tools) &&
@@ -138,10 +149,37 @@ function parseMockConfig(raw: string): ForkMockConfig {
   if (typeof parsed.text !== 'string' && scriptedEvents === undefined) {
     throw new TypeError('OCTONOESIS_FORK_MOCK must contain a string text field')
   }
+  if (parsed.validatePairing !== undefined && typeof parsed.validatePairing !== 'boolean') {
+    throw new TypeError('OCTONOESIS_FORK_MOCK validatePairing must be a boolean')
+  }
   return {
     ...(typeof parsed.text === 'string' ? { text: parsed.text } : {}),
     ...(parsed.delayMs === undefined ? {} : { delayMs: parsed.delayMs }),
     ...(scriptedEvents === undefined ? {} : { scriptedEvents }),
+    ...(parsed.validatePairing === undefined ? {} : { validatePairing: parsed.validatePairing }),
+  }
+}
+
+function assertToolUsePairing(messages: CanonicalMessage[]): void {
+  for (const [index, message] of messages.entries()) {
+    if (message.role !== 'assistant') continue
+    const laterToolResultIds = new Set(
+      messages
+        .slice(index + 1)
+        .filter((candidate) => candidate.role === 'tool')
+        .map((candidate) => (candidate.role === 'tool' ? candidate.tool_use_id : '')),
+    )
+    const dangling = message.content.find(
+      (block) => block.type === 'tool_use' && !laterToolResultIds.has(block.id),
+    )
+    if (dangling?.type === 'tool_use') {
+      const error = new Error(
+        `400 invalid_request_error: tool_use id ${dangling.id} has no following tool_result`,
+      ) as Error & { status: number; type: string }
+      error.status = 400
+      error.type = 'invalid_request_error'
+      throw error
+    }
   }
 }
 
@@ -192,6 +230,7 @@ function createMockProvider(config: ForkMockConfig): LLMProvider {
       _tools,
       opts,
     ): AsyncIterable<StreamEvent> {
+      if (config.validatePairing) assertToolUsePairing(messages)
       if (config.delayMs !== undefined) {
         await waitForMockDelay(config.delayMs, opts.signal)
       }
@@ -220,13 +259,23 @@ function createMockProvider(config: ForkMockConfig): LLMProvider {
                 (block) => block.type === 'tool_result' && block.is_error === true,
               )
             : false
+        const latestUser = [...messages].reverse().find((message) => message.role === 'user')
+        const latestUserText =
+          latestUser?.role === 'user'
+            ? typeof latestUser.content === 'string'
+              ? latestUser.content
+              : latestUser.content
+                  .map((block) => (block.type === 'text' ? block.text : ''))
+                  .join('')
+            : ''
         for (const event of scripted) {
           yield event.type === 'text_delta'
             ? {
                 ...event,
                 text: event.text
                   .replaceAll('{{tool_result}}', latestToolText)
-                  .replaceAll('{{tool_is_error}}', String(latestToolIsError)),
+                  .replaceAll('{{tool_is_error}}', String(latestToolIsError))
+                  .replaceAll('{{latest_user}}', latestUserText),
               }
             : event
         }
@@ -259,13 +308,13 @@ function appendTextBlock(content: ContentBlock[], text: string): void {
   }
 }
 
-const skillTools = new Map<string, Tool>([
+const readOnlyForkTools = new Map<string, Tool>([
   [readTool.name, readTool],
   [grepTool.name, grepTool],
   [globTool.name, globTool],
 ])
 
-async function executeSkillToolUses(
+async function executeReadOnlyToolUses(
   prepared: PreparedFork,
   assistantContent: ContentBlock[],
   messages: CanonicalMessage[],
@@ -275,11 +324,11 @@ async function executeSkillToolUses(
   const safeNames = new Set<string>(READ_ONLY_FORK_SKILL_TOOLS)
   for (const block of assistantContent) {
     if (block.type !== 'tool_use') continue
-    const tool = skillTools.get(block.name)
+    const tool = readOnlyForkTools.get(block.name)
     let content: string
     let isError = false
     if (!preparedNames.has(block.name) || !safeNames.has(block.name) || !tool) {
-      content = `Tool ${block.name} is not available to this skill fork.`
+      content = `Tool ${block.name} is not available to this ${prepared.purpose} fork.`
       isError = true
     } else if (!tool.isReadOnly(block.input)) {
       content = `Tool ${block.name} was refused because it is not read-only.`
@@ -291,7 +340,7 @@ async function executeSkillToolUses(
         isError = true
       } else {
         const result = await tool.call(parsed.data, {
-          repoRoot: process.cwd(),
+          repoRoot: prepared.repoRoot,
           abortSignal: signal,
         })
         content = result.ok
@@ -323,6 +372,7 @@ export async function runForkLoop(
   prepared: PreparedFork,
   provider: LLMProvider,
   signal: AbortSignal,
+  messageChannel?: ForkMessageChannel,
 ): Promise<ForkResult> {
   const messages = structuredClone(prepared.messages)
   const usage: Usage = { input_tokens: 0, output_tokens: 0 }
@@ -331,6 +381,9 @@ export async function runForkLoop(
   let text = ''
 
   while (!hasReachedMaxTurns(turns, prepared.budget.maxTurns)) {
+    for (const message of messageChannel?.drain() ?? []) {
+      messages.push({ role: 'user', content: message })
+    }
     turns++
     const assistantContent: ContentBlock[] = []
     let sawToolUse = false
@@ -398,12 +451,12 @@ export async function runForkLoop(
       return { text, usage, turns, exitReason: 'completed', systemPromptSha256 }
     }
 
-    if (prepared.purpose !== 'skill') {
-      // Non-skill forks deliberately have no child execution loop. Drain the response
+    if (prepared.purpose !== 'skill' && prepared.purpose !== 'agent') {
+      // Non-tool forks deliberately have no child execution loop. Drain the response
       // for accounting and preserve their historical stop behavior.
       return { text, usage, turns, exitReason: 'completed', systemPromptSha256 }
     }
-    await executeSkillToolUses(prepared, assistantContent, messages, signal)
+    await executeReadOnlyToolUses(prepared, assistantContent, messages, signal)
   }
 
   return { text, usage, turns, exitReason: 'max_turns', systemPromptSha256 }
@@ -415,14 +468,56 @@ export async function forkChildMain(): Promise<number> {
       throw new Error('Fork child depth exceeds the maximum of 1')
     }
 
-    const prepared = parsePreparedFork(await Bun.stdin.text())
+    const input = readline.createInterface({ input: process.stdin })
+    const iterator = input[Symbol.asyncIterator]()
+    const firstLine = await iterator.next()
+    if (firstLine.done) throw new TypeError('Fork child stdin was empty')
+    const prepared = parsePreparedFork(firstLine.value)
+    const pending: string[] = []
+    const messageChannel: ForkMessageChannel = {
+      drain() {
+        return pending.splice(0, pending.length)
+      },
+    }
+    if (prepared.purpose === 'agent') {
+      void (async () => {
+        try {
+          for await (const line of iterator) {
+            try {
+              const control: unknown = JSON.parse(line)
+              if (
+                !isRecord(control) ||
+                control.type !== 'message' ||
+                typeof control.text !== 'string'
+              ) {
+                throw new TypeError('invalid message control line')
+              }
+              if (pending.length >= MAX_FORK_PENDING_MESSAGES) {
+                console.error('Fork child message queue full; message skipped')
+                continue
+              }
+              pending.push(control.text)
+            } catch (error) {
+              console.error(`Fork child skipped invalid control line: ${errorMessage(error)}`)
+            }
+          }
+        } catch (error) {
+          console.error(`Fork child message channel failed: ${errorMessage(error)}`)
+        }
+      })()
+    }
     const controller = new AbortController()
     const handleTermination = () => controller.abort(new Error('Fork child terminated'))
     process.once('SIGTERM', handleTermination)
     process.once('SIGINT', handleTermination)
 
     try {
-      const result = await runForkLoop(prepared, getChildProvider(), controller.signal)
+      const result = await runForkLoop(
+        prepared,
+        getChildProvider(),
+        controller.signal,
+        prepared.purpose === 'agent' ? messageChannel : undefined,
+      )
       await Bun.write(Bun.stdout, `${JSON.stringify(result)}\n`)
       return 0
     } finally {

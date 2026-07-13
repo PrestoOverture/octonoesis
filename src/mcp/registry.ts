@@ -4,7 +4,6 @@ import { MCPTool } from '../tools/MCPTool'
 import { registerTool, unregisterTool } from '../tools/registry'
 import { dbg } from '../utils/debug'
 import { connectMcpServer } from './client'
-import type { McpClientConnection } from './types'
 
 const sessionTools = new WeakMap<QueryLoopContext, MCPTool[]>()
 
@@ -48,7 +47,7 @@ export async function cleanupMcp(ctx: QueryLoopContext): Promise<void> {
   sessionTools.delete(ctx)
   for (const tool of tools) unregisterTool(tool.name, tool)
 
-  const connections = Array.from(ctx.mcpConnections?.values() ?? []) as McpClientConnection[]
+  const connections = Array.from(ctx.mcpConnections?.values() ?? [])
   await Promise.allSettled(connections.map((connection) => connection.cleanup()))
   ctx.mcpConnections?.clear()
   ctx.mcpConnections = undefined

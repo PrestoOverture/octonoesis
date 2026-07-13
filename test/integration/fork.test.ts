@@ -134,6 +134,7 @@ test('fork child round-trips a no-tool mock response without writing memory', as
   const cwd = await mkdtemp(join(tmpdir(), 'octonoesis-fork-'))
   const systemPrompt = 'stable\ncache-key\u0000\u4fdd\u6301'
   const prepared: PreparedFork = {
+    repoRoot: cwd,
     systemPrompt,
     messages: [{ role: 'user', content: 'Summarize this paragraph.' }],
     tools: [],
@@ -276,6 +277,7 @@ test('forkAgent times out a running child and returns a fatal error after reapin
 
 test('fork child rejects a directly spawned depth-two process', async () => {
   const prepared: PreparedFork = {
+    repoRoot: process.cwd(),
     systemPrompt: 'depth prompt',
     messages: [{ role: 'user', content: 'Do not recurse.' }],
     tools: [],

@@ -60,6 +60,7 @@ export async function executeSkill(
       maxTurns: 8,
       timeoutMs: 120_000,
       signal: options.ctx.abortSignal,
+      repoRoot: options.ctx.repoRoot,
     })
     options.onForkUsage?.(result.usage)
     if (result.exitReason === 'fatal_error' || result.exitReason === 'user_cancel') {

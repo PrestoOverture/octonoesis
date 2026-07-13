@@ -1,6 +1,7 @@
 import type { Tool } from './Tool'
 
-// A global registry map holding all active tools
+// v1.0 invariant: one active query per process. Concurrent agents run in child processes and use
+// child-side hardcoded tool tables; in-process concurrent query registries are deferred to v1.1+.
 const registry = new Map<string, Tool>()
 
 /**

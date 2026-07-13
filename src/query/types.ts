@@ -1,5 +1,6 @@
 import type { OctonoesisConfig } from '../config/schema'
 import type { HookRegistry } from '../hooks/registry'
+import type { McpClientConnection } from '../mcp/types'
 import type { Fingerprint } from '../memory/fingerprint/extract'
 import type { RuleFile } from '../memory/rules/types'
 import type { VerifyResult } from '../memory/verifier'
@@ -49,12 +50,11 @@ export interface TaskState {
   type: 'shell' | 'agent'
   status: 'pending' | 'running' | 'completed' | 'failed' | 'killed'
   startTime: number
-}
-
-export interface McpConnection {
-  name: string
-  status: 'connected' | 'failed' | 'closed'
-  cleanup: () => Promise<void>
+  command?: string
+  endTime?: number
+  output?: string
+  error?: string
+  usage?: Usage
 }
 
 export interface SandboxConfig {
@@ -80,7 +80,7 @@ export interface QueryToolContextFields {
   hooks?: HookRegistry
   config?: OctonoesisConfig
   tasks?: Map<string, TaskState>
-  mcpConnections?: Map<string, McpConnection>
+  mcpConnections?: Map<string, McpClientConnection>
   injectedRules?: InjectedRule[]
   recordedRuleOutcomes?: Set<string>
   verificationCommand?: string
