@@ -50,7 +50,15 @@ describe('TaskChip', () => {
 
     task.status = 'completed'
     task.endTime = now + 2_000
-    await new Promise((resolve) => setTimeout(resolve, 30))
+    // Bounded poll instead of a fixed sleep: under heavy load (e.g. the full
+    // suite running as a background task of a live session) a single 30ms
+    // window can miss the poll tick + Ink re-render — observed at the Batch 3
+    // Tier C gate. The loop only exits early on success; the assertions below
+    // still fail hard if 'completed' never renders within the deadline.
+    const deadline = Date.now() + 2_000
+    while (Date.now() < deadline && !(lastFrame() ?? '').includes('completed')) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
 
     expect(lastFrame()).toContain('agent-cd34ef56')
     expect(lastFrame()).toContain('completed')
