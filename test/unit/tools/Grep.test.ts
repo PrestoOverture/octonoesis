@@ -11,17 +11,21 @@ describe('Grep tool', () => {
   const ctx = { repoRoot }
 
   it('searches existing files with pattern', async () => {
-    const result = await grepTool.call({ pattern: 'Positioning', path: 'docs' }, ctx)
+    // Search a committed fixture — docs/ is gitignored and absent on CI checkouts.
+    const result = await grepTool.call(
+      { pattern: 'Intentionally buggy', path: 'test/fixtures/buggy-repo' },
+      ctx,
+    )
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.value).toContain('docs/prd.md')
-      expect(result.value).toContain('Positioning')
+      expect(result.value).toContain('test/fixtures/buggy-repo/src/buggy.ts')
+      expect(result.value).toContain('Intentionally buggy')
     }
   })
 
   it('returns "No matches found." when pattern does not exist', async () => {
     const result = await grepTool.call(
-      { pattern: 'nonexistent-pattern-xyz-123', path: 'docs' },
+      { pattern: 'nonexistent-pattern-xyz-123', path: 'test/fixtures/buggy-repo' },
       ctx,
     )
     expect(result.ok).toBe(true)

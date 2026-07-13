@@ -7,11 +7,12 @@ describe('Glob tool', () => {
   const ctx = { repoRoot }
 
   it('lists existing files with pattern', async () => {
-    const result = await globTool.call({ pattern: 'docs/*.md' }, ctx)
+    // Glob a committed fixture — docs/ is gitignored and absent on CI checkouts.
+    const result = await globTool.call({ pattern: 'test/fixtures/buggy-repo/**/*.ts' }, ctx)
     expect(result.ok).toBe(true)
     if (result.ok) {
-      expect(result.value.length >= 4).toBe(true)
-      expect(result.value).toContain('docs/prd.md')
+      expect(result.value.length >= 2).toBe(true)
+      expect(result.value).toContain('test/fixtures/buggy-repo/src/buggy.ts')
     }
   })
 

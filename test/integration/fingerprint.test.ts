@@ -61,10 +61,11 @@ describe('Fingerprint Journal Integration', () => {
     }
     setProvider(mockProvider)
 
-    // 2. Run a command that prints an error message to stderr and exits with code 1
-    const command =
-      "echo 'TypeError: null is not an object at /Users/kwang/projects/coding_agent/src/buggy.ts:7:20' >&2 && exit 1"
-    const ctx = { repoRoot: '/Users/kwang/projects/coding_agent' }
+    // 2. Run a command that prints an error message to stderr and exits with code 1.
+    // repoRoot must be a real directory on whatever machine runs the suite (CI included).
+    const repoRoot = process.cwd()
+    const command = `echo 'TypeError: null is not an object at ${repoRoot}/src/buggy.ts:7:20' >&2 && exit 1`
+    const ctx = { repoRoot }
 
     const result = await runTool('Bash', { command }, ctx)
 
