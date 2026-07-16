@@ -4,6 +4,7 @@ import { getCheapestModel } from '../../providers/index.ts'
 import { getRepoRoot } from '../../utils/path.ts'
 import { readEpisodes } from '../episodes/store.ts'
 import { distillEpisode } from './distill.ts'
+import { disambiguateRuleId } from './identity.ts'
 import { updateLifecycle } from './lifecycle.ts'
 import { enforcePoolCap } from './pool.ts'
 import { getRulesDir, loadAllRules, saveRule } from './store.ts'
@@ -18,9 +19,9 @@ import type { RuleFile } from './types.ts'
 export async function rebuildRules(
   episodesPath: string, // Passed for API compatibility, readEpisodes determines path internally
   rulesDir: string,
-  ctx: { model?: string; extractorVersion: string; forceDistill?: boolean },
+  ctx: { model?: string; extractorVersion: string; forceDistill?: boolean; repoRoot?: string },
 ): Promise<void> {
-  const repoRoot = getRepoRoot()
+  const repoRoot = ctx.repoRoot ?? getRepoRoot()
   const modelToUse = ctx.model || getCheapestModel()
 
   // 1. Load existing rules to preserve metrics (hits, misses) and user status modifications (pinned, banned)
@@ -79,10 +80,14 @@ export async function rebuildRules(
       ruleCopy.beta = 2 + ruleCopy.misses
       rebuiltRules.push(ruleCopy)
     } else {
-      const newRule = await distillEpisode(episode, {
-        model: modelToUse,
-        extractorVersion: ctx.extractorVersion,
-      })
+      const newRule = disambiguateRuleId(
+        await distillEpisode(episode, {
+          model: modelToUse,
+          extractorVersion: ctx.extractorVersion,
+        }),
+        episode.failure.signature,
+        rebuiltRules,
+      )
 
       // Preserve stats and user modifications
       if (preExistingRule) {

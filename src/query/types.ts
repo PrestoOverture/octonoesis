@@ -30,6 +30,8 @@ export interface QueryInternalState {
   _lastVerifyResultForQuery?: VerifyResultWithRun
   _lastFingerprints?: Fingerprint[]
   firstTurnDynamicSystem?: string
+  /** Persists auto-distill attempts across query calls that share one TUI session context. */
+  autoDistillAttemptedEpisodeIds?: Set<string>
 }
 
 export interface SessionState {

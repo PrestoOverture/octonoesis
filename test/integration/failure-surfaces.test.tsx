@@ -90,8 +90,13 @@ describe('query failure surfaces', () => {
     })
 
     try {
-      const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])
+      const [code, stdout, stderr] = await Promise.all([
+        child.exited,
+        new Response(child.stdout).text(),
+        new Response(child.stderr).text(),
+      ])
       expect(code).not.toBe(0)
+      expect(stdout).not.toContain('Session summary:')
       expect(stderr).toContain('fatal_error')
       expect(stderr).toContain('synthetic one-shot provider failure')
     } finally {
@@ -124,6 +129,40 @@ describe('query failure surfaces', () => {
     }
   })
 
+  it('clears a pending TUI permission dialog when Ctrl+C aborts the query', async () => {
+    const provider: LLMProvider = {
+      name: 'anthropic',
+      async *createMessageStream(): AsyncIterable<StreamEvent> {
+        yield {
+          type: 'tool_use',
+          id: 'permission-cancel',
+          name: 'Bash',
+          input: { command: 'printf should-not-run' },
+        }
+        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      },
+    }
+    setProvider(provider)
+    const view = render(
+      <App ctx={{ repoRoot: root, messages: [], tasks: new Map(), config: DEFAULT_CONFIG }} />,
+    )
+
+    try {
+      view.stdin.write('cancel permission')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      view.stdin.write('\r')
+      const permissionFrame = await waitForFrame(view.lastFrame, 'Permission Required')
+      expect(permissionFrame).toContain('Permission Required')
+
+      view.stdin.write('\x03')
+      const resumedFrame = await waitForFrame(view.lastFrame, 'Type a message...')
+      expect(resumedFrame).not.toContain('Permission Required')
+      expect(resumedFrame).toContain('Type a message...')
+    } finally {
+      view.unmount()
+    }
+  })
+
   it('reports the v1.0 CLI version', async () => {
     const child = Bun.spawn({
       cmd: [process.execPath, path.resolve('src/cli.tsx'), '--version'],
@@ -141,5 +180,31 @@ describe('query failure surfaces', () => {
     expect(code).toBe(0)
     expect(stdout.trim()).toBe('1.0.0')
     expect(stderr).toBe('')
+  })
+
+  it('reports a missing captured key for either configured provider', async () => {
+    for (const [provider, expected] of [
+      ['anthropic', 'ANTHROPIC_API_KEY is not set'],
+      ['openai', 'OPENAI_API_KEY is not set'],
+    ] as const) {
+      const env = {
+        ...process.env,
+        LLM_PROVIDER: provider,
+        OCTONOESIS_REPO_ROOT: root,
+      }
+      Reflect.deleteProperty(env, 'ANTHROPIC_API_KEY')
+      Reflect.deleteProperty(env, 'OPENAI_API_KEY')
+      const child = Bun.spawn({
+        cmd: [process.execPath, path.resolve('src/cli.tsx'), 'missing key probe'],
+        cwd: root,
+        env,
+        stdout: 'pipe',
+        stderr: 'pipe',
+      })
+      const [code, stderr] = await Promise.all([child.exited, new Response(child.stderr).text()])
+
+      expect(code).not.toBe(0)
+      expect(stderr).toContain(expected)
+    }
   })
 })

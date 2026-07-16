@@ -60,4 +60,30 @@ describe('Permissions confirm', () => {
     const decision = await requestPermission('Bash', { command: 'bun test' })
     expect(decision).toBe('deny')
   })
+
+  test('resolves a pending delegated prompt as deny when the query is aborted', async () => {
+    const controller = new AbortController()
+    let notifyStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      notifyStarted = resolve
+    })
+    registerPromptHandler(async () => {
+      notifyStarted?.()
+      return new Promise(() => {})
+    })
+
+    const pending = requestPermission(
+      'Bash',
+      { command: 'bun test' },
+      { repoRoot: process.cwd(), abortSignal: controller.signal },
+    )
+    await started
+    controller.abort()
+    const result = await Promise.race([
+      pending,
+      new Promise<'timeout'>((resolve) => setTimeout(() => resolve('timeout'), 100)),
+    ])
+
+    expect(result).toBe('deny')
+  })
 })

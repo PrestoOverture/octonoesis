@@ -116,6 +116,7 @@ describe('Rebuild rules capability', () => {
       model: 'mock-model',
       extractorVersion: '0.2.0',
       forceDistill: true,
+      repoRoot: process.cwd(),
     })
 
     const allRules = await loadAllRules(rulesDir)

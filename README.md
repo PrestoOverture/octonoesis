@@ -135,6 +135,14 @@ Optional per-repo configuration in `.octonoesis/config.json`:
 
 ---
 
+## API key handling
+
+At startup, Octonoesis captures provider API keys in module memory and removes them from `process.env`. Tool subprocesses do not receive those keys by default; set `OCTONOESIS_INHERIT_API_KEYS=1` to opt Bash and background-shell children back into key inheritance. Provider fork children used for compaction, memory work, and sub-agents do receive the keys because they call the model provider.
+
+Keys exported by your shell can still be visible to other same-user processes through OS process inspection. Prefer placing keys in the repository's `.env` file, which Bun loads without putting them in the exec-time environment. Every shell command remains permission-gated; that prompt is the operative security boundary.
+
+---
+
 ## Architecture
 
 ```mermaid

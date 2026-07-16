@@ -8,6 +8,11 @@ import {
 } from '../../src/providers/anthropic'
 import { OpenAIProvider, toOpenAIMessages } from '../../src/providers/openai'
 import type { CanonicalMessage, CanonicalTool } from '../../src/providers/types'
+import {
+  captureProviderCredentials,
+  getProviderCredentialEnvironment,
+  setProviderCredentialsForTests,
+} from '../../src/utils/env'
 
 // Mock Anthropic's callAnthropicStream helper
 let mockAnthropicEvents: AnthropicStreamEvent[] = []
@@ -51,6 +56,7 @@ mock.module('openai', () => {
 })
 
 describe('LLM Providers & Router Integration', () => {
+  const originalCredentials = getProviderCredentialEnvironment()
   const originalEnv = {
     LLM_PROVIDER: process.env.LLM_PROVIDER,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
@@ -64,6 +70,7 @@ describe('LLM Providers & Router Integration', () => {
     setProvider(null)
     process.env.OPENAI_API_KEY = 'mock-key'
     process.env.ANTHROPIC_API_KEY = 'mock-key'
+    captureProviderCredentials()
   })
 
   afterEach(() => {
@@ -74,6 +81,7 @@ describe('LLM Providers & Router Integration', () => {
         process.env[key] = val
       }
     }
+    setProviderCredentialsForTests(originalCredentials)
   })
 
   describe('Routing & Configuration', () => {

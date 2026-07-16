@@ -135,6 +135,14 @@ octonoesis --sandbox "run the build"              # Bash 在 macOS 沙箱内运�
 
 ---
 
+## API 密钥处理
+
+Octonoesis 启动时会将模型提供商的 API 密钥捕获到模块内存，并从 `process.env` 中删除。默认不会把这些密钥传给工具子进程；设置 `OCTONOESIS_INHERIT_API_KEYS=1` 后，Bash 与后台 shell 子进程才会重新继承密钥。用于上下文压缩、记忆处理和子代理的提供商 fork 子进程会收到密钥，因为它们需要调用模型提供商。
+
+如果密钥由 shell `export`，同一用户的其他进程仍可能通过操作系统进程检查看到它们。建议将密钥放在仓库的 `.env` 文件中；Bun 会直接加载该文件，密钥不会进入 exec 时的环境。所有 shell 命令仍需经过权限确认；该提示才是实际生效的安全边界。
+
+---
+
 ## 架构
 
 ```mermaid

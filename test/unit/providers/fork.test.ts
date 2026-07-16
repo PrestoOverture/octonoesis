@@ -11,6 +11,7 @@ import {
   type ForkResult,
   MEMORY_EXTRACT_WRITE_SCOPE,
   type PreparedFork,
+  buildForkChildEnvironment,
   buildForkCommand,
   forkAgent,
   getForkDepth,
@@ -23,6 +24,10 @@ import { getCheapestModel } from '../../../src/providers/index'
 import type { CanonicalTool } from '../../../src/providers/types'
 import type { CanonicalMessage } from '../../../src/providers/types'
 import type { LLMProvider } from '../../../src/providers/types'
+import {
+  getProviderCredentialEnvironment,
+  setProviderCredentialsForTests,
+} from '../../../src/utils/env'
 
 const baseOptions = (): ForkOptions => ({
   systemPrompt: 'parent-system-prompt',
@@ -338,6 +343,30 @@ describe('fork cache-alignment invariant', () => {
 })
 
 describe('fork process protocol', () => {
+  it('re-injects captured provider credentials into the fork child environment', () => {
+    const originalCredentials = getProviderCredentialEnvironment()
+    setProviderCredentialsForTests({
+      ANTHROPIC_API_KEY: 'fork-anthropic-key',
+      OPENAI_API_KEY: 'fork-openai-key',
+    })
+
+    try {
+      expect(
+        buildForkChildEnvironment(
+          { OCTONOESIS_FORK_DEPTH: '1' },
+          { PATH: '/usr/bin', ANTHROPIC_API_KEY: 'must-not-win' },
+        ),
+      ).toEqual({
+        PATH: '/usr/bin',
+        ANTHROPIC_API_KEY: 'fork-anthropic-key',
+        OPENAI_API_KEY: 'fork-openai-key',
+        OCTONOESIS_FORK_DEPTH: '1',
+      })
+    } finally {
+      setProviderCredentialsForTests(originalCredentials)
+    }
+  })
+
   it('stops before starting a turn once the independent turn budget is exhausted', () => {
     expect(hasReachedMaxTurns(0, 1)).toBe(false)
     expect(hasReachedMaxTurns(1, 1)).toBe(true)

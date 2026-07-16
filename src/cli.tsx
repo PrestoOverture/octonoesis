@@ -18,6 +18,7 @@ import { createSessionState, flushSessionStats, formatSessionSummary } from './s
 import { cleanupTasks } from './tasks/framework.ts'
 import { App } from './ui/App'
 import { dbg } from './utils/debug.ts'
+import { hasAnthropicKey, hasOpenAIKey } from './utils/env.ts'
 import { getMemoryDir, getRepoRoot } from './utils/path.ts'
 
 if (process.argv.includes('--fork-child')) {
@@ -44,7 +45,7 @@ try {
 
 function checkApiKey(): void {
   const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
-  if (provider === 'anthropic' && !process.env.ANTHROPIC_API_KEY) {
+  if (provider === 'anthropic' && !hasAnthropicKey()) {
     console.error(
       'Error: ANTHROPIC_API_KEY is not set.\n\n' +
         'Set it in your environment:\n' +
@@ -55,7 +56,7 @@ function checkApiKey(): void {
     )
     process.exit(1)
   }
-  if (provider === 'openai' && !process.env.OPENAI_API_KEY) {
+  if (provider === 'openai' && !hasOpenAIKey()) {
     console.error(
       'Error: OPENAI_API_KEY is not set.\n\n' +
         'Set it in your environment:\n' +

@@ -28,11 +28,14 @@ export function clearAllowlist(): void {
 }
 
 // Allows registering a custom prompt handler (e.g. delegated to visual React Ink UI)
+type PermissionDecision = 'allow_once' | 'allow_always' | 'deny'
 type PromptHandler = (
   toolName: string,
   input: unknown,
-) => Promise<'allow_once' | 'allow_always' | 'deny'>
+  signal?: AbortSignal,
+) => Promise<PermissionDecision>
 let activePromptHandler: PromptHandler | null = null
+const PERMISSION_ABORTED = Symbol('permission-aborted')
 
 interface FallbackPromptState {
   input: NodeJS.ReadableStream
@@ -120,6 +123,45 @@ async function readFallbackAnswer(prompt: string): Promise<string | null> {
   })
 }
 
+function cancelFallbackAnswer(): void {
+  const state = fallbackPromptState
+  if (!state) return
+  state.pending = undefined
+  pauseFallbackPrompt(state)
+}
+
+async function raceWithAbort<T>(
+  operation: Promise<T>,
+  signal?: AbortSignal,
+  onAbort?: () => void,
+): Promise<T | typeof PERMISSION_ABORTED> {
+  if (!signal) return operation
+  if (signal.aborted) {
+    onAbort?.()
+    return PERMISSION_ABORTED
+  }
+
+  return new Promise((resolve, reject) => {
+    const cleanup = () => signal.removeEventListener('abort', handleAbort)
+    const handleAbort = () => {
+      cleanup()
+      onAbort?.()
+      resolve(PERMISSION_ABORTED)
+    }
+    signal.addEventListener('abort', handleAbort, { once: true })
+    operation.then(
+      (value) => {
+        cleanup()
+        resolve(value)
+      },
+      (error) => {
+        cleanup()
+        reject(error)
+      },
+    )
+  })
+}
+
 /**
  * Overrides one-shot permission input for tests and resets buffered prompt state.
  * Omit the argument to restore process.stdin.
@@ -193,7 +235,11 @@ export async function requestPermission(
 
   // Delegate to active UI handler if registered (e.g. Ink TUI)
   if (activePromptHandler) {
-    const decision = await activePromptHandler(toolName, input)
+    const prompted = await raceWithAbort(
+      activePromptHandler(toolName, input, ctx?.abortSignal),
+      ctx?.abortSignal,
+    )
+    const decision = prompted === PERMISSION_ABORTED ? 'deny' : prompted
     appendJournal({
       kind: 'permission',
       decision,
@@ -208,9 +254,12 @@ export async function requestPermission(
   // Interactive console CLI fallback for verification
   console.log(`\n⚠️  [Permission Request] Tool: ${toolName}`)
   console.log(`Parameters: ${JSON.stringify(input, null, 2)}`)
-  const answer = await readFallbackAnswer(
-    'Allow execution? [y] Yes once / [n] No / [a] Always for this input: ',
+  const prompted = await raceWithAbort(
+    readFallbackAnswer('Allow execution? [y] Yes once / [n] No / [a] Always for this input: '),
+    ctx?.abortSignal,
+    cancelFallbackAnswer,
   )
+  const answer = prompted === PERMISSION_ABORTED ? null : prompted
   const normalized = answer?.trim().toLowerCase()
   const decision = normalized === 'y' ? 'allow_once' : normalized === 'a' ? 'allow_always' : 'deny'
   if (decision === 'allow_always') {

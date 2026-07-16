@@ -1,9 +1,45 @@
-/**
- * Resolves the Anthropic API key from the environment variables, throwing an error if missing.
- * @returns The resolved Anthropic API key string.
- */
+export interface ProviderCredentials {
+  ANTHROPIC_API_KEY?: string
+  OPENAI_API_KEY?: string
+}
+
+let capturedProviderCredentials: ProviderCredentials = {}
+
+function credentialsFrom(source: NodeJS.ProcessEnv): ProviderCredentials {
+  return {
+    ...(source.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: source.ANTHROPIC_API_KEY } : {}),
+    ...(source.OPENAI_API_KEY ? { OPENAI_API_KEY: source.OPENAI_API_KEY } : {}),
+  }
+}
+
+/** Captures provider credentials in module state and removes them from the process environment. */
+export function captureProviderCredentials(source: NodeJS.ProcessEnv = process.env): void {
+  capturedProviderCredentials = credentialsFrom(source)
+  Reflect.deleteProperty(source, 'ANTHROPIC_API_KEY')
+  Reflect.deleteProperty(source, 'OPENAI_API_KEY')
+}
+
+/** Returns a copy suitable for the provider-only child processes that need credentials. */
+export function getProviderCredentialEnvironment(): Record<string, string> {
+  return { ...capturedProviderCredentials }
+}
+
+/** Test-only state seam for restoring credentials between isolated cases. */
+export function setProviderCredentialsForTests(credentials: ProviderCredentials): void {
+  capturedProviderCredentials = { ...credentials }
+}
+
+export function hasAnthropicKey(): boolean {
+  return capturedProviderCredentials.ANTHROPIC_API_KEY !== undefined
+}
+
+export function hasOpenAIKey(): boolean {
+  return capturedProviderCredentials.OPENAI_API_KEY !== undefined
+}
+
+/** Resolves the captured Anthropic API key, throwing if missing. */
 export function getAnthropicKey(): string {
-  const key = process.env.ANTHROPIC_API_KEY
+  const key = capturedProviderCredentials.ANTHROPIC_API_KEY
   if (!key) {
     throw new Error(
       'ANTHROPIC_API_KEY is not set. ' +
@@ -14,12 +50,9 @@ export function getAnthropicKey(): string {
   return key
 }
 
-/**
- * Resolves the OpenAI API key from the environment variables, throwing an error if missing.
- * @returns The resolved OpenAI API key string.
- */
+/** Resolves the captured OpenAI API key, throwing if missing. */
 export function getOpenAIKey(): string {
-  const key = process.env.OPENAI_API_KEY
+  const key = capturedProviderCredentials.OPENAI_API_KEY
   if (!key) {
     throw new Error(
       'OPENAI_API_KEY is not set. ' +
@@ -29,3 +62,5 @@ export function getOpenAIKey(): string {
   }
   return key
 }
+
+captureProviderCredentials()

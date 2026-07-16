@@ -3,6 +3,7 @@ declare const Bun: any
 
 import { realpathSync } from 'node:fs'
 import type { ExitReason } from '../query/types'
+import { getProviderCredentialEnvironment } from '../utils/env'
 import { getCheapestModel } from './index'
 import type { CanonicalMessage, CanonicalTool, Usage } from './types'
 
@@ -174,6 +175,18 @@ function forceKillForkChildren(): void {
   }
 }
 
+/** Builds the provider-capable environment used only by fork child processes. */
+export function buildForkChildEnvironment(
+  childEnv: Record<string, string>,
+  source: Record<string, string | undefined> = process.env,
+): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const [key, value] of Object.entries(source)) {
+    if (value !== undefined) env[key] = value
+  }
+  return { ...env, ...getProviderCredentialEnvironment(), ...childEnv }
+}
+
 function installParentSignalCleanup(signal: 'SIGINT' | 'SIGTERM'): void {
   const handleSignal = () => {
     forceKillForkChildren()
@@ -269,7 +282,7 @@ function spawnForkChild(prepared: PreparedFork): ForkSubprocess {
   const child = Bun.spawn({
     cmd: buildForkCommand(),
     cwd: prepared.repoRoot,
-    env: { ...process.env, ...prepared.childEnv },
+    env: buildForkChildEnvironment(prepared.childEnv),
     stdin: 'pipe',
     stdout: 'pipe',
     stderr: 'pipe',

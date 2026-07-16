@@ -822,7 +822,10 @@ export async function* query(
 
     try {
       if (ctx.sessionId) {
-        await runSessionEndAutoDistill(ctx.sessionId, ctx.repoRoot)
+        ctx.autoDistillAttemptedEpisodeIds ??= new Set<string>()
+        await runSessionEndAutoDistill(ctx.sessionId, ctx.repoRoot, {
+          attemptedEpisodeIds: ctx.autoDistillAttemptedEpisodeIds,
+        })
       }
     } catch (error) {
       dbg('query', 'Failed to run session-end auto-distillation hook', error)
@@ -903,14 +906,16 @@ export async function runQuery(
     }
   }
   await flushSessionStats()
+  if (queryResult && ONE_SHOT_FAILURE_REASONS.has(queryResult.exit_reason)) {
+    process.stderr.write(`${formatQueryFailure(queryResult)}\n`)
+    process.exitCode = 1
+    return
+  }
+
   const priced = ctx.sessionState
     ? estimateCost(ctx.sessionState.usage, ctx.sessionState.model).priced
     : false
   process.stdout.write(
     ctx.sessionState ? `\n${formatSessionSummary(ctx.sessionState, priced)}\n` : '\n',
   )
-  if (queryResult && ONE_SHOT_FAILURE_REASONS.has(queryResult.exit_reason)) {
-    process.stderr.write(`${formatQueryFailure(queryResult)}\n`)
-    process.exitCode = 1
-  }
 }

@@ -5,6 +5,7 @@ import path from 'node:path'
 import { appendEpisodes } from '../../../../src/memory/episodes/store.ts'
 import type { Episode } from '../../../../src/memory/episodes/types.ts'
 import {
+  AUTO_DISTILL_MAX_CALLS_PER_QUERY_END,
   AUTO_DISTILL_MAX_CALLS_PER_SESSION,
   runSessionEndAutoDistill,
 } from '../../../../src/memory/rules/autoDistill.ts'
@@ -77,6 +78,30 @@ function distillProvider(onCall?: (call: number) => void): LLMProvider {
       const signature = prompt.match(/^- Error signature: (.+)$/m)?.[1] ?? 'bash|Error'
       const anchor = prompt.match(/^- File: (.+?) \(Role:/m)?.[1] ?? ''
       const slug = `auto-${signature.split('|').at(-1)}`
+      yield {
+        type: 'text_delta',
+        text: JSON.stringify({
+          slug,
+          triggers: {
+            tools: ['Bash'],
+            command_prefix: ['bun test'],
+            error_signatures: [signature],
+          },
+          anchor_file: anchor,
+          advice: `Resolve ${signature}.`,
+        }),
+      }
+    },
+  }
+}
+
+function fixedSlugProvider(slug: string): LLMProvider {
+  return {
+    name: 'anthropic',
+    createMessageStream: async function* (messages) {
+      const prompt = promptText(messages)
+      const signature = prompt.match(/^- Error signature: (.+)$/m)?.[1] ?? 'bash|Error'
+      const anchor = prompt.match(/^- File: (.+?) \(Role:/m)?.[1] ?? ''
       yield {
         type: 'text_delta',
         text: JSON.stringify({
@@ -185,6 +210,106 @@ describe('session-end auto-distillation', () => {
     expect((await loadAllRules()).length).toBe(3)
   })
 
+  it('applies the three-call guard per query-end while attempting each episode once', async () => {
+    await createAnchorFiles(5)
+    await appendEpisodes([episode(1), episode(2), episode(3), episode(4), episode(5)])
+    const attemptedEpisodeIds = new Set<string>()
+    let calls = 0
+    setProvider(distillProvider(() => calls++))
+
+    await runSessionEndAutoDistill('session-auto-distill', tempDir, { attemptedEpisodeIds })
+    expect(AUTO_DISTILL_MAX_CALLS_PER_QUERY_END).toBe(3)
+    expect(calls).toBe(3)
+    expect(attemptedEpisodeIds.size).toBe(3)
+
+    await runSessionEndAutoDistill('session-auto-distill', tempDir, { attemptedEpisodeIds })
+    expect(calls).toBe(5)
+    expect(attemptedEpisodeIds.size).toBe(5)
+
+    await runSessionEndAutoDistill('session-auto-distill', tempDir, { attemptedEpisodeIds })
+    expect(calls).toBe(5)
+  })
+
+  it('keeps distinct evidence in separate files when the distiller returns one slug', async () => {
+    await createAnchorFiles(2)
+    const episodes = [episode(1), episode(2)]
+    await appendEpisodes(episodes)
+    setProvider(fixedSlugProvider('shared-slug'))
+
+    await runSessionEndAutoDistill('session-auto-distill', tempDir)
+
+    const rules = (await loadAllRules()).sort((a, b) => a.id.localeCompare(b.id))
+    expect(rules.length).toBe(2)
+    const ids = rules.map((rule) => rule.id)
+    expect(ids.includes('rule-shared-slug')).toBe(true)
+    expect(ids.filter((id) => /^rule-shared-slug-[0-9a-f]{8}$/.test(id)).length).toBe(1)
+    expect(rules.map((rule) => rule.evidence).sort()).toEqual([['ep_0001'], ['ep_0002']])
+    for (const sourceEpisode of episodes) {
+      expect(
+        rules.some(
+          (rule) =>
+            rule.evidence.includes(sourceEpisode.id) &&
+            rule.triggers.error_signatures.includes(sourceEpisode.failure.signature),
+        ),
+      ).toBe(true)
+    }
+  })
+
+  it('leaves a colliding pinned rule byte-unchanged and saves the new rule separately', async () => {
+    await createAnchorFiles(1)
+    await appendEpisodes([episode(1)])
+    const pinned = coveringRule(episode(99))
+    pinned.id = 'rule-shared-slug'
+    pinned.status = 'pinned'
+    await saveRule(pinned)
+    const pinnedPath = path.join(tempDir, 'rules', 'rule-shared-slug.md')
+    await fs.appendFile(pinnedPath, '\n')
+    const before = await fs.readFile(pinnedPath)
+    setProvider(fixedSlugProvider('shared-slug'))
+
+    await runSessionEndAutoDistill('session-auto-distill', tempDir)
+
+    expect(await fs.readFile(pinnedPath)).toEqual(before)
+    const rules = await loadAllRules()
+    expect(rules.length).toBe(2)
+    expect(rules.find((rule) => rule.id === pinned.id)?.evidence).toEqual(['ep_existing'])
+    expect(
+      rules.some(
+        (rule) =>
+          rule.id !== pinned.id &&
+          rule.id.startsWith(`${pinned.id}-`) &&
+          rule.evidence.includes('ep_0001'),
+      ),
+    ).toBe(true)
+  })
+
+  it('uses the same collision-safe ids and evidence as rebuild-rules', async () => {
+    await createAnchorFiles(2)
+    await appendEpisodes([episode(1), episode(2)])
+    setProvider(fixedSlugProvider('shared-slug'))
+
+    await runSessionEndAutoDistill('session-auto-distill', tempDir, {
+      model: 'mock-model',
+      extractorVersion: '0.2.0',
+    })
+    const autoRules = await loadAllRules()
+
+    const rebuiltRulesDir = path.join(tempDir, 'rebuilt-collision-rules')
+    await rebuildRules(path.join(tempDir, 'episodes.jsonl'), rebuiltRulesDir, {
+      model: 'mock-model',
+      extractorVersion: '0.2.0',
+      forceDistill: true,
+      repoRoot: tempDir,
+    })
+    const rebuiltRules = await loadAllRules(rebuiltRulesDir)
+    const identities = (rules: RuleFile[]) =>
+      rules
+        .map((rule) => ({ id: rule.id, evidence: rule.evidence }))
+        .sort((a, b) => a.id.localeCompare(b.id))
+
+    expect(identities(autoRules)).toEqual(identities(rebuiltRules))
+  })
+
   it('skips excluded, abandoned, unattributable, zero-value, and active-covered episodes', async () => {
     await createAnchorFiles(5)
     const activeCovered = episode(5)
@@ -207,6 +332,57 @@ describe('session-end auto-distillation', () => {
     expect((await loadAllRules()).map((rule) => rule.id)).toEqual(['rule-existing-active'])
   })
 
+  it('leaves terminal rules untouched and records their matching episodes as attempted', async () => {
+    await createAnchorFiles(3)
+    const episodes = [episode(1), episode(2), episode(3)]
+    await appendEpisodes(episodes)
+    const statuses = ['retired', 'superseded', 'dormant'] as const
+    for (const [index, status] of statuses.entries()) {
+      const rule = coveringRule(episodes[index] as Episode)
+      rule.id = `rule-${status}`
+      rule.status = status
+      await saveRule(rule)
+    }
+    const attemptedEpisodeIds = new Set<string>()
+    let calls = 0
+    setProvider(distillProvider(() => calls++))
+
+    await runSessionEndAutoDistill('session-auto-distill', tempDir, {
+      attemptedEpisodeIds,
+    })
+
+    expect(calls).toBe(0)
+    expect(attemptedEpisodeIds).toEqual(new Set(episodes.map((source) => source.id)))
+    for (const rule of await loadAllRules()) {
+      expect(rule.evidence).toEqual(['ep_existing'])
+    }
+  })
+
+  it('appends matching evidence only to candidate rules', async () => {
+    await createAnchorFiles(1)
+    const sourceEpisode = episode(1)
+    await appendEpisodes([sourceEpisode])
+    const candidate = coveringRule(sourceEpisode)
+    candidate.id = 'rule-existing-candidate'
+    candidate.status = 'candidate'
+    await saveRule(candidate)
+    const attemptedEpisodeIds = new Set<string>()
+    setProvider({
+      name: 'anthropic',
+      createMessageStream: async function* () {
+        yield await Promise.reject(new Error('candidate evidence should not trigger distillation'))
+      },
+    })
+
+    await runSessionEndAutoDistill('session-auto-distill', tempDir, {
+      attemptedEpisodeIds,
+    })
+
+    const [saved] = await loadAllRules()
+    expect(saved?.evidence).toEqual(['ep_existing', sourceEpisode.id])
+    expect(attemptedEpisodeIds).toEqual(new Set([sourceEpisode.id]))
+  })
+
   it('produces the same semantic rule as rebuild-rules for the same episode', async () => {
     await createAnchorFiles(1)
     await appendEpisodes([episode(1)])
@@ -223,6 +399,7 @@ describe('session-end auto-distillation', () => {
       model: 'mock-model',
       extractorVersion: '0.2.0',
       forceDistill: true,
+      repoRoot: tempDir,
     })
     const [rebuiltRule] = await loadAllRules(rebuiltRulesDir)
 
@@ -254,5 +431,28 @@ describe('session-end auto-distillation', () => {
 
     expect(calls).toBe(2)
     expect((await loadAllRules()).length).toBe(1)
+  })
+
+  it('does not retry a failed episode across query-ends that share session attempts', async () => {
+    await createAnchorFiles(1)
+    await appendEpisodes([episode(1)])
+    const attemptedEpisodeIds = new Set<string>()
+    let calls = 0
+    setProvider({
+      name: 'anthropic',
+      createMessageStream: async function* () {
+        calls++
+        yield await Promise.reject(new Error('persistent distillation failure'))
+      },
+    })
+
+    for (let queryEnd = 0; queryEnd < 2; queryEnd++) {
+      await runSessionEndAutoDistill('session-auto-distill', tempDir, {
+        attemptedEpisodeIds,
+      })
+    }
+
+    expect(calls).toBe(1)
+    expect(attemptedEpisodeIds).toEqual(new Set(['ep_0001']))
   })
 })

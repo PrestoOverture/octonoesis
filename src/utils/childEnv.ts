@@ -1,3 +1,5 @@
+import { getProviderCredentialEnvironment } from './env.ts'
+
 export const SHELL_API_KEY_INHERIT_ENV = 'OCTONOESIS_INHERIT_API_KEYS'
 
 const SHELL_CREDENTIAL_KEYS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'] as const
@@ -14,7 +16,9 @@ export function shellChildEnv(source: NodeJS.ProcessEnv = process.env): Record<s
     if (value !== undefined) env[key] = value
   }
 
-  if (!isTruthy(env[SHELL_API_KEY_INHERIT_ENV])) {
+  if (isTruthy(env[SHELL_API_KEY_INHERIT_ENV])) {
+    Object.assign(env, getProviderCredentialEnvironment())
+  } else {
     for (const key of SHELL_CREDENTIAL_KEYS) delete env[key]
   }
   return env

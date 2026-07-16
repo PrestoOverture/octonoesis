@@ -5,12 +5,15 @@ import { getMemoryDir } from '../../utils/path.ts'
 import { readEpisodes } from '../episodes/store.ts'
 import type { Episode } from '../episodes/types.ts'
 import { distillEpisode } from './distill.ts'
+import { disambiguateRuleId } from './identity.ts'
 import { updateLifecycle } from './lifecycle.ts'
 import { enforcePoolCap } from './pool.ts'
 import { loadAllRules, saveRule } from './store.ts'
 import type { RuleFile } from './types.ts'
 
-export const AUTO_DISTILL_MAX_CALLS_PER_SESSION = 3
+export const AUTO_DISTILL_MAX_CALLS_PER_QUERY_END = 3
+/** @deprecated Use AUTO_DISTILL_MAX_CALLS_PER_QUERY_END; retained for API compatibility. */
+export const AUTO_DISTILL_MAX_CALLS_PER_SESSION = AUTO_DISTILL_MAX_CALLS_PER_QUERY_END
 export const AUTO_DISTILL_MIN_VALUE_SCORE = 0
 export const AUTO_DISTILL_EXTRACTOR_VERSION = '0.2.0'
 
@@ -19,6 +22,7 @@ export interface AutoDistillOptions {
   maxCalls?: number
   model?: string
   extractorVersion?: string
+  attemptedEpisodeIds?: Set<string>
 }
 
 function isTruthyEnv(value: string | undefined): boolean {
@@ -36,6 +40,10 @@ function signatureLevels(signature: string): string[] {
 
 function ruleCoversSignature(rule: RuleFile, signature: string): boolean {
   return signatureLevels(signature).some((level) => rule.triggers.error_signatures.includes(level))
+}
+
+function isTerminalRule(rule: RuleFile): boolean {
+  return rule.status === 'retired' || rule.status === 'superseded' || rule.status === 'dormant'
 }
 
 function isAutoDistillEligible(episode: Episode): boolean {
@@ -88,51 +96,75 @@ export async function runSessionEndAutoDistill(
       )
       .map((episode) => episode.failure.signature),
   )
-  const maxCalls = Math.max(0, Math.floor(options.maxCalls ?? AUTO_DISTILL_MAX_CALLS_PER_SESSION))
+  const maxCalls = Math.max(0, Math.floor(options.maxCalls ?? AUTO_DISTILL_MAX_CALLS_PER_QUERY_END))
+  const attemptedEpisodeIds = options.attemptedEpisodeIds ?? new Set<string>()
   let distillCalls = 0
-  let changed = false
+  const changedRuleIds = new Set<string>()
 
   for (const episode of episodes) {
     if (
+      attemptedEpisodeIds.has(episode.id) ||
       evidencedEpisodeIds.has(episode.id) ||
       initiallyCoveredSignatures.has(episode.failure.signature)
     ) {
       continue
     }
 
-    const existingRule = rules.find((rule) =>
-      rule.triggers.error_signatures.includes(episode.failure.signature),
+    const existingCandidate = rules.find(
+      (rule) =>
+        rule.status === 'candidate' &&
+        rule.triggers.error_signatures.includes(episode.failure.signature),
     )
-    if (existingRule) {
-      existingRule.evidence.push(episode.id)
-      existingRule.alpha = 2 + existingRule.hits + existingRule.evidence.length
-      existingRule.beta = 2 + existingRule.misses
-      await updateLifecycle(existingRule, repoRoot)
+    if (existingCandidate) {
+      attemptedEpisodeIds.add(episode.id)
+      existingCandidate.evidence.push(episode.id)
+      existingCandidate.alpha = 2 + existingCandidate.hits + existingCandidate.evidence.length
+      existingCandidate.beta = 2 + existingCandidate.misses
+      await updateLifecycle(existingCandidate, repoRoot)
       evidencedEpisodeIds.add(episode.id)
-      changed = true
+      changedRuleIds.add(existingCandidate.id)
+      continue
+    }
+
+    if (
+      rules.some(
+        (rule) =>
+          isTerminalRule(rule) &&
+          rule.triggers.error_signatures.includes(episode.failure.signature),
+      )
+    ) {
+      attemptedEpisodeIds.add(episode.id)
       continue
     }
 
     if (distillCalls >= maxCalls) continue
     distillCalls++
+    attemptedEpisodeIds.add(episode.id)
 
     try {
-      const rule = await distillEpisode(episode, {
-        model: options.model ?? getCheapestModel(),
-        extractorVersion: options.extractorVersion ?? AUTO_DISTILL_EXTRACTOR_VERSION,
-      })
+      const rule = disambiguateRuleId(
+        await distillEpisode(episode, {
+          model: options.model ?? getCheapestModel(),
+          extractorVersion: options.extractorVersion ?? AUTO_DISTILL_EXTRACTOR_VERSION,
+        }),
+        episode.failure.signature,
+        rules,
+      )
       await updateLifecycle(rule, repoRoot)
       rules.push(rule)
       evidencedEpisodeIds.add(episode.id)
-      changed = true
+      changedRuleIds.add(rule.id)
     } catch (error) {
       dbg('memory', `Failed to auto-distill episode ${episode.id}`, error)
     }
   }
 
-  if (!changed) return
+  if (changedRuleIds.size === 0) return
 
-  for (const rule of enforcePoolCap(rules)) {
-    await saveRule(rule, rulesDir)
+  const statusesBeforeCap = new Map(rules.map((rule) => [rule.id, rule.status]))
+  const finalRules = enforcePoolCap(rules)
+  for (const rule of finalRules) {
+    if (statusesBeforeCap.get(rule.id) !== rule.status) changedRuleIds.add(rule.id)
+    if (changedRuleIds.has(rule.id)) await saveRule(rule, rulesDir)
   }
 }

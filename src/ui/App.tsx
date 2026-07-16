@@ -235,15 +235,26 @@ export function App(props: AppProps) {
 
   // Register prompt handler at mount, unregister at unmount
   useEffect(() => {
-    registerPromptHandler((toolName, input) => {
+    registerPromptHandler((toolName, input, signal) => {
       return new Promise<'allow_once' | 'allow_always' | 'deny'>((resolve) => {
+        let settled = false
+        const settle = (decision: 'allow_once' | 'allow_always' | 'deny') => {
+          if (settled) return
+          settled = true
+          signal?.removeEventListener('abort', handleAbort)
+          setPendingConfirm(null)
+          resolve(decision)
+        }
+        const handleAbort = () => settle('deny')
+        if (signal?.aborted) {
+          handleAbort()
+          return
+        }
+        signal?.addEventListener('abort', handleAbort, { once: true })
         setPendingConfirm({
           toolName,
           input,
-          resolve: (decision) => {
-            setPendingConfirm(null)
-            resolve(decision)
-          },
+          resolve: settle,
         })
       })
     })

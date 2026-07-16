@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { z } from 'zod'
+import { registerPromptHandler, unregisterPromptHandler } from '../../src/permissions/confirm'
 import { setProvider } from '../../src/providers'
 import type {
   CanonicalMessage,
@@ -57,6 +58,27 @@ class PairingProvider implements LLMProvider {
   }
 }
 
+class PermissionPairingProvider implements LLMProvider {
+  readonly name = 'anthropic' as const
+  calls = 0
+
+  async *createMessageStream(
+    messages: CanonicalMessage[],
+    _tools: CanonicalTool[],
+  ): AsyncIterable<ProviderStreamEvent> {
+    assertCompleteToolPairing(messages)
+    this.calls++
+    if (this.calls === 1) {
+      yield { type: 'tool_use', id: 'permission-first', name: 'NeedsPermission', input: {} }
+      yield { type: 'tool_use', id: 'permission-second', name: 'PermissionMustNotRun', input: {} }
+      yield { type: 'message_end', usage: { input_tokens: 3, output_tokens: 2 } }
+      return
+    }
+    yield { type: 'text_delta', text: 'Continued after permission cancellation.' }
+    yield { type: 'message_end', usage: { input_tokens: 2, output_tokens: 1 } }
+  }
+}
+
 const originalMemoryDir = process.env.OCTONOESIS_MEMORY_DIR
 const originalDisableMemory = process.env.OCTONOESIS_DISABLE_MEMORY
 const originalDisableCompact = process.env.OCTONOESIS_DISABLE_COMPACT
@@ -71,6 +93,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   setProvider(null)
+  unregisterPromptHandler()
   await fs.rm(memoryDir, { recursive: true, force: true })
   for (const [key, value] of [
     ['OCTONOESIS_MEMORY_DIR', originalMemoryDir],
@@ -158,5 +181,105 @@ test('repairs streamed tool pairing before a cancelled session continues', async
   } finally {
     unregisterTool(abortTool.name, abortTool)
     unregisterTool(mustNotRunTool.name, mustNotRunTool)
+  }
+})
+
+test('cancels a pending permission without a keypress and preserves continuation pairing', async () => {
+  const controller = new AbortController()
+  let notifyPermissionStarted: (() => void) | undefined
+  const permissionStarted = new Promise<void>((resolve) => {
+    notifyPermissionStarted = resolve
+  })
+  registerPromptHandler(async () => {
+    notifyPermissionStarted?.()
+    return new Promise(() => {})
+  })
+  let firstToolCalls = 0
+  let secondToolCalls = 0
+  const firstTool: Tool<Record<string, never>, string> = {
+    name: 'NeedsPermission',
+    description: 'Waits for permission',
+    inputSchema: z.object({}).strict(),
+    isConcurrencySafe: () => false,
+    isReadOnly: () => false,
+    call: async () => {
+      firstToolCalls++
+      return { ok: true, value: 'unexpected' }
+    },
+  }
+  const secondTool: Tool<Record<string, never>, string> = {
+    name: 'PermissionMustNotRun',
+    description: 'Must remain un-run after cancellation',
+    inputSchema: z.object({}).strict(),
+    isConcurrencySafe: () => false,
+    isReadOnly: () => true,
+    call: async () => {
+      secondToolCalls++
+      return { ok: true, value: 'unexpected' }
+    },
+  }
+  registerTool(firstTool)
+  registerTool(secondTool)
+
+  try {
+    const provider = new PermissionPairingProvider()
+    setProvider(provider)
+    const ctx: QueryLoopContext = {
+      repoRoot: process.cwd(),
+      sessionId: 'permission-cancel-pairing-session',
+      messages: [],
+      tasks: new Map(),
+    }
+    const cancelledPromise = collectQuery(query('Start permission tools', ctx, controller.signal))
+    await permissionStarted
+    controller.abort()
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const cancelled = await Promise.race([
+      cancelledPromise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error('permission cancellation timed out')), 1_000)
+      }),
+    ]).finally(() => {
+      if (timeout) clearTimeout(timeout)
+    })
+    const continued = await collectQuery(
+      query('Continue after permission cancellation', ctx, new AbortController().signal),
+    )
+
+    expect(cancelled.exit_reason).toBe('user_cancel')
+    expect(continued.exit_reason).toBe('completed')
+    expect(continued.final_message).toBe('Continued after permission cancellation.')
+    expect(firstToolCalls).toBe(0)
+    expect(secondToolCalls).toBe(0)
+    assertCompleteToolPairing(ctx.messages ?? [])
+
+    const currentResult = ctx.messages?.find(
+      (message) => message.role === 'tool' && message.tool_use_id === 'permission-first',
+    )
+    expect(
+      Array.isArray(currentResult?.content) &&
+        currentResult.content.some(
+          (block) =>
+            block.type === 'tool_result' &&
+            block.is_error === true &&
+            block.content.includes('permission_denied'),
+        ),
+    ).toBe(true)
+    const remainingResult = ctx.messages?.find(
+      (message) => message.role === 'tool' && message.tool_use_id === 'permission-second',
+    )
+    expect(
+      Array.isArray(remainingResult?.content) &&
+        remainingResult.content.some(
+          (block) =>
+            block.type === 'tool_result' &&
+            block.is_error === true &&
+            block.content === 'Tool execution cancelled by user.',
+        ),
+    ).toBe(true)
+  } finally {
+    unregisterPromptHandler()
+    unregisterTool(firstTool.name, firstTool)
+    unregisterTool(secondTool.name, secondTool)
   }
 })

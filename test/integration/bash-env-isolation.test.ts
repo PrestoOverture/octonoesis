@@ -5,11 +5,17 @@ import path from 'node:path'
 import type { QueryLoopContext, TaskState } from '../../src/query/types'
 import { cleanupTasks } from '../../src/tasks/framework'
 import { bashTool } from '../../src/tools/Bash'
+import {
+  captureProviderCredentials,
+  getProviderCredentialEnvironment,
+  setProviderCredentialsForTests,
+} from '../../src/utils/env'
 
 const CREDENTIAL_COMMAND = `printf '%s|%s' "$ANTHROPIC_API_KEY" "$OPENAI_API_KEY"`
 const originalAnthropicKey = process.env.ANTHROPIC_API_KEY
 const originalOpenAiKey = process.env.OPENAI_API_KEY
 const originalOptOut = process.env.OCTONOESIS_INHERIT_API_KEYS
+const originalCapturedCredentials = getProviderCredentialEnvironment()
 let repoRoot = ''
 const contexts: QueryLoopContext[] = []
 
@@ -46,6 +52,7 @@ beforeEach(async () => {
   repoRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'octonoesis-bash-env-'))
   process.env.ANTHROPIC_API_KEY = 'anthropic-test-secret'
   process.env.OPENAI_API_KEY = 'openai-test-secret'
+  captureProviderCredentials()
   Reflect.deleteProperty(process.env, 'OCTONOESIS_INHERIT_API_KEYS')
 })
 
@@ -55,6 +62,7 @@ afterEach(async () => {
   restoreEnv('ANTHROPIC_API_KEY', originalAnthropicKey)
   restoreEnv('OPENAI_API_KEY', originalOpenAiKey)
   restoreEnv('OCTONOESIS_INHERIT_API_KEYS', originalOptOut)
+  setProviderCredentialsForTests(originalCapturedCredentials)
 })
 
 describe('Bash credential environment isolation', () => {
