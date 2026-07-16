@@ -119,6 +119,34 @@ program
   })
 
 program
+  .command('dashboard')
+  .description('Display learning-loop fitness from local ledger files')
+  .option('--json', 'Emit versioned machine-readable JSON')
+  .option('--weeks <N>', 'Limit trends to the trailing N ISO weeks')
+  .option('--bucket <coarse>', 'Filter cost episodes by coarse fingerprint bucket')
+  .action(async (options) => {
+    try {
+      const weeks = options.weeks === undefined ? undefined : Number(options.weeks)
+      if (weeks !== undefined && (!Number.isInteger(weeks) || weeks < 1)) {
+        throw new Error('--weeks must be a positive integer')
+      }
+      const { renderFitnessDashboard } = await import('./memory/fitness/run.ts')
+      console.log(
+        await renderFitnessDashboard({
+          json: options.json === true,
+          ...(weeks === undefined ? {} : { weeks }),
+          ...(options.bucket === undefined ? {} : { bucket: options.bucket }),
+        }),
+      )
+    } catch (error) {
+      console.error(
+        `Error displaying dashboard: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      process.exit(1)
+    }
+  })
+
+program
   .option('--stats', 'Display calibration statistics')
   .option('--debug', 'Enable debug logging')
   .option('--sandbox', 'Run Bash tool commands inside macOS sandbox-exec')

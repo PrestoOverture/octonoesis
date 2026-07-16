@@ -1,5 +1,10 @@
 import type { RuleFile } from './types.ts'
 
+/** Returns whether a rule consumes one of the 150 active-pool slots. */
+export function isPoolCapRelevantStatus(status: RuleFile['status']): boolean {
+  return status === 'active' || status === 'candidate'
+}
+
 /**
  * Calculates the specificity of a rule based on its error signature.
  * @param rule The RuleFile object to check.
