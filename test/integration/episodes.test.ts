@@ -3,6 +3,7 @@ import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import { join } from 'node:path'
 import { readEpisodes } from '../../src/memory/episodes/store'
+import { loadAllRules } from '../../src/memory/rules/store'
 import { registerPromptHandler, unregisterPromptHandler } from '../../src/permissions/confirm'
 import { setProvider } from '../../src/providers'
 import type {
@@ -146,6 +147,27 @@ describe('Episode Integration Loop', () => {
           return
         }
 
+        if (firstMsgText.includes('expert software engineering mentor')) {
+          yield {
+            type: 'text_delta',
+            text: JSON.stringify({
+              slug: 'temp-null-pointer',
+              triggers: {
+                tools: ['Bash'],
+                command_prefix: ['echo'],
+                error_signatures: ['Bash|TypeError|src/temp.ts|null pointer'],
+              },
+              anchor_file: 'src/temp.ts',
+              advice: 'Guard nullable values before dereferencing them.',
+            }),
+          }
+          yield {
+            type: 'message_end',
+            usage: { input_tokens: 5, output_tokens: 5 },
+          }
+          return
+        }
+
         currentTurn++
         const turnQueue = [turn1Events, turn2Events, turn3Events, turn4Events, turn5Events]
         const events = turnQueue[currentTurn - 1] || []
@@ -178,5 +200,10 @@ describe('Episode Integration Loop', () => {
     expect(ep?.attribution.primary).toBe('src/temp.ts')
     expect(ep?.value_score).toBe(1.0)
     expect(ep?.is_excluded).toBe(false)
+
+    const rules = await loadAllRules()
+    expect(rules.length).toBe(1)
+    expect(rules[0]?.id).toBe('rule-temp-null-pointer')
+    expect(rules[0]?.evidence).toEqual([ep?.id])
   })
 })

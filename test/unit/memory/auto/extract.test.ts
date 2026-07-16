@@ -189,6 +189,95 @@ describe('auto-memory extraction', () => {
     expect(await loadMemoryIndex()).toBe('')
   })
 
+  for (const observedClass of [
+    {
+      name: 'a code-derivable default value',
+      messages: [
+        { role: 'user' as const, content: 'What is the default max-turn count?' },
+        {
+          role: 'assistant' as const,
+          content: [{ type: 'text' as const, text: 'I will inspect the config source.' }],
+        },
+        { role: 'user' as const, content: 'Please report what the code says.' },
+        {
+          role: 'assistant' as const,
+          content: [{ type: 'text' as const, text: 'The code-derived default is 50 turns.' }],
+        },
+      ],
+      exemplar: 'The code-derived default is 50 turns',
+      falseMemory: write({
+        name: 'default-max-turns',
+        type: 'project',
+        description: 'Default max turns',
+        content: 'The default max-turn count is 50.',
+      }),
+    },
+    {
+      name: 'a probe constraint misread as a user preference',
+      messages: [
+        { role: 'user' as const, content: 'For this probe only, do not read the task log.' },
+        {
+          role: 'assistant' as const,
+          content: [{ type: 'text' as const, text: 'I will avoid it for this probe.' }],
+        },
+        { role: 'user' as const, content: 'Now report the marker.' },
+        {
+          role: 'assistant' as const,
+          content: [{ type: 'text' as const, text: 'The probe completed.' }],
+        },
+      ],
+      exemplar: 'For this probe only, do not read the task log',
+      falseMemory: write({
+        name: 'avoid-task-log',
+        type: 'user',
+        description: 'Avoid task logs',
+        content: 'The user prefers that task logs are never read.',
+      }),
+    },
+    {
+      name: 'a documentation-derived fact',
+      messages: [
+        { role: 'user' as const, content: 'Read the architecture docs and summarize the default.' },
+        {
+          role: 'assistant' as const,
+          content: [{ type: 'text' as const, text: 'I will read the project documentation.' }],
+        },
+        { role: 'user' as const, content: 'What did the document say?' },
+        {
+          role: 'assistant' as const,
+          content: [{ type: 'text' as const, text: 'The architecture docs say the cap is 150.' }],
+        },
+      ],
+      exemplar: 'The architecture docs say the cap is 150',
+      falseMemory: write({
+        name: 'documented-rule-cap',
+        type: 'project',
+        description: 'Documented rule cap',
+        content: 'The architecture documentation sets the rule cap to 150.',
+      }),
+    },
+  ]) {
+    it(`rejects ${observedClass.name}`, async () => {
+      await extractMemories(
+        { system: 'system', messages: observedClass.messages },
+        { repoRoot: tempDir },
+        {
+          forkFn: async (options) => {
+            const instruction = JSON.stringify(options.messages.at(-1))
+            return result(
+              instruction.includes(observedClass.exemplar)
+                ? '[]'
+                : JSON.stringify([observedClass.falseMemory]),
+            )
+          },
+        },
+      )
+
+      expect(await loadMemories()).toEqual([])
+      expect(await loadMemoryIndex()).toBe('')
+    })
+  }
+
   it('applies nothing for malformed, invalid, or failed fork output', async () => {
     const outputs: Array<ForkResult | Error> = [
       result('not-json'),

@@ -33,6 +33,10 @@ Extract only from the user's own statements and verified task outcomes in the co
 The user's explicitly stated preferences are the highest priority for extraction and must be considered before all other candidates.
 Do not extract transient task activity. Files created, modified, renamed, or deleted while completing the current task; commands run; bugs fixed; tests added; test-case counts; and completion summaries are not durable memories.
 For example, "created math.test.ts with 4 cases" is a transient task detail and must return []. Extract a project memory only for a durable repository convention or architectural fact, never merely because work happened in a file.
+These observed false-positive classes must also return []:
+- Code-derivable value: the agent inspects source and reports "The code-derived default is 50 turns." Values that can be read from the current code are not memories.
+- Temporary probe/test constraint: the user says "For this probe only, do not read the task log." A one-off evaluation constraint is not a durable user preference.
+- Documentation-derived fact: the agent reports "The architecture docs say the cap is 150." Facts taken from project documentation remain documentation content, not memories.
 Return [] when there is nothing durable.
 
 Existing MEMORY.md index:

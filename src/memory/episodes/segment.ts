@@ -1,3 +1,4 @@
+import path from 'node:path'
 import type { JournalEvent } from '../events'
 import { scoreEpisode } from './score.ts'
 import type { AttributionStatus, Episode, FixCandidate } from './types.ts'
@@ -54,13 +55,33 @@ function isSameParentDirectory(pathA: string, pathB: string): boolean {
   return getParentDir(pathA) === getParentDir(pathB)
 }
 
+function normalizeCandidatePath(candidatePath: string, repoRoot?: string): string {
+  if (!repoRoot || !path.isAbsolute(candidatePath)) return candidatePath
+
+  const relativePath = path.relative(repoRoot, candidatePath)
+  if (
+    !relativePath ||
+    relativePath === '..' ||
+    relativePath.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativePath)
+  ) {
+    return candidatePath
+  }
+
+  return relativePath.split(path.sep).join('/')
+}
+
 /**
  * Deterministic state machine that segments filtered journal events into episodes.
  * @param events The chronological list of journal events.
  * @param startEpisodeIndex The starting index for generating episode IDs.
  * @returns An array of segmented and scored Episode objects.
  */
-export function segmentJournal(events: JournalEventWithLine[], startEpisodeIndex = 1): Episode[] {
+export function segmentJournal(
+  events: JournalEventWithLine[],
+  startEpisodeIndex = 1,
+  repoRoot?: string,
+): Episode[] {
   const episodes: Episode[] = []
   let nextIdIndex = startEpisodeIndex
 
@@ -292,7 +313,7 @@ export function segmentJournal(events: JournalEventWithLine[], startEpisodeIndex
         }
       } else if (event.outcome === 'success' && (event.tool === 'Edit' || event.tool === 'Write')) {
         // 2. Success edit tool: FAILING -> FIXING
-        const editPath = event.path
+        const editPath = event.path ? normalizeCandidatePath(event.path, repoRoot) : undefined
         if (editPath) {
           for (const active of activeEpisodes.values()) {
             if (active.state === 'FAILING' || active.state === 'FIXING') {

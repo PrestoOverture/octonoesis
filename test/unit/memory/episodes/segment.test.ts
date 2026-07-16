@@ -87,6 +87,77 @@ describe('Episode Segmentation State Machine', () => {
     expect(ep?.is_excluded).toBe(false)
   })
 
+  it('classifies an absolute edit path inside the repo as a single direct fix', () => {
+    const repoRoot = '/tmp/octonoesis-repo'
+    const events = [
+      {
+        line: 1,
+        event: {
+          kind: 'tool' as const,
+          ts: '2026-06-20T10:01:00.000Z',
+          session_id: 'sess-absolute-edit',
+          tool: 'Bash',
+          input_digest: 'digest-run-tests',
+          outcome: 'failure' as const,
+          error_class: 'TypeError',
+          duration_ms: 1000,
+          cmd: 'bun test',
+          fingerprints: [
+            {
+              tool: 'bash',
+              error_class: 'TypeError',
+              file: 'src/buggy.ts',
+              expression: 'null pointer',
+              coarse: 'bash|TypeError',
+              medium: 'bash|TypeError|src/buggy.ts',
+              fine: 'bash|TypeError|src/buggy.ts|null pointer',
+            },
+          ],
+        },
+      },
+      {
+        line: 2,
+        event: {
+          kind: 'tool' as const,
+          ts: '2026-06-20T10:02:00.000Z',
+          session_id: 'sess-absolute-edit',
+          tool: 'Edit',
+          input_digest: 'digest-edit-file',
+          outcome: 'success' as const,
+          error_class: null,
+          duration_ms: 500,
+          path: `${repoRoot}/src/buggy.ts`,
+        },
+      },
+      {
+        line: 3,
+        event: {
+          kind: 'verify' as const,
+          ts: '2026-06-20T10:03:00.000Z',
+          session_id: 'sess-absolute-edit',
+          verdict: 'PASS' as const,
+          fingerprints: [],
+          command: 'bun test',
+          exit_code: 0,
+          stale: false,
+        },
+      },
+    ]
+
+    const episodes = segmentJournal(events, 1, repoRoot)
+
+    expect(episodes.length).toBe(1)
+    expect(episodes[0]?.fix_candidates).toEqual([
+      {
+        tool: 'Edit',
+        path: 'src/buggy.ts',
+        summary: 'Successful Edit on src/buggy.ts',
+        role: 'direct',
+      },
+    ])
+    expect(episodes[0]?.attribution.status).toBe('single_direct')
+  })
+
   it('should transition open failures to abandoned at session end', () => {
     const events = [
       {

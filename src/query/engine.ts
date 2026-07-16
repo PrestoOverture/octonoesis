@@ -10,6 +10,7 @@ import { loadMemories } from '../memory/auto/store'
 import { runSessionEndCalibration } from '../memory/calibration/hook'
 import { runSessionEndEpisodes } from '../memory/episodes/hook'
 import { appendJournal, flushJournal, setSessionId } from '../memory/journal'
+import { runSessionEndAutoDistill } from '../memory/rules/autoDistill'
 import { updateLifecycle } from '../memory/rules/lifecycle'
 import { findMatchingRules, formatMatchAdvice } from '../memory/rules/match'
 import { loadAllRules, saveRule } from '../memory/rules/store'
@@ -772,10 +773,18 @@ export async function* query(
 
     try {
       if (ctx.sessionId) {
-        await runSessionEndEpisodes(ctx.sessionId)
+        await runSessionEndEpisodes(ctx.sessionId, undefined, ctx.repoRoot)
       }
     } catch (error) {
       dbg('query', 'Failed to run session-end episode hook', error)
+    }
+
+    try {
+      if (ctx.sessionId) {
+        await runSessionEndAutoDistill(ctx.sessionId, ctx.repoRoot)
+      }
+    } catch (error) {
+      dbg('query', 'Failed to run session-end auto-distillation hook', error)
     }
 
     try {

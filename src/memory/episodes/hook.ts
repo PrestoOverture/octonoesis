@@ -1,6 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { getMemoryDir } from '../../utils/path'
+import { getMemoryDir, getRepoRoot } from '../../utils/path'
 import { isKnownJournalEvent, parseJournalEvent } from '../events'
 import { type JournalEventWithLine, type StoredJournalEvent, segmentJournal } from './segment'
 import { readEpisodes } from './store'
@@ -53,8 +53,13 @@ function isEpisodeEqual(ep1: Episode, ep2: Episode): boolean {
  * Enforces a 5-second timeout.
  * @param sessionId The active session ID.
  * @param memoryDir Optional custom memory directory path.
+ * @param repoRoot Repository root used to normalize absolute edit paths.
  */
-export async function runSessionEndEpisodes(sessionId: string, memoryDir?: string): Promise<void> {
+export async function runSessionEndEpisodes(
+  sessionId: string,
+  memoryDir?: string,
+  repoRoot: string = getRepoRoot(),
+): Promise<void> {
   let timeoutId: NodeJS.Timeout | null = null
 
   const timeoutPromise = new Promise<void>((_, reject) => {
@@ -120,7 +125,7 @@ export async function runSessionEndEpisodes(sessionId: string, memoryDir?: strin
       }
 
       // Run segmenter (passing a temporary starting index)
-      const segmentedEpisodes = segmentJournal(sessionEvents, 9999)
+      const segmentedEpisodes = segmentJournal(sessionEvents, 9999, repoRoot)
 
       // Map segmented episodes to existing ones, or assign new sequential IDs.
       const episodesToAppend: Episode[] = []
