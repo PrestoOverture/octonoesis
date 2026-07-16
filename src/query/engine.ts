@@ -29,6 +29,7 @@ import type {
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { loadSkills } from '../skills/loader'
 import { createSessionState, flushSessionStats, formatSessionSummary } from '../state/session'
+import { saveSession } from '../state/sessionStore'
 import { cleanupTasks, drainTaskNotifications } from '../tasks/framework'
 import { AgentTool } from '../tools/AgentTool'
 import { bashTool } from '../tools/Bash'
@@ -839,6 +840,22 @@ export async function* query(
       dbg('query', 'Failed to run session-end calibration hook', error)
     }
 
+    try {
+      if (ctx.persistSession && ctx.sessionId) {
+        await saveSession(
+          {
+            sessionId: ctx.sessionId,
+            model: state.model,
+            repoRoot: ctx.repoRoot,
+            messages: ctx.messages ?? state.messages,
+          },
+          { memoryDir: ctx.memoryDir },
+        )
+      }
+    } catch (error) {
+      dbg('query', 'Failed to persist session', error)
+    }
+
     if (process.env.DEBUG === '1' || process.argv.includes('--debug')) {
       try {
         const { readCalibrationRecords, aggregateCalibrationStats } = await import(
@@ -856,17 +873,27 @@ export async function* query(
   }
 }
 
+export interface RunQueryOptions {
+  messages?: CanonicalMessage[]
+  persistSession?: boolean
+  memoryDir?: string
+}
+
 /** Runs one-shot mode while preserving the established stdout format. */
 export async function runQuery(
   userPrompt: string,
   sandbox?: ResolvedSandboxConfig,
   config?: OctonoesisConfig,
+  options: RunQueryOptions = {},
 ): Promise<void> {
   const sessionId = crypto.randomUUID()
   if (config) setConfiguredModel(config.model)
   const model = getResolvedModel()
   const ctx: ToolContext = {
     repoRoot: getRepoRoot(),
+    memoryDir: options.memoryDir,
+    persistSession: options.persistSession,
+    messages: structuredClone(options.messages ?? []),
     sessionId,
     sessionState: createSessionState(sessionId, model),
     sandbox,

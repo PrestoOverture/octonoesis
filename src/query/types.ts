@@ -75,6 +75,10 @@ export interface SandboxConfig {
 
 export interface QueryToolContextFields {
   repoRoot: string
+  /** Resolved persistent-data root injected by the CLI/UI boundary. */
+  memoryDir?: string
+  /** Saves the canonical message history when a query call finishes. */
+  persistSession?: boolean
   /** Optional cumulative billed-token cap for the query session. */
   tokenBudget?: number
   abortSignal?: AbortSignal

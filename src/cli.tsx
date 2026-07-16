@@ -15,6 +15,13 @@ import { assertSandboxAvailable, resolveSandboxConfig } from './sandbox/manager.
 import type { ResolvedSandboxConfig } from './sandbox/types.ts'
 import { rewriteSkillSlashCommand } from './skills/execute.ts'
 import { createSessionState, flushSessionStats, formatSessionSummary } from './state/session.ts'
+import {
+  type StoredSession,
+  formatSessionList,
+  listSessions,
+  loadMostRecentSession,
+  loadSession,
+} from './state/sessionStore.ts'
 import { cleanupTasks } from './tasks/framework.ts'
 import { App } from './ui/App'
 import { dbg } from './utils/debug.ts'
@@ -147,11 +154,52 @@ program
   })
 
 program
+  .command('sessions')
+  .description('List saved sessions for this repository')
+  .action(async () => {
+    try {
+      const sessions = await listSessions({
+        memoryDir: getMemoryDir(),
+        repoRoot: startupRepoRoot,
+      })
+      console.log(formatSessionList(sessions))
+    } catch (error) {
+      console.error(
+        `Error listing sessions: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      process.exit(1)
+    }
+  })
+
+program
   .option('--stats', 'Display calibration statistics')
   .option('--debug', 'Enable debug logging')
   .option('--sandbox', 'Run Bash tool commands inside macOS sandbox-exec')
+  .option('-c, --continue', 'Resume the most recent saved session for this repository')
+  .option('--resume <sessionId>', 'Resume a specific saved session')
+  .option('--save-session', 'Persist this one-shot session for later resume')
   .argument('[prompt]', 'One-shot prompt to send to the model')
   .action(async (prompt?: string) => {
+    const options = program.opts()
+    const memoryDir = getMemoryDir()
+    let resumedSession: StoredSession | undefined
+    try {
+      if (options.continue && options.resume) {
+        throw new Error('--continue and --resume cannot be used together')
+      }
+      if (options.resume) {
+        resumedSession = await loadSession(String(options.resume), { memoryDir })
+      } else if (options.continue) {
+        resumedSession = (await loadMostRecentSession(startupRepoRoot, { memoryDir })) ?? undefined
+        if (!resumedSession) {
+          throw new Error(`No saved sessions found for ${startupRepoRoot}`)
+        }
+      }
+    } catch (error) {
+      console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
+      process.exit(1)
+    }
+
     let sandbox: ResolvedSandboxConfig | undefined
     try {
       const resolved = resolveSandboxConfig({
@@ -193,7 +241,12 @@ program
       const sessionId = crypto.randomUUID()
       const tuiCtx: ToolContext = {
         repoRoot: startupRepoRoot,
-        messages: [],
+        memoryDir,
+        persistSession:
+          process.stdin.isTTY === true ||
+          resumedSession !== undefined ||
+          options.saveSession === true,
+        messages: structuredClone(resumedSession?.messages ?? []),
         sessionId,
         sessionState: createSessionState(sessionId, getResolvedModel()),
         sandbox,
@@ -203,6 +256,15 @@ program
       const { waitUntilExit } = render(
         <App
           ctx={tuiCtx}
+          resumeInfo={
+            resumedSession
+              ? {
+                  sessionId: resumedSession.session_id,
+                  messageCount: resumedSession.messages.length,
+                  updatedAt: resumedSession.updated_at,
+                }
+              : undefined
+          }
           onSessionState={(sessionState, priced) => {
             latestSession = { sessionState, priced }
           }}
@@ -227,6 +289,15 @@ program
         await rewriteSkillSlashCommand(prompt, startupRepoRoot),
         sandbox,
         startupConfig,
+        {
+          memoryDir,
+          messages: resumedSession?.messages,
+          persistSession:
+            resumedSession !== undefined ||
+            options.continue === true ||
+            options.resume !== undefined ||
+            options.saveSession === true,
+        },
       )
     } catch (error) {
       if (error instanceof Error) {

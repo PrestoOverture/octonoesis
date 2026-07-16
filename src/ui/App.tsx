@@ -1,6 +1,5 @@
 import crypto from 'node:crypto'
 import { Box, Text, useApp, useInput } from 'ink'
-import TextInput from 'ink-text-input'
 import React, { useState, useEffect, useRef } from 'react'
 import { registerPromptHandler, unregisterPromptHandler } from '../permissions/confirm'
 import { getResolvedModel } from '../providers'
@@ -16,13 +15,16 @@ import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { rewriteSkillSlashCommand } from '../skills/execute'
 import { createSessionState } from '../state/session'
 import { estimateCost } from '../utils/cost'
-import { getRepoRoot } from '../utils/path'
+import { dbg } from '../utils/debug'
+import { getMemoryDir, getRepoRoot } from '../utils/path'
 import { CompactNotice } from './CompactNotice'
 import { ConfirmDialog } from './ConfirmDialog'
+import { PromptInput } from './PromptInput'
 import { StatusBar } from './StatusBar'
 import { TaskChip } from './TaskChip'
 import { TodoPanel } from './TodoPanel'
 import { ToolCard } from './ToolCard'
+import { appendInputHistory, loadInputHistory } from './inputHistory'
 export type { CanonicalMessage } from '../query'
 
 export interface AppProps {
@@ -33,6 +35,18 @@ export interface AppProps {
   sandbox?: ResolvedSandboxConfig
   ctx?: ToolContext
   onSessionState?: (sessionState: SessionState, priced: boolean) => void
+  resumeInfo?: {
+    sessionId: string
+    messageCount: number
+    updatedAt: string
+  }
+}
+
+function canonicalUserText(message: CanonicalMessage): string {
+  if (message.role !== 'user') return ''
+  return typeof message.content === 'string'
+    ? message.content
+    : message.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
 }
 
 /**
@@ -139,38 +153,6 @@ export function StreamingResponse(props: {
 }
 
 /**
- * Input renders the interactive prompt line where user enters message instructions.
- * @param props The props containing value, handlers, placeholder and disabled state.
- * @returns The rendered Box containing the input field layout.
- */
-export function Input(props: {
-  value: string
-  onChange: (value: string) => void
-  onSubmit: (value: string) => void
-  placeholder?: string
-  isDisabled?: boolean
-}) {
-  const { value, onChange, onSubmit, placeholder = 'Type a message...', isDisabled = false } = props
-  return (
-    <Box flexDirection="column" marginTop={0}>
-      <Box flexDirection="row">
-        <Text color="cyan">🤖 › </Text>
-        {isDisabled ? (
-          <Text color="gray">{placeholder}</Text>
-        ) : (
-          <TextInput
-            value={value}
-            onChange={onChange}
-            onSubmit={onSubmit}
-            placeholder={placeholder}
-          />
-        )}
-      </Box>
-    </Box>
-  )
-}
-
-/**
  * App is the root React component of the terminal TUI.
  * It coordinates chat history state, input submissions, active streaming generator execution,
  * permission dialog triggers, and layout splitting with the todo sidebar panel.
@@ -186,16 +168,19 @@ export function App(props: AppProps) {
     sandbox,
     ctx: providedCtx,
     onSessionState,
+    resumeInfo,
   } = props
   const [ctx] = useState<ToolContext>(() => {
     if (providedCtx) {
       providedCtx.messages ??= initialMessages
+      providedCtx.memoryDir ??= getMemoryDir()
       return providedCtx
     }
     const sessionId = crypto.randomUUID()
     const model = getResolvedModel()
     return {
       repoRoot: getRepoRoot(),
+      memoryDir: getMemoryDir(),
       messages: initialMessages,
       sessionId,
       sessionState: createSessionState(sessionId, model),
@@ -204,7 +189,7 @@ export function App(props: AppProps) {
   })
 
   const [messages, setMessages] = useState<CanonicalMessage[]>(initialMessages)
-  const [inputValue, setInputValue] = useState('')
+  const [inputHistory, setInputHistory] = useState<string[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [compactNotices, setCompactNotices] = useState<
     { id: number; preTokens: number; postTokens: number; durationMs: number }[]
@@ -264,6 +249,27 @@ export function App(props: AppProps) {
     }
   }, [])
 
+  useEffect(() => {
+    let active = true
+    const memoryDir = ctx.memoryDir
+    if (!memoryDir) return () => undefined
+    loadInputHistory(memoryDir)
+      .then((entries) => {
+        if (active) {
+          setInputHistory((current) => {
+            const combined = [...entries.map((entry) => entry.text), ...current]
+            return combined
+              .filter((value, index) => index === 0 || value !== combined[index - 1])
+              .slice(-500)
+          })
+        }
+      })
+      .catch((error) => dbg('ui', 'Failed to load input history', error))
+    return () => {
+      active = false
+    }
+  }, [ctx])
+
   // Streaming states (hooks default props cleanly for tests)
   const [streamingText, setStreamingText] = useState(initialStreamingText)
   const [streamingToolUses, setStreamingToolUses] = useState<
@@ -286,12 +292,20 @@ export function App(props: AppProps) {
   const handleSubmit = (value: string) => {
     if (!value.trim() || isGenerating) return
 
+    setInputHistory((previous) =>
+      previous[previous.length - 1] === value ? previous : [...previous, value].slice(-500),
+    )
+    if (ctx.memoryDir) {
+      appendInputHistory(ctx.memoryDir, value).catch((error) =>
+        dbg('ui', 'Failed to append input history', error),
+      )
+    }
+
     if (value.trim() === '/stats') {
       const userMsg: CanonicalMessage = {
         role: 'user',
         content: [{ type: 'text', text: value }],
       }
-      setInputValue('')
       setMessages((prev) => [...prev, userMsg])
       ;(async () => {
         try {
@@ -321,7 +335,6 @@ export function App(props: AppProps) {
     }
 
     setIsGenerating(true)
-    setInputValue('')
 
     // Immediately push User bubble to maintain high visual responsiveness
     const newMsg: CanonicalMessage = {
@@ -386,19 +399,38 @@ export function App(props: AppProps) {
         // Commit full engine history to history layout state upon loop return
         const history = [...(ctx.messages ?? [])]
         const failure = formatQueryFailure(queryResult)
-        if (failure) {
-          history.push({ role: 'assistant', content: [{ type: 'text', text: failure }] })
+        if (resumeInfo) {
+          let promptIndex = -1
+          for (let index = history.length - 1; index >= 0; index -= 1) {
+            const message = history[index]
+            if (message && canonicalUserText(message) === rewrittenValue) {
+              promptIndex = index
+              break
+            }
+          }
+          const resumedTurn = promptIndex >= 0 ? history.slice(promptIndex + 1) : []
+          if (failure) {
+            resumedTurn.push({
+              role: 'assistant',
+              content: [{ type: 'text', text: failure }],
+            })
+          }
+          setMessages((previous) => [...previous, ...resumedTurn])
+        } else {
+          if (failure) {
+            history.push({ role: 'assistant', content: [{ type: 'text', text: failure }] })
+          }
+          setMessages(history)
         }
-        setMessages(history)
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err)
-        setMessages([
-          ...(ctx.messages ?? []),
-          {
-            role: 'assistant',
-            content: [{ type: 'text', text: `Query failed: ${detail}` }],
-          },
-        ])
+        const failureMessage: CanonicalMessage = {
+          role: 'assistant',
+          content: [{ type: 'text', text: `Query failed: ${detail}` }],
+        }
+        setMessages((previous) =>
+          resumeInfo ? [...previous, failureMessage] : [...(ctx.messages ?? []), failureMessage],
+        )
       } finally {
         setStreamingText('')
         setStreamingToolUses([])
@@ -411,6 +443,12 @@ export function App(props: AppProps) {
     <Box flexDirection="column" padding={1}>
       <Box flexDirection="row" flexGrow={1}>
         <Box flexDirection="column" flexGrow={1}>
+          {resumeInfo ? (
+            <Text color="yellow">
+              Resumed {resumeInfo.sessionId.slice(0, 8)}: {resumeInfo.messageCount} messages, last
+              active {resumeInfo.updatedAt}
+            </Text>
+          ) : null}
           <MessageList messages={messages} />
           {compactNotices.map((notice) => (
             <CompactNotice
@@ -428,9 +466,8 @@ export function App(props: AppProps) {
               onResolve={pendingConfirm.resolve}
             />
           ) : (
-            <Input
-              value={inputValue}
-              onChange={setInputValue}
+            <PromptInput
+              history={inputHistory}
               onSubmit={handleSubmit}
               placeholder={placeholder}
               isDisabled={isGenerating}
