@@ -7,6 +7,7 @@ import type { QueryLoopContext, TaskState } from '../query/types'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { wrapWithSandbox } from '../sandbox/wrapper'
 import { activeSubprocesses } from '../tools/Bash'
+import { shellChildEnv } from '../utils/childEnv'
 import { recordTaskTransition, registerTask, taskLogPath } from './framework'
 
 export const MAX_BACKGROUND_SHELL_TASKS = 4
@@ -91,6 +92,7 @@ export async function startLocalShellTask(
         ? wrapWithSandbox(options.command, options.sandbox)
         : ['bash', '-c', options.command],
       cwd: options.ctx.repoRoot,
+      env: shellChildEnv(),
       stdout: 'pipe',
       stderr: 'pipe',
       detached: true,

@@ -93,7 +93,6 @@ export class AgentTool
       model: this.options.model,
       maxTurns: AGENT_MAX_TURNS,
       timeoutMs: AGENT_TIMEOUT_MS,
-      signal: ctx.abortSignal,
       repoRoot: ctx.repoRoot,
     }
 
@@ -108,7 +107,7 @@ export class AgentTool
         return { ok: true, value: { agentId: record.agentId, status: 'running' } }
       }
 
-      const result = await forkAgent(forkOptions)
+      const result = await forkAgent({ ...forkOptions, signal: ctx.abortSignal })
       this.options.onForkUsage?.(result.usage)
       if (result.exitReason !== 'completed') {
         return { ok: false, error: result.error ?? `Agent exited: ${result.exitReason}` }

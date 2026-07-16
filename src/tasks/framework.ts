@@ -63,8 +63,19 @@ function relativeLogPath(ctx: QueryLoopContext, task: TaskState): string {
   return path.relative(ctx.repoRoot, task.logPath).split(path.sep).join('/')
 }
 
+function escapeXmlText(value: string): string {
+  const entities: Record<string, string> = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&apos;',
+  }
+  return value.replace(/[&<>"']/g, (character) => entities[character] ?? character)
+}
+
 function taskSummary(task: TaskState): string {
-  const label = task.command ?? task.id
+  const label = escapeXmlText(task.command ?? task.id)
   if (task.type === 'shell' && task.exitCode !== undefined) {
     return `Task "${label}" ${task.status} (exit code ${task.exitCode})`
   }

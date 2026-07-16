@@ -17,6 +17,7 @@ import { rewriteSkillSlashCommand } from './skills/execute.ts'
 import { createSessionState, flushSessionStats, formatSessionSummary } from './state/session.ts'
 import { cleanupTasks } from './tasks/framework.ts'
 import { App } from './ui/App'
+import { dbg } from './utils/debug.ts'
 import { getMemoryDir, getRepoRoot } from './utils/path.ts'
 
 if (process.argv.includes('--fork-child')) {
@@ -66,7 +67,7 @@ function checkApiKey(): void {
 
 const program = new Command()
 
-program.name('octonoesis').description('An open-source terminal coding agent').version('0.1.0')
+program.name('octonoesis').description('An open-source terminal coding agent').version('1.0.0')
 
 program
   .command('rebuild-rules')
@@ -180,7 +181,11 @@ program
         { exitOnCtrlC: false },
       )
       await waitUntilExit()
-      await cleanupTasks(tuiCtx)
+      try {
+        await cleanupTasks(tuiCtx)
+      } catch (error) {
+        dbg('cli', 'Failed to clean up background tasks', error)
+      }
       await flushSessionStats()
       if (latestSession) {
         console.log(formatSessionSummary(latestSession.sessionState, latestSession.priced))

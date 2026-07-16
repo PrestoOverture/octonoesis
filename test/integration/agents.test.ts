@@ -331,7 +331,13 @@ describe('multi-agent real child integration', () => {
       model: 'parent-model',
       onForkUsage: () => usageCalls++,
     })
-    const ctx = { repoRoot: root, messages: [], tasks: new Map() }
+    const queryController = new AbortController()
+    const ctx = {
+      repoRoot: root,
+      messages: [],
+      tasks: new Map(),
+      abortSignal: queryController.signal,
+    }
     backgroundContexts.push(ctx)
     const started = await tool.call(
       { description: 'Background read', prompt: 'Read canary.txt', background: true },
@@ -349,7 +355,10 @@ describe('multi-agent real child integration', () => {
     )
     await expect(fs.access(path.join(record.worktree.path, 'dirty-only.txt'))).rejects.toThrow()
 
+    queryController.abort()
+    expect(queryController.signal.aborted).toBe(true)
     const result = await record.result
+    expect(result.exitReason).toBe('completed')
     expect(result.text).toContain('committed-head-canary')
     expect(record.task.status).toBe('completed')
     expect(record.task.usage).toEqual({ input_tokens: 5, output_tokens: 3 })

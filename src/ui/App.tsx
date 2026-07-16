@@ -4,7 +4,13 @@ import TextInput from 'ink-text-input'
 import React, { useState, useEffect, useRef } from 'react'
 import { registerPromptHandler, unregisterPromptHandler } from '../permissions/confirm'
 import { getResolvedModel } from '../providers'
-import { type CanonicalMessage, type ToolContext, query } from '../query'
+import {
+  type CanonicalMessage,
+  type QueryResult,
+  type ToolContext,
+  formatQueryFailure,
+  query,
+} from '../query'
 import type { SessionState } from '../query/types'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { rewriteSkillSlashCommand } from '../skills/execute'
@@ -321,7 +327,14 @@ export function App(props: AppProps) {
       try {
         const rewrittenValue = await rewriteSkillSlashCommand(value, ctx.repoRoot)
         const generator = query(rewrittenValue, ctx, controller.signal)
-        for await (const event of generator) {
+        let queryResult: QueryResult
+        while (true) {
+          const step = await generator.next()
+          if (step.done) {
+            queryResult = step.value
+            break
+          }
+          const event = step.value
           if (event.type === 'text_delta') {
             setStreamingText((prev) => prev + event.text)
           } else if (event.type === 'tool_use') {
@@ -360,11 +373,21 @@ export function App(props: AppProps) {
         }
 
         // Commit full engine history to history layout state upon loop return
-        if (ctx.messages) {
-          setMessages([...ctx.messages])
+        const history = [...(ctx.messages ?? [])]
+        const failure = formatQueryFailure(queryResult)
+        if (failure) {
+          history.push({ role: 'assistant', content: [{ type: 'text', text: failure }] })
         }
+        setMessages(history)
       } catch (err) {
-        // Yield error states cleanly to console logging
+        const detail = err instanceof Error ? err.message : String(err)
+        setMessages([
+          ...(ctx.messages ?? []),
+          {
+            role: 'assistant',
+            content: [{ type: 'text', text: `Query failed: ${detail}` }],
+          },
+        ])
       } finally {
         setStreamingText('')
         setStreamingToolUses([])

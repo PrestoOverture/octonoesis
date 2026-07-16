@@ -5,6 +5,7 @@ import { resolveSandboxConfig } from '../sandbox/manager'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { wrapWithSandbox } from '../sandbox/wrapper'
 import { startLocalShellTask } from '../tasks/localShell'
+import { shellChildEnv } from '../utils/childEnv'
 import type { Tool, ToolContext, ToolResult } from './Tool'
 export const activeSubprocesses = new Set<unknown>()
 
@@ -119,16 +120,7 @@ class BashTool implements Tool<BashInput, string> {
     const handleAbort = () => {
       aborted = true
       cleanup()
-      if (proc) {
-        try {
-          // Send SIGTERM to the entire process group
-          process.kill(-proc.pid, 'SIGTERM')
-        } catch {
-          try {
-            proc.kill() // Fallback to single process kill if PGID skill fails
-          } catch {}
-        }
-      }
+      signalProcessGroup(proc)
     }
 
     try {
@@ -146,17 +138,14 @@ class BashTool implements Tool<BashInput, string> {
       timeoutId = setTimeout(() => {
         timedOut = true
         cleanup()
-        if (proc) {
-          try {
-            proc.kill()
-          } catch {}
-        }
-      }, 120000)
+        signalProcessGroup(proc)
+      }, 120_000)
 
       // 4. Spawn process using Bun.spawn
       proc = Bun.spawn({
         cmd: sandbox ? wrapWithSandbox(input.command, sandbox) : ['bash', '-c', input.command],
         cwd: ctx.repoRoot,
+        env: shellChildEnv(),
         stdout: 'pipe',
         stderr: 'pipe',
         detached: true, // Run in a separate process
@@ -206,6 +195,18 @@ class BashTool implements Tool<BashInput, string> {
       cleanup()
       return { ok: false, error: `execution_error: ${(err as Error).message}` }
     }
+  }
+}
+
+// biome-ignore lint/suspicious/noExplicitAny: Bun process handle
+function signalProcessGroup(proc: any): void {
+  if (!proc) return
+  try {
+    process.kill(-proc.pid, 'SIGTERM')
+  } catch {
+    try {
+      proc.kill('SIGTERM')
+    } catch {}
   }
 }
 

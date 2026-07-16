@@ -1,4 +1,4 @@
-export { query, runQuery } from './query/engine'
+export { formatQueryFailure, query, runQuery } from './query/engine'
 export type { QueryResult, StreamEvent } from './query/engine'
 export type { CanonicalMessage, ContentBlock, Usage } from './providers'
 export type { VerifyResultWithRun } from './query/types'

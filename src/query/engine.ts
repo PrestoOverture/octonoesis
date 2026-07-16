@@ -82,6 +82,25 @@ export type StreamEvent =
 
 export type QueryResult = QueryResultV1
 
+const ONE_SHOT_FAILURE_REASONS = new Set<ExitReason>([
+  'fatal_error',
+  'prompt_too_long',
+  'budget_exceeded',
+])
+
+/** Formats a non-successful query result for CLI and TUI presentation. */
+export function formatQueryFailure(result: QueryResult): string | undefined {
+  if (result.exit_reason === 'completed' || result.exit_reason === 'user_cancel') return undefined
+  const detail =
+    result.error ??
+    (result.exit_reason === 'budget_exceeded'
+      ? 'Token budget exceeded.'
+      : result.exit_reason === 'max_turns'
+        ? 'Maximum query turns reached.'
+        : 'The query could not be completed.')
+  return `Query failed (${result.exit_reason}): ${detail}`
+}
+
 export type EngineState = QueryState & {
   input: string
   inputDigest: string
@@ -539,9 +558,31 @@ export async function* executeTools(
     (block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use',
   )
 
-  for (const toolUse of toolUses) {
+  for (const [toolIndex, toolUse] of toolUses.entries()) {
     if (ctx.abortSignal?.aborted) {
       recordCancellation(state)
+      for (const cancelledToolUse of toolUses.slice(toolIndex)) {
+        const cancellationMessage = 'Tool execution cancelled by user.'
+        state.messages.push({
+          role: 'tool',
+          tool_use_id: cancelledToolUse.id,
+          content: [
+            {
+              type: 'tool_result',
+              tool_use_id: cancelledToolUse.id,
+              content: cancellationMessage,
+              is_error: true,
+            },
+            { type: 'text', text: cancellationMessage },
+          ],
+        })
+        yield {
+          type: 'tool_done',
+          id: cancelledToolUse.id,
+          name: cancelledToolUse.name,
+          status: 'error',
+        }
+      }
       break
     }
 
@@ -829,9 +870,16 @@ export async function runQuery(
     config,
   }
   const generator = query(userPrompt, ctx)
+  let queryResult: QueryResult | undefined
 
   try {
-    for await (const event of generator) {
+    while (true) {
+      const step = await generator.next()
+      if (step.done) {
+        queryResult = step.value
+        break
+      }
+      const event = step.value
       if (event.type === 'text_delta') {
         process.stdout.write(event.text)
       } else if (event.type === 'tool_use') {
@@ -848,7 +896,11 @@ export async function runQuery(
       }
     }
   } finally {
-    await cleanupTasks(ctx)
+    try {
+      await cleanupTasks(ctx)
+    } catch (error) {
+      dbg('query', 'Failed to clean up background tasks', error)
+    }
   }
   await flushSessionStats()
   const priced = ctx.sessionState
@@ -857,4 +909,8 @@ export async function runQuery(
   process.stdout.write(
     ctx.sessionState ? `\n${formatSessionSummary(ctx.sessionState, priced)}\n` : '\n',
   )
+  if (queryResult && ONE_SHOT_FAILURE_REASONS.has(queryResult.exit_reason)) {
+    process.stderr.write(`${formatQueryFailure(queryResult)}\n`)
+    process.exitCode = 1
+  }
 }
