@@ -2,6 +2,8 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { loadMemoryIndex } from '../memory/auto/store'
 import type { MemoryFile } from '../memory/auto/types'
+import { formatSessionStartRules, selectSessionStartRules } from '../memory/rules/sessionStart'
+import type { RuleFile } from '../memory/rules/types'
 import type { Usage } from '../providers/types'
 import type { QueryLoopContext } from '../query/types'
 import type { SkillDefinition } from '../skills/types'
@@ -14,6 +16,13 @@ import {
 } from './compiler'
 import { buildDynamicSuffix } from './dynamic'
 import { buildStaticPrompt } from './static'
+
+// Mirrors the truthy-env convention in memory/auto/recall.ts's isTruthyEnv.
+function isMemoryDisabled(): boolean {
+  const value = process.env.OCTONOESIS_DISABLE_MEMORY
+  if (!value) return false
+  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
+}
 
 async function readOptionalFile(filePath: string): Promise<string | undefined> {
   try {
@@ -51,6 +60,7 @@ export async function buildSessionContextSources(
   usage: Usage,
   recalledMemories: MemoryFile[],
   skills: readonly SkillDefinition[] = [],
+  rules: readonly RuleFile[] = [],
 ): Promise<ContextSource[]> {
   const [octonoesisMd, claudeMd, memoryIndex, dynamicSuffix] = await Promise.all([
     readOptionalFile(path.join(ctx.repoRoot, 'OCTONOESIS.md')),
@@ -94,6 +104,17 @@ export async function buildSessionContextSources(
       content: formatSkillCatalog(skills),
     })
   }
+  if (!isMemoryDisabled()) {
+    const sessionStartRules = formatSessionStartRules(selectSessionStartRules(rules))
+    if (sessionStartRules.length > 0) {
+      sources.push({
+        id: 'active_rules',
+        channel: 'systemStable',
+        priority: 'medium',
+        content: sessionStartRules,
+      })
+    }
+  }
   if (recalledMemories.length > 0) {
     sources.push({
       id: 'relevant_memories',
@@ -118,8 +139,16 @@ export async function assembleSessionContext(
   usage: Usage,
   recalledMemories: MemoryFile[],
   skills: readonly SkillDefinition[] = [],
+  rules: readonly RuleFile[] = [],
 ): Promise<CompiledContext> {
-  const sources = await buildSessionContextSources(ctx, model, usage, recalledMemories, skills)
+  const sources = await buildSessionContextSources(
+    ctx,
+    model,
+    usage,
+    recalledMemories,
+    skills,
+    rules,
+  )
   const compiled = compileContext(sources, DEFAULT_CONTEXT_BUDGET)
   if (compiled.dropped.length > 0) {
     dbg('context', 'Context sources were truncated or dropped', {

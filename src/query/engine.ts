@@ -274,6 +274,7 @@ async function prepareQueryState(
     state.usage,
     recalledMemories,
     skills,
+    state.rules,
   )
   if (skills.length > 0) {
     registerTool(

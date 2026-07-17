@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { MemoryFile } from '../../../src/memory/auto/types'
+import type { RuleFile } from '../../../src/memory/rules/types'
 import { DEFAULT_CONTEXT_BUDGET } from '../../../src/prompts/compiler'
 import { assembleSessionContext, buildSessionContextSources } from '../../../src/prompts/context'
 
@@ -119,6 +120,126 @@ describe('session context assembly', () => {
       'test-model',
       { input_tokens: 0, output_tokens: 0 },
       [recalledMemory()],
+    )
+
+    expect(second.systemStable).toBe(first.systemStable)
+  })
+})
+
+describe('session-start rule injection (FR-INJ-2)', () => {
+  function makeRule(overrides: Partial<RuleFile> & { id: string }): RuleFile {
+    return {
+      triggers: { tools: ['Bash'], command_prefix: [], error_signatures: ['bun-test|TypeError'] },
+      scope: 'repo',
+      alpha: 3,
+      beta: 2,
+      confidence: 0.6,
+      evidence: ['ep_0001'],
+      hits: 0,
+      misses: 0,
+      challenged_by: [],
+      anchor: { file: 'package.json' },
+      status: 'active',
+      user_confirmed: false,
+      extractor_version: '0.2.0',
+      model_id: 'mock',
+      prompt_hash: 'hash',
+      created_at: new Date().toISOString(),
+      last_matched_at: null,
+      last_rebuilt_at: null,
+      advice: `advice for ${overrides.id}`,
+      ...overrides,
+    }
+  }
+
+  it('injects the formatted rule block into systemStable, not preamble', async () => {
+    const rule = makeRule({ id: 'rule-broad-active', advice: 'SESSION_START_ADVICE_CANARY' })
+
+    const compiled = await assembleSessionContext(
+      { repoRoot },
+      'test-model',
+      { input_tokens: 0, output_tokens: 0 },
+      [],
+      [],
+      [rule],
+    )
+
+    expect(compiled.systemStable).toContain('SESSION_START_ADVICE_CANARY')
+    expect(compiled.systemStable).toContain('rule-broad-active')
+    expect(compiled.preamble).not.toContain('SESSION_START_ADVICE_CANARY')
+  })
+
+  it('emits no active_rules source when every rule is ineligible', async () => {
+    const rules = [
+      makeRule({ id: 'rule-candidate', status: 'candidate' }),
+      makeRule({ id: 'rule-global', scope: 'global' }),
+      makeRule({
+        id: 'rule-fine',
+        triggers: {
+          tools: ['Bash'],
+          command_prefix: [],
+          error_signatures: ["bun-test|TypeError|src/buggy.ts|evaluating 'x'"],
+        },
+      }),
+    ]
+
+    const sources = await buildSessionContextSources(
+      { repoRoot },
+      'test-model',
+      { input_tokens: 0, output_tokens: 0 },
+      [],
+      [],
+      rules,
+    )
+
+    expect(sources.map((source) => source.id)).not.toContain('active_rules')
+  })
+
+  it('injects nothing when OCTONOESIS_DISABLE_MEMORY is truthy', async () => {
+    const rule = makeRule({ id: 'rule-broad-active', advice: 'DISABLED_MEMORY_CANARY' })
+    const original = process.env.OCTONOESIS_DISABLE_MEMORY
+    process.env.OCTONOESIS_DISABLE_MEMORY = '1'
+    try {
+      const sources = await buildSessionContextSources(
+        { repoRoot },
+        'test-model',
+        { input_tokens: 0, output_tokens: 0 },
+        [],
+        [],
+        [rule],
+      )
+      expect(sources.map((source) => source.id)).not.toContain('active_rules')
+      expect(sources.every((source) => !source.content.includes('DISABLED_MEMORY_CANARY'))).toBe(
+        true,
+      )
+    } finally {
+      if (original === undefined) {
+        Reflect.deleteProperty(process.env, 'OCTONOESIS_DISABLE_MEMORY')
+      } else {
+        process.env.OCTONOESIS_DISABLE_MEMORY = original
+      }
+    }
+  })
+
+  it('produces byte-identical systemStable across two assemblies with identical rule inputs', async () => {
+    const rulesA = [makeRule({ id: 'rule-a' }), makeRule({ id: 'rule-b' })]
+    const rulesB = [makeRule({ id: 'rule-a' }), makeRule({ id: 'rule-b' })]
+
+    const first = await assembleSessionContext(
+      { repoRoot },
+      'test-model',
+      { input_tokens: 0, output_tokens: 0 },
+      [],
+      [],
+      rulesA,
+    )
+    const second = await assembleSessionContext(
+      { repoRoot },
+      'test-model',
+      { input_tokens: 0, output_tokens: 0 },
+      [],
+      [],
+      rulesB,
     )
 
     expect(second.systemStable).toBe(first.systemStable)
