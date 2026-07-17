@@ -1,11 +1,14 @@
 #!/usr/bin/env bun
 import crypto from 'node:crypto'
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { Command } from 'commander'
 import { render } from 'ink'
 import React from 'react'
 import { getConfigTrustWarning, loadConfig } from './config/load.ts'
 import type { OctonoesisConfig } from './config/schema.ts'
+import { appendExperimentRecord, readExperiments } from './experiments/registry.ts'
+import type { ExperimentRecord } from './experiments/schema.ts'
 import { rebuildRules } from './memory/rules/rebuild.ts'
 import { getRulesDir } from './memory/rules/store.ts'
 import { getResolvedModel, setConfiguredModel } from './providers/index.ts'
@@ -71,6 +74,36 @@ function checkApiKey(): void {
     )
     process.exit(1)
   }
+}
+
+function truncate(text: string, limit: number): string {
+  const characters = Array.from(text)
+  return characters.length > limit ? `${characters.slice(0, limit).join('')}…` : text
+}
+
+function formatExperimentList(experiments: ExperimentRecord[]): string {
+  if (experiments.length === 0) return 'No registered experiments.'
+  const headers = ['ID', 'Status', 'Arms', 'Registered', 'Hypothesis']
+  const rows = experiments.map((experiment) => [
+    experiment.id,
+    experiment.status,
+    String(experiment.arms?.length ?? 0),
+    experiment.registered_at,
+    truncate(experiment.hypothesis, 60),
+  ])
+  const widths = headers.map((header, column) =>
+    Math.max(header.length, ...rows.map((row) => row[column]?.length ?? 0)),
+  )
+  const renderRow = (row: string[]) =>
+    row
+      .map((cell, column) => cell.padEnd(widths[column] ?? cell.length))
+      .join('  ')
+      .trimEnd()
+  return [
+    renderRow(headers),
+    renderRow(widths.map((width) => '-'.repeat(width))),
+    ...rows.map(renderRow),
+  ].join('\n')
 }
 
 const program = new Command()
@@ -166,6 +199,37 @@ program
     } catch (error) {
       console.error(
         `Error listing sessions: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      process.exit(1)
+    }
+  })
+
+program
+  .command('experiments')
+  .description('List preregistered experiments, or register one with --register <jsonFile>')
+  .option('--register <jsonFile>', 'Register a new experiment from a JSON file')
+  .option('--running', 'Register with status "running" instead of "registered" (with --register)')
+  .action(async (options) => {
+    try {
+      if (options.register) {
+        const raw: unknown = JSON.parse(await fs.readFile(options.register, 'utf8'))
+        if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+          throw new Error(`${options.register} must contain a JSON object`)
+        }
+        const saved = await appendExperimentRecord({
+          ...raw,
+          schema_version: 1,
+          registered_at: new Date().toISOString(),
+          status: options.running ? 'running' : 'registered',
+        })
+        console.log(`Registered experiment ${saved.id} (status: ${saved.status}).`)
+        return
+      }
+
+      console.log(formatExperimentList(await readExperiments()))
+    } catch (error) {
+      console.error(
+        `Error with experiments: ${error instanceof Error ? error.message : String(error)}`,
       )
       process.exit(1)
     }

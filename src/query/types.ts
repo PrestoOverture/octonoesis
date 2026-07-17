@@ -32,6 +32,12 @@ export interface QueryInternalState {
   firstTurnDynamicSystem?: string
   /** Persists auto-distill attempts across query calls that share one TUI session context. */
   autoDistillAttemptedEpisodeIds?: Set<string>
+  /**
+   * Caches this session's experiment arm resolution so it is computed and recorded at most
+   * once per session. `undefined` means "not yet resolved"; `null` caches "resolved: no
+   * active experiment."
+   */
+  experimentArm?: { experimentId: string; arm: string } | null
 }
 
 export interface SessionState {

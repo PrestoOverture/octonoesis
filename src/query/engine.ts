@@ -1,6 +1,8 @@
 import crypto from 'node:crypto'
 import { isActiveConfigTrusted, loadConfig } from '../config/load'
 import type { OctonoesisConfig } from '../config/schema'
+import { assignArm, filterRulesForArm, recordAssignment } from '../experiments/assignment'
+import { getActiveExperiment, readExperiments } from '../experiments/registry'
 import { registerBuiltinHooks } from '../hooks/builtins'
 import { executeAttachedHooks } from '../hooks/execute'
 import { HookRegistry } from '../hooks/registry'
@@ -216,9 +218,46 @@ export async function initQueryState(
   const emitSessionState = ctx.sessionState !== undefined
   ctx.sessionState ??= createSessionState(ctx.sessionId, model)
 
-  const rules = await loadAllRules()
+  let rules = await loadAllRules()
   ctx.injectedRules = ctx.injectedRules || []
   ctx.recordedRuleOutcomes = ctx.recordedRuleOutcomes || new Set<string>()
+
+  // Mirrors the truthy-env convention in memory/auto/recall.ts's isTruthyEnv.
+  const disableMemoryEnv = process.env.OCTONOESIS_DISABLE_MEMORY?.trim().toLowerCase()
+  const memoryDisabled = !!disableMemoryEnv && ['1', 'true', 'yes', 'on'].includes(disableMemoryEnv)
+  if (!memoryDisabled) {
+    const sessionId = ctx.sessionId
+    try {
+      if (ctx.experimentArm === undefined) {
+        // First resolution this session: pick the active experiment (if any), assign this
+        // session's arm, and record the assignment before caching — a failure anywhere in
+        // here leaves ctx.experimentArm unset so the next query() call retries cleanly.
+        const activeExperiment = await getActiveExperiment()
+        if (activeExperiment) {
+          const arm = assignArm(sessionId, activeExperiment)
+          await recordAssignment({
+            session_id: sessionId,
+            experiment_id: activeExperiment.id,
+            arm,
+          })
+          ctx.experimentArm = { experimentId: activeExperiment.id, arm }
+          rules = filterRulesForArm(rules, activeExperiment, arm)
+        } else {
+          ctx.experimentArm = null
+        }
+      } else if (ctx.experimentArm) {
+        // Already resolved earlier this session: reuse the cached arm (never recompute or
+        // re-record) but re-filter against the freshly-loaded rule pool.
+        const { experimentId, arm } = ctx.experimentArm
+        const experiment = (await readExperiments()).find((entry) => entry.id === experimentId)
+        if (experiment) {
+          rules = filterRulesForArm(rules, experiment, arm)
+        }
+      }
+    } catch (error) {
+      dbg('query', 'Failed to resolve experiment arm assignment; using unfiltered rule pool', error)
+    }
+  }
 
   const inputDigest = crypto.createHash('sha256').update(input).digest('hex')
   appendJournal({ kind: 'user', digest: inputDigest, cancel: false })
