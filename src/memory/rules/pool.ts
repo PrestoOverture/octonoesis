@@ -29,7 +29,7 @@ export function getRuleSpecificity(rule: RuleFile): number {
  * @returns The updated array of rules with pool cap enforced.
  */
 export function enforcePoolCap(rules: RuleFile[]): RuleFile[] {
-  const activeAndCandidates = rules.filter((r) => r.status === 'active' || r.status === 'candidate')
+  const activeAndCandidates = rules.filter((r) => isPoolCapRelevantStatus(r.status))
   if (activeAndCandidates.length <= 150) {
     return rules
   }

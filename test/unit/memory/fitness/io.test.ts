@@ -2,7 +2,13 @@ import { afterEach, describe, expect, it } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
-import { readJournalEvents, readStatsRecords } from '../../../../src/memory/fitness/io.ts'
+import {
+  loadFitnessInput,
+  readJournalEvents,
+  readStatsRecords,
+} from '../../../../src/memory/fitness/io.ts'
+import { archiveRule, saveRule } from '../../../../src/memory/rules/store.ts'
+import type { RuleFile } from '../../../../src/memory/rules/types.ts'
 
 const tempDirs: string[] = []
 
@@ -81,5 +87,65 @@ describe('fitness ledger I/O', () => {
     expect(result.line_count).toBe(3)
     expect(result.events.length).toBe(1)
     expect(result.events[0]?.kind).toBe('tool')
+  })
+
+  it('loadFitnessInput counts hot and archived rules once each, hot copy winning on a duplicate id', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'octonoesis-fitness-'))
+    tempDirs.push(dir)
+    const rulesDir = path.join(dir, 'rules')
+    await fs.mkdir(rulesDir, { recursive: true })
+
+    function rule(overrides: Partial<RuleFile>): RuleFile {
+      return {
+        id: 'rule-default',
+        triggers: {
+          tools: ['Bash'],
+          command_prefix: ['bun test'],
+          error_signatures: ['bun-test|TypeError|src/a.ts'],
+        },
+        scope: 'repo',
+        alpha: 2,
+        beta: 2,
+        confidence: 0.5,
+        evidence: [],
+        hits: 0,
+        misses: 0,
+        challenged_by: [],
+        anchor: { file: 'src/a.ts' },
+        status: 'candidate',
+        user_confirmed: false,
+        extractor_version: '0.2.0',
+        model_id: 'test-model',
+        prompt_hash: 'hash-a',
+        created_at: '2026-06-01T00:00:00.000Z',
+        last_matched_at: null,
+        last_rebuilt_at: null,
+        advice: 'Test advice.',
+        ...overrides,
+      }
+    }
+
+    // A hot-only active rule, an archive-only dormant rule, and a duplicate id present
+    // in both places with different content -- the hot copy must be the one counted.
+    await saveRule(rule({ id: 'rule-hot-only', status: 'active' }), rulesDir)
+    await archiveRule(rule({ id: 'rule-archive-only', status: 'dormant' }), rulesDir)
+    await archiveRule(
+      rule({ id: 'rule-dup', status: 'superseded', hits: 1, advice: 'stale archived advice' }),
+      rulesDir,
+    )
+    await saveRule(
+      rule({ id: 'rule-dup', status: 'candidate', hits: 99, advice: 'fresh hot advice' }),
+      rulesDir,
+    )
+
+    const input = await loadFitnessInput(dir)
+    const byId = new Map(input.rules.map((r) => [r.id, r]))
+
+    expect(input.rules.length).toBe(3)
+    expect(byId.get('rule-hot-only')?.status).toBe('active')
+    expect(byId.get('rule-archive-only')?.status).toBe('dormant')
+    expect(byId.get('rule-dup')?.status).toBe('candidate')
+    expect(byId.get('rule-dup')?.hits).toBe(99)
+    expect(byId.get('rule-dup')?.advice).toBe('fresh hot advice')
   })
 })

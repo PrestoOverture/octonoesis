@@ -7,8 +7,13 @@ import { distillEpisode } from './distill.ts'
 import { disambiguateRuleId } from './identity.ts'
 import { updateLifecycle } from './lifecycle.ts'
 import { enforcePoolCap } from './pool.ts'
-import { getRulesDir, loadAllRules, saveRule } from './store.ts'
+import { archiveRule, getRulesDir, loadAllRulesIncludingArchived, saveRule } from './store.ts'
 import type { RuleFile } from './types.ts'
+
+/** Mirrors autoDistill.ts's terminal-status predicate: retired/superseded/dormant rules archive. */
+function isTerminalRule(rule: RuleFile): boolean {
+  return rule.status === 'retired' || rule.status === 'superseded' || rule.status === 'dormant'
+}
 
 /**
  * Rebuilds all rules from episodes.jsonl, preserving metrics & user status modifications.
@@ -25,7 +30,7 @@ export async function rebuildRules(
   const modelToUse = ctx.model || getCheapestModel()
 
   // 1. Load existing rules to preserve metrics (hits, misses) and user status modifications (pinned, banned)
-  const existingRules = await loadAllRules(rulesDir)
+  const existingRules = await loadAllRulesIncludingArchived(rulesDir)
   const existingRulesMap = new Map<string, RuleFile>()
   for (const r of existingRules) {
     const sig = r.triggers.error_signatures[0]
@@ -125,8 +130,12 @@ export async function rebuildRules(
   // 5. Enforce pool cap
   const finalRules = enforcePoolCap(rebuiltRules)
 
-  // 6. Save rules back to disk
+  // 6. Save rules back to disk: terminal-status rules go to the archive, the rest stay hot.
   for (const rule of finalRules) {
-    await saveRule(rule, rulesDir)
+    if (isTerminalRule(rule)) {
+      await archiveRule(rule, rulesDir)
+    } else {
+      await saveRule(rule, rulesDir)
+    }
   }
 }

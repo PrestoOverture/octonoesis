@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { getMemoryDir } from '../../utils/path.ts'
 import type { RuleFile } from './types.ts'
@@ -11,6 +11,17 @@ import { calculateConfidence } from './types.ts'
 
 export function getRulesDir(): string {
   return path.join(getMemoryDir(), 'rules')
+}
+
+/**
+ * Retrieves the archive directory nested inside a rules directory. Terminal-status
+ * rule files (retired, superseded, dormant) live here so the hot rules directory
+ * that `loadAllRules` scans stays bounded by the pool cap.
+ * @param rulesDir Optional custom path to the rules directory.
+ * @returns The resolved archive directory path.
+ */
+export function getRulesArchiveDir(rulesDir: string = getRulesDir()): string {
+  return path.join(rulesDir, 'archive')
 }
 
 /**
@@ -315,4 +326,41 @@ export async function loadAllRules(rulesDir: string = getRulesDir()): Promise<Ru
     }
   }
   return rules
+}
+
+/**
+ * Archives a rule: writes it into the archive directory first, then removes any
+ * hot-dir copy. Write-then-remove ordering means a crash between the two steps
+ * cannot lose the rule (worst case it is briefly present in both places).
+ * Overwriting an existing archive file with the same id is expected and fine.
+ * @param rule The RuleFile object to archive.
+ * @param rulesDir Optional custom path to rules directory.
+ */
+export async function archiveRule(rule: RuleFile, rulesDir: string = getRulesDir()): Promise<void> {
+  const archiveDir = getRulesArchiveDir(rulesDir)
+  await mkdir(archiveDir, { recursive: true })
+  const archivePath = path.join(archiveDir, `${rule.id}.md`)
+  await writeFile(archivePath, serializeRule(rule), 'utf-8')
+
+  const hotPath = path.join(rulesDir, `${rule.id}.md`)
+  await rm(hotPath, { force: true })
+}
+
+/**
+ * Loads all rules from the hot rules directory plus its archive subdirectory,
+ * deduplicated by rule id with the hot copy winning on collision. Pure read:
+ * never creates the rules directory or the archive directory when missing.
+ * @param rulesDir Optional custom path to rules directory.
+ * @returns A promise resolving to the merged array of RuleFile objects.
+ */
+export async function loadAllRulesIncludingArchived(
+  rulesDir: string = getRulesDir(),
+): Promise<RuleFile[]> {
+  const [hotRules, archivedRules] = await Promise.all([
+    loadAllRules(rulesDir),
+    loadAllRules(getRulesArchiveDir(rulesDir)),
+  ])
+  const hotIds = new Set(hotRules.map((rule) => rule.id))
+  const archiveOnly = archivedRules.filter((rule) => !hotIds.has(rule.id))
+  return [...hotRules, ...archiveOnly]
 }

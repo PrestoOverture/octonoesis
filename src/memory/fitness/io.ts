@@ -5,7 +5,7 @@ import { getMemoryDir } from '../../utils/path.ts'
 import { readCalibrationRecords } from '../calibration/stats.ts'
 import { readEpisodes } from '../episodes/store.ts'
 import { type JournalEvent, isKnownJournalEvent, parseJournalEvent } from '../events.ts'
-import { loadAllRules } from '../rules/store.ts'
+import { loadAllRulesIncludingArchived } from '../rules/store.ts'
 import type { FitnessInput } from './dashboard.ts'
 
 export const sessionStatsRecordSchema = z.object({
@@ -92,7 +92,7 @@ export async function loadFitnessInput(memoryDir: string = getMemoryDir()): Prom
   const [journal, episodes, rules, calibrationRecords, stats] = await Promise.all([
     readJournalEvents(path.join(memoryDir, 'journal.jsonl')),
     readEpisodes(path.join(memoryDir, 'episodes.jsonl')),
-    loadAllRules(path.join(memoryDir, 'rules')),
+    loadAllRulesIncludingArchived(path.join(memoryDir, 'rules')),
     readCalibrationRecords(path.join(memoryDir, 'calibration.jsonl')),
     readStatsRecords(path.join(memoryDir, 'stats.jsonl')),
   ])

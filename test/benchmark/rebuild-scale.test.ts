@@ -8,7 +8,12 @@ import { type Fingerprint, assembleFingerprint } from '../../src/memory/fingerpr
 import { findMatchingRules } from '../../src/memory/rules/match.ts'
 import { enforcePoolCap, getRuleSpecificity } from '../../src/memory/rules/pool.ts'
 import { rebuildRules } from '../../src/memory/rules/rebuild.ts'
-import { loadAllRules, saveRule } from '../../src/memory/rules/store.ts'
+import {
+  getRulesArchiveDir,
+  loadAllRules,
+  loadAllRulesIncludingArchived,
+  saveRule,
+} from '../../src/memory/rules/store.ts'
 import type { RuleFile, RuleStatus } from '../../src/memory/rules/types.ts'
 import { registerPromptHandler, unregisterPromptHandler } from '../../src/permissions/confirm.ts'
 import { setProvider } from '../../src/providers/index.ts'
@@ -396,29 +401,40 @@ describe('Step 19.6 - Rebuild Scale Benchmark', () => {
     await writeEpisodes(env, episodes)
 
     rebuild500Ms = await rebuild(env, true)
-    const rules = await loadAllRules(env.rulesDir)
+    // Phase 40: the hot dir is capped at 150 active/candidate; cap-evicted (retired)
+    // rules live under archive/. The merged view proves nothing was lost.
+    const hotRules = await loadAllRules(env.rulesDir)
+    const rules = await loadAllRulesIncludingArchived(env.rulesDir)
 
+    expect(hotRules.length).toBe(150)
     expect(rules.length).toBe(350)
     expect(rules.every((rule) => rule.evidence.length === 1)).toBe(true)
   })
 
-  it('sub-test 3: enforces pool cap while keeping retired rules on disk', async () => {
+  it('sub-test 3: enforces pool cap while archiving evicted rules on disk', async () => {
     const env = await createEnv('pool-cap')
     await writeEpisodes(env, generateEpisodes(500, { unique: true }))
 
     await rebuild(env, true)
-    const rules = await loadAllRules(env.rulesDir)
-    const files = await readdir(env.rulesDir)
+    // Phase 40: evicted (retired) rules are archived, never deleted -- the merged
+    // hot+archive view carries the full pool; the hot dir holds exactly the cap.
+    const rules = await loadAllRulesIncludingArchived(env.rulesDir)
+    const hotFiles = await readdir(env.rulesDir)
+    const archiveFiles = await readdir(getRulesArchiveDir(env.rulesDir))
     const activeCandidate = activeCandidateRules(rules)
     const retired = rules.filter((rule) => rule.status === 'retired')
 
     poolActiveCandidateCount = activeCandidate.length
     poolTotalCount = rules.length
 
+    const isRuleFile = (file: string) => file.startsWith('rule-') && file.endsWith('.md')
+    const hotRuleFileCount = hotFiles.filter(isRuleFile).length
+    const archiveRuleFileCount = archiveFiles.filter(isRuleFile).length
+
     expect(activeCandidate.length).toBe(150)
-    expect(
-      files.filter((file) => file.startsWith('rule-') && file.endsWith('.md')).length,
-    ).toBeGreaterThan(150)
+    expect(hotRuleFileCount).toBe(150)
+    expect(archiveRuleFileCount).toBeGreaterThan(0)
+    expect(hotRuleFileCount + archiveRuleFileCount).toBe(rules.length)
     expect(retired.length).toBeGreaterThan(0)
 
     const maxRetiredScore = Math.max(...retired.map(poolScore))

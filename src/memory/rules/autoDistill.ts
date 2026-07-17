@@ -8,7 +8,7 @@ import { distillEpisode } from './distill.ts'
 import { disambiguateRuleId } from './identity.ts'
 import { updateLifecycle } from './lifecycle.ts'
 import { enforcePoolCap } from './pool.ts'
-import { loadAllRules, saveRule } from './store.ts'
+import { archiveRule, loadAllRules, loadAllRulesIncludingArchived, saveRule } from './store.ts'
 import type { RuleFile } from './types.ts'
 
 export const AUTO_DISTILL_MAX_CALLS_PER_QUERY_END = 3
@@ -83,7 +83,7 @@ export async function runSessionEndAutoDistill(
   if (episodes.length === 0) return
 
   const rulesDir = path.join(memoryDir, 'rules')
-  const rules = await loadAllRules(rulesDir)
+  const rules = await loadAllRulesIncludingArchived(rulesDir)
   const evidencedEpisodeIds = new Set(rules.flatMap((rule) => rule.evidence))
   const initiallyCoveredSignatures = new Set(
     episodes
@@ -163,8 +163,19 @@ export async function runSessionEndAutoDistill(
 
   const statusesBeforeCap = new Map(rules.map((rule) => [rule.id, rule.status]))
   const finalRules = enforcePoolCap(rules)
+  // Self-heal sweep: a terminal-status rule that still has a hot-dir file (e.g. left
+  // over from before this feature, or from FR-INJ-1's accounting save) gets archived
+  // here too, even if this run's distillation/cap pass left it otherwise untouched.
+  const hotRuleIds = new Set((await loadAllRules(rulesDir)).map((rule) => rule.id))
   for (const rule of finalRules) {
     if (statusesBeforeCap.get(rule.id) !== rule.status) changedRuleIds.add(rule.id)
-    if (changedRuleIds.has(rule.id)) await saveRule(rule, rulesDir)
+    const terminal = isTerminalRule(rule)
+    const staleHotCopy = terminal && hotRuleIds.has(rule.id)
+    if (!changedRuleIds.has(rule.id) && !staleHotCopy) continue
+    if (terminal) {
+      await archiveRule(rule, rulesDir)
+    } else {
+      await saveRule(rule, rulesDir)
+    }
   }
 }

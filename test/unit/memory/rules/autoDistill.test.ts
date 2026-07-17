@@ -10,7 +10,12 @@ import {
   runSessionEndAutoDistill,
 } from '../../../../src/memory/rules/autoDistill.ts'
 import { rebuildRules } from '../../../../src/memory/rules/rebuild.ts'
-import { loadAllRules, saveRule } from '../../../../src/memory/rules/store.ts'
+import {
+  archiveRule,
+  getRulesArchiveDir,
+  loadAllRules,
+  saveRule,
+} from '../../../../src/memory/rules/store.ts'
 import type { RuleFile } from '../../../../src/memory/rules/types.ts'
 import { setProvider } from '../../../../src/providers/index.ts'
 import type { CanonicalMessage, LLMProvider } from '../../../../src/providers/types.ts'
@@ -454,5 +459,190 @@ describe('session-end auto-distillation', () => {
 
     expect(calls).toBe(1)
     expect(attemptedEpisodeIds).toEqual(new Set(['ep_0001']))
+  })
+
+  describe('rule-pool disk hygiene (Phase 40)', () => {
+    it('a cap-evicting run archives the evicted rule, and leaves exactly 150 active/candidate plus pinned/banned in the hot dir', async () => {
+      await createAnchorFiles(1)
+      const sourceEpisode = episode(1)
+      await appendEpisodes([sourceEpisode])
+
+      // Drives the candidate-reuse branch: changedRuleIds becomes non-empty and the
+      // cap+save path runs with zero distillEpisode calls (per the contract's hint).
+      const matchingCandidate = coveringRule(sourceEpisode)
+      matchingCandidate.id = 'rule-matching-candidate'
+      matchingCandidate.status = 'candidate'
+      matchingCandidate.confidence = 0.6
+      matchingCandidate.created_at = new Date().toISOString()
+      await saveRule(matchingCandidate)
+
+      // 149 more candidates with a strong pool score -- survive the cap alongside the match.
+      for (let i = 0; i < 149; i++) {
+        const filler: RuleFile = {
+          ...matchingCandidate,
+          id: `rule-filler-${i}`,
+          evidence: [`ep_filler_${i}`],
+          triggers: {
+            tools: ['Bash'],
+            command_prefix: ['bun test'],
+            error_signatures: [`bash|TypeError|src/filler-${i}.ts|detail`],
+          },
+        }
+        await saveRule(filler)
+      }
+
+      // One deliberately lowest-scored candidate (old + coarse + low confidence): the
+      // rule the cap must evict, proving eviction lands in archive/ and leaves the hot dir.
+      const lowestScored: RuleFile = {
+        ...matchingCandidate,
+        id: 'rule-lowest-scored',
+        evidence: ['ep_lowest'],
+        confidence: 0.1,
+        created_at: new Date(Date.now() - 200 * 24 * 60 * 60 * 1000).toISOString(),
+        triggers: { tools: ['Bash'], command_prefix: [], error_signatures: ['coarse-sig'] },
+      }
+      await saveRule(lowestScored)
+
+      // Pinned/banned rules, deliberately on unrelated signatures so they don't mark
+      // the session episode as "already covered" (which would skip it entirely).
+      const pinned: RuleFile = {
+        ...matchingCandidate,
+        id: 'rule-pinned-guard',
+        status: 'pinned',
+        triggers: {
+          tools: ['Bash'],
+          command_prefix: ['bun test'],
+          error_signatures: ['bash|TypeError|src/unrelated-pinned.ts|x'],
+        },
+      }
+      const banned: RuleFile = {
+        ...matchingCandidate,
+        id: 'rule-banned-guard',
+        status: 'banned',
+        triggers: {
+          tools: ['Bash'],
+          command_prefix: ['bun test'],
+          error_signatures: ['bash|TypeError|src/unrelated-banned.ts|x'],
+        },
+      }
+      await saveRule(pinned)
+      await saveRule(banned)
+      const rulesDir = path.join(tempDir, 'rules')
+      const pinnedContentBefore = await fs.readFile(path.join(rulesDir, `${pinned.id}.md`), 'utf-8')
+      const bannedContentBefore = await fs.readFile(path.join(rulesDir, `${banned.id}.md`), 'utf-8')
+
+      setProvider({
+        name: 'anthropic',
+        createMessageStream: async function* () {
+          yield await Promise.reject(new Error('cap-eviction test should not call the distiller'))
+        },
+      })
+
+      await runSessionEndAutoDistill('session-auto-distill', tempDir)
+
+      const hotRules = await loadAllRules()
+      const archivedRules = await loadAllRules(getRulesArchiveDir(rulesDir))
+
+      const hotActiveCandidate = hotRules.filter(
+        (rule) => rule.status === 'active' || rule.status === 'candidate',
+      )
+      expect(hotActiveCandidate.length).toBe(150)
+      expect(hotRules.length).toBe(152) // 150 active/candidate + pinned + banned
+
+      // Pinned/banned: never moved, never rewritten (byte-identical on disk).
+      expect(await fs.readFile(path.join(rulesDir, `${pinned.id}.md`), 'utf-8')).toBe(
+        pinnedContentBefore,
+      )
+      expect(await fs.readFile(path.join(rulesDir, `${banned.id}.md`), 'utf-8')).toBe(
+        bannedContentBefore,
+      )
+
+      // The deliberately-lowest-scored rule was evicted into the archive, not the hot dir.
+      expect(archivedRules.length).toBe(1)
+      const evicted = archivedRules.find((rule) => rule.id === 'rule-lowest-scored')
+      expect(evicted).toBeDefined()
+      expect(evicted?.status).toBe('retired')
+      expect(hotRules.some((rule) => rule.id === 'rule-lowest-scored')).toBe(false)
+
+      // The matching candidate received fresh evidence via the reuse branch and stayed hot.
+      expect(hotRules.find((rule) => rule.id === 'rule-matching-candidate')?.evidence).toEqual([
+        'ep_existing',
+        sourceEpisode.id,
+      ])
+    })
+
+    it('sweeps a pre-existing terminal-status hot-dir file to the archive on a run that saves changes', async () => {
+      await createAnchorFiles(2)
+      const sourceEpisode = episode(1)
+      await appendEpisodes([sourceEpisode])
+
+      // Drives the candidate-reuse branch so the save loop actually runs this session.
+      const matchingCandidate = coveringRule(sourceEpisode)
+      matchingCandidate.id = 'rule-sweep-trigger-candidate'
+      matchingCandidate.status = 'candidate'
+      await saveRule(matchingCandidate)
+
+      // Simulates a rule left in the hot dir with terminal status -- e.g. a leftover
+      // from before this feature shipped, or from FR-INJ-1's accounting save (engine.ts).
+      // Its signature is unrelated to the session episode, so it is untouched by the
+      // distillation loop itself; only the self-heal sweep should relocate it.
+      const staleTerminal = coveringRule(episode(2))
+      staleTerminal.id = 'rule-stale-hot-retired'
+      staleTerminal.status = 'retired'
+      await saveRule(staleTerminal)
+
+      setProvider({
+        name: 'anthropic',
+        createMessageStream: async function* () {
+          yield await Promise.reject(new Error('sweep test should not call the distiller'))
+        },
+      })
+
+      await runSessionEndAutoDistill('session-auto-distill', tempDir)
+
+      const rulesDir = path.join(tempDir, 'rules')
+      const hotRules = await loadAllRules()
+      const archivedRules = await loadAllRules(getRulesArchiveDir(rulesDir))
+
+      expect(hotRules.some((rule) => rule.id === 'rule-stale-hot-retired')).toBe(false)
+      const swept = archivedRules.find((rule) => rule.id === 'rule-stale-hot-retired')
+      expect(swept).toBeDefined()
+      expect(swept?.status).toBe('retired')
+      // Swept, not re-distilled: evidence is exactly what was seeded.
+      expect(swept?.evidence).toEqual(['ep_existing'])
+
+      expect(hotRules.find((rule) => rule.id === 'rule-sweep-trigger-candidate')?.evidence).toEqual(
+        ['ep_existing', sourceEpisode.id],
+      )
+    })
+
+    it('suppresses re-distillation when the matching terminal rule exists only in the archive', async () => {
+      await createAnchorFiles(1)
+      const sourceEpisode = episode(1)
+      await appendEpisodes([sourceEpisode])
+
+      const rulesDir = path.join(tempDir, 'rules')
+      const archivedOnly = coveringRule(sourceEpisode)
+      archivedOnly.id = 'rule-archived-only-terminal'
+      archivedOnly.status = 'superseded'
+      await archiveRule(archivedOnly, rulesDir)
+      // Sanity: this rule genuinely lives only in the archive, not the hot dir.
+      expect((await loadAllRules()).some((rule) => rule.id === archivedOnly.id)).toBe(false)
+      expect(
+        (await loadAllRules(getRulesArchiveDir(rulesDir))).some(
+          (rule) => rule.id === archivedOnly.id,
+        ),
+      ).toBe(true)
+
+      const attemptedEpisodeIds = new Set<string>()
+      let calls = 0
+      setProvider(distillProvider(() => calls++))
+
+      await runSessionEndAutoDistill('session-auto-distill', tempDir, { attemptedEpisodeIds })
+
+      expect(calls).toBe(0)
+      expect(attemptedEpisodeIds).toEqual(new Set([sourceEpisode.id]))
+      expect(await loadAllRules()).toEqual([])
+    })
   })
 })
