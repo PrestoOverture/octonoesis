@@ -189,6 +189,9 @@ describe('daily-driver TUI input', () => {
     view.stdin.write('\r')
     await waitFor(() => provider.calls.length === 1)
     await waitFor(() => promptLine(view.lastFrame()).includes('Type a message...'))
+    // The assistant bubble can commit a render tick after the idle prompt reappears;
+    // wait for it explicitly (bounded) instead of racing the transcript flush.
+    await waitFor(() => (view.lastFrame() ?? '').includes('done'))
     const after = view.lastFrame() ?? ''
     expect(after).toContain('new visible prompt')
     expect(after).toContain('done')
