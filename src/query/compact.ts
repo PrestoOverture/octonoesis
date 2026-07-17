@@ -19,6 +19,12 @@ Be dense and factual with no preamble. Newer messages will follow this summary, 
 export interface CompactResult {
   summary: string
   pinnedHead: CanonicalMessage
+  /**
+   * The preserved recent tail. When the most recent user task message was rescued from the
+   * summarized prefix (see findLatestTaskMessageIndex), its structured-cloned original is
+   * prepended here so a caller building [pinnedHead, summaryMessage, ...messagesKept] places it
+   * correctly between the summary and the rest of the tail.
+   */
   messagesKept: CanonicalMessage[]
   preCompactTokens: number
   postCompactTokens: number
@@ -87,6 +93,36 @@ export function selectKeepTail(messages: CanonicalMessage[]): number {
   return boundary
 }
 
+/** Returns the message's plain text when it is entirely textual user content, else undefined. */
+function extractUserText(message: CanonicalMessage): string | undefined {
+  if (message.role !== 'user') return undefined
+  if (typeof message.content === 'string') return message.content
+  const parts: string[] = []
+  for (const block of message.content) {
+    if (block.type !== 'text') return undefined
+    parts.push(block.text)
+  }
+  return parts.join('')
+}
+
+/**
+ * Finds the index of the most recent user task message within [1, boundary) — a plain textual
+ * user message that is not a synthetic <task-notification> injected by tasks/framework.ts.
+ * Returns -1 when none exists. Index 0 (the head pin) is never in this range, so it is never
+ * re-selected here.
+ */
+function findLatestTaskMessageIndex(messages: CanonicalMessage[], boundary: number): number {
+  for (let index = boundary - 1; index >= 1; index--) {
+    const message = messages[index]
+    if (!message) continue
+    const text = extractUserText(message)
+    if (text !== undefined && !text.startsWith('<task-notification>')) {
+      return index
+    }
+  }
+  return -1
+}
+
 /**
  * Summarizes the compactable prefix while preserving the recent valid message tail.
  */
@@ -100,8 +136,21 @@ export async function compact(
   }
 
   const pinnedHead = structuredClone(messages[0] as CanonicalMessage)
-  const prefix = messages.slice(1, boundary)
-  const messagesKept = messages.slice(boundary)
+  // Rescue the current/most-recent query's task statement (if it fell inside the summarized
+  // range) the same way messages[0] is rescued, so it survives compaction verbatim instead of
+  // depending entirely on summary fidelity (see roadmap.md v1.0.x sweep finding 8). It is
+  // excluded from the fork's prefix below and prepended to messagesKept so that callers building
+  // [pinnedHead, summaryMessage, ...messagesKept] place it correctly — between the summary and
+  // the original tail — without needing to know a pin happened.
+  const latestTaskIndex = findLatestTaskMessageIndex(messages, boundary)
+  const prefix = messages.slice(1, boundary).filter((_, offset) => offset + 1 !== latestTaskIndex)
+  const messagesKept =
+    latestTaskIndex === -1
+      ? messages.slice(boundary)
+      : [
+          structuredClone(messages[latestTaskIndex] as CanonicalMessage),
+          ...messages.slice(boundary),
+        ]
   const instructionMessage: CanonicalMessage = {
     role: 'user',
     content: [{ type: 'text', text: COMPACT_SUMMARY_INSTRUCTION }],

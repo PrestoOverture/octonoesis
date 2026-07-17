@@ -325,6 +325,11 @@ async function prepareQueryState(
         },
       }),
     )
+  } else {
+    // No skills this query: drop any SkillTool registered by an earlier query on this session
+    // so its stale skill map doesn't linger in the global registry (the provider tools-list
+    // filter below already hides it, but getTool('Skill') would still resolve it).
+    unregisterTool('Skill')
   }
   const agentTool = new AgentTool({
     systemPrompt: compiledContext.systemStable,

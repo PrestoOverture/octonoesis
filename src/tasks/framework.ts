@@ -48,13 +48,34 @@ export function enqueueTaskNotification(ctx: QueryLoopContext, task: TaskState):
   notificationQueues.set(ctx, queue)
 }
 
+/**
+ * Reads at most the last TASK_OUTPUT_TAIL_CHARS * 4 bytes of the log file (4 bytes is the
+ * maximum UTF-8 width of one character, so this window always covers at least
+ * TASK_OUTPUT_TAIL_CHARS real characters) instead of loading the whole file into memory, then
+ * decodes and slices to the exact character tail. For ASCII logs (1 byte per character) this is
+ * byte-identical to reading the whole file and slicing. If a multibyte character straddles the
+ * read boundary, TextDecoder's default non-fatal mode replaces the truncated leading bytes with
+ * U+FFFD rather than dropping them or throwing.
+ */
 async function readTaskTail(logPath: string | undefined): Promise<string> {
   if (!logPath) return ''
+  const maxBytes = TASK_OUTPUT_TAIL_CHARS * 4
+  let handle: Awaited<ReturnType<typeof fs.open>> | undefined
   try {
-    const output = await fs.readFile(logPath, 'utf8')
-    return output.slice(-TASK_OUTPUT_TAIL_CHARS)
+    handle = await fs.open(logPath, 'r')
+    const { size } = await handle.stat()
+    const start = Math.max(0, size - maxBytes)
+    const length = size - start
+    if (length <= 0) return ''
+    const buffer = Buffer.alloc(length)
+    const { bytesRead } = await handle.read(buffer, 0, length, start)
+    return new TextDecoder('utf-8')
+      .decode(buffer.subarray(0, bytesRead))
+      .slice(-TASK_OUTPUT_TAIL_CHARS)
   } catch {
     return ''
+  } finally {
+    await handle?.close()
   }
 }
 

@@ -160,7 +160,9 @@ describe('context compaction', () => {
     expect(captured?.maxTurns).toBe(1)
     expect(captured?.signal).toBe(controller.signal)
     expect(captured && 'model' in captured).toBe(false)
-    expect(captured?.messages.slice(0, -1)).toEqual(messages.slice(1, 3))
+    // Phase 42: the most recent user task message (index 2) is rescued from the summarized
+    // prefix and pinned verbatim, so the fork receives only the remaining prefix.
+    expect(captured?.messages.slice(0, -1)).toEqual([messages[1]])
 
     const instruction = captured?.messages.at(-1)
     expect(instruction?.role).toBe('user')
@@ -185,7 +187,7 @@ describe('context compaction', () => {
     expect(observedUsage).toEqual(forkUsage)
     expect(result.summary).toBe(summary)
     expect(result.pinnedHead).toEqual(messages[0])
-    expect(result.messagesKept).toEqual(messages.slice(3))
+    expect(result.messagesKept).toEqual([messages[2] as CanonicalMessage, ...messages.slice(3)])
     const replacement = [
       result.pinnedHead,
       createCompactSummaryMessage(result.summary),
@@ -194,6 +196,7 @@ describe('context compaction', () => {
     expect(replacement).toEqual([
       messages[0],
       createCompactSummaryMessage(summary),
+      messages[2],
       ...messages.slice(3),
     ])
     expect(result.preCompactTokens).toBe(contextTokensWithEstimation(messages))
@@ -201,6 +204,7 @@ describe('context compaction', () => {
       contextTokensWithEstimation([
         messages[0] as CanonicalMessage,
         createCompactSummaryMessage(summary),
+        messages[2] as CanonicalMessage,
         ...messages.slice(3),
       ]),
     )
@@ -328,5 +332,174 @@ describe('context compaction', () => {
 
     await flushJournal()
     expect(await fs.readdir(memoryDir)).toEqual([])
+  })
+
+  function hasUnpairedToolUse(replacementMessages: CanonicalMessage[]): boolean {
+    for (const [index, message] of replacementMessages.entries()) {
+      if (message.role !== 'assistant') continue
+      for (const block of message.content) {
+        if (block.type !== 'tool_use') continue
+        const paired = replacementMessages
+          .slice(index + 1)
+          .some((candidate) => candidate.role === 'tool' && candidate.tool_use_id === block.id)
+        if (!paired) return true
+      }
+    }
+    return false
+  }
+
+  it('pins the most recent user task message from the summarized prefix alongside the head', async () => {
+    const messages: CanonicalMessage[] = [
+      { role: 'user', content: `Head task: ${'detail '.repeat(100)}` },
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: `First reply ${'context '.repeat(100)}` }],
+      },
+      { role: 'user', content: 'Second task: add input validation to the login form' },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'edit-1', name: 'Edit', input: { path: 'login.ts' } }],
+      },
+      { role: 'tool', tool_use_id: 'edit-1', content: 'edited' },
+      { role: 'assistant', content: [{ type: 'text', text: 'most recent response' }] },
+    ]
+    const originalMessages = structuredClone(messages)
+    const summary = 'Summary of the head task and the first reply.'
+
+    const result = await compact(messages, {
+      systemPrompt: 'system',
+      forkFn: async (opts) => {
+        // The rescued second task statement must not reach the fork for re-summarization:
+        // only the first assistant reply remains in the prefix.
+        expect(opts.messages.slice(0, -1)).toEqual([messages[1]])
+        return {
+          text: summary,
+          usage: { input_tokens: 1, output_tokens: 1 },
+          turns: 1,
+          exitReason: 'completed',
+        }
+      },
+    })
+
+    expect(messages).toEqual(originalMessages)
+    expect(result.pinnedHead).toEqual(messages[0])
+    expect(result.messagesKept[0]).toEqual(messages[2])
+    expect(result.messagesKept[0]).not.toBe(messages[2])
+    expect(result.messagesKept.slice(1)).toEqual(messages.slice(3))
+
+    const replacement = [
+      result.pinnedHead,
+      createCompactSummaryMessage(result.summary),
+      ...result.messagesKept,
+    ]
+    expect(replacement).toEqual([
+      messages[0],
+      createCompactSummaryMessage(summary),
+      messages[2],
+      messages[3],
+      messages[4],
+      messages[5],
+    ])
+    expect(hasUnpairedToolUse(replacement)).toBe(false)
+  })
+
+  it('does not duplicate the head pin when messages[0] is the only user task in range', async () => {
+    const messages: CanonicalMessage[] = [
+      { role: 'user', content: `Only task: ${'detail '.repeat(100)}` },
+      {
+        role: 'assistant',
+        content: [{ type: 'text', text: `Reply one ${'context '.repeat(100)}` }],
+      },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'read-1', name: 'Read', input: { path: 'a.ts' } }],
+      },
+      { role: 'tool', tool_use_id: 'read-1', content: 'file contents' },
+      { role: 'assistant', content: [{ type: 'text', text: 'final response' }] },
+    ]
+
+    const result = await compact(messages, {
+      systemPrompt: 'system',
+      forkFn: async (opts) => {
+        expect(opts.messages.slice(0, -1)).toEqual(messages.slice(1, 2))
+        return {
+          text: 'old-shape summary',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          turns: 1,
+          exitReason: 'completed',
+        }
+      },
+    })
+
+    expect(result.messagesKept).toEqual(messages.slice(2))
+    expect(result.messagesKept.length).toBe(3)
+    const replacement = [
+      result.pinnedHead,
+      createCompactSummaryMessage(result.summary),
+      ...result.messagesKept,
+    ]
+    expect(hasUnpairedToolUse(replacement)).toBe(false)
+  })
+
+  it('never selects a synthetic <task-notification> message as the latest-task pin', async () => {
+    const notification =
+      '<task-notification>\n<task_id>shell-1</task_id>\n<status>completed</status>\n</task-notification>\nLast output:\n'
+    const messages: CanonicalMessage[] = [
+      { role: 'user', content: `Head task: ${'detail '.repeat(100)}` },
+      { role: 'assistant', content: [{ type: 'text', text: `Reply ${'context '.repeat(100)}` }] },
+      { role: 'user', content: [{ type: 'text', text: notification }] },
+      {
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 'read-1', name: 'Read', input: { path: 'a.ts' } }],
+      },
+      { role: 'tool', tool_use_id: 'read-1', content: 'file contents' },
+      { role: 'assistant', content: [{ type: 'text', text: 'final response' }] },
+    ]
+
+    const result = await compact(messages, {
+      systemPrompt: 'system',
+      forkFn: async (opts) => {
+        // The notification stays in the summarized prefix rather than being rescued as a pin.
+        expect(opts.messages.slice(0, -1)).toEqual(messages.slice(1, 3))
+        return {
+          text: 'summary without a rescued pin',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          turns: 1,
+          exitReason: 'completed',
+        }
+      },
+    })
+
+    expect(result.messagesKept).toEqual(messages.slice(3))
+  })
+
+  it('skips an intervening task-notification and pins the more recent real user task', async () => {
+    const notification =
+      '<task-notification>\n<task_id>shell-1</task_id>\n<status>completed</status>\n</task-notification>\nLast output:\n'
+    const messages: CanonicalMessage[] = [
+      { role: 'user', content: `Head task: ${'detail '.repeat(100)}` },
+      { role: 'user', content: notification },
+      { role: 'user', content: 'Second real task: refactor the parser' },
+      { role: 'assistant', content: [{ type: 'text', text: `ack ${'context '.repeat(100)}` }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'more work' }] },
+      { role: 'assistant', content: [{ type: 'text', text: 'final response' }] },
+    ]
+
+    const result = await compact(messages, {
+      systemPrompt: 'system',
+      forkFn: async (opts) => {
+        // Only the notification remains in the fork's prefix; the real task is rescued.
+        expect(opts.messages.slice(0, -1)).toEqual([messages[1]])
+        return {
+          text: 'summary skipping the notification',
+          usage: { input_tokens: 1, output_tokens: 1 },
+          turns: 1,
+          exitReason: 'completed',
+        }
+      },
+    })
+
+    expect(result.messagesKept[0]).toEqual(messages[2])
+    expect(result.messagesKept.slice(1)).toEqual(messages.slice(3))
   })
 })

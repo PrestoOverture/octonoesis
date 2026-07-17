@@ -49,6 +49,42 @@ function canonicalUserText(message: CanonicalMessage): string {
     : message.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
 }
 
+const TASK_NOTICE_PREFIX = '<task-notification>'
+const TASK_NOTICE_GENERIC_LABEL = 'Task › background task update'
+const TASK_NOTICE_SUMMARY_MAX_CHARS = 80
+
+/** Extracts a single known tag's inner text (the producer XML-escapes content, so a plain
+ * non-greedy regex is sufficient — no entity decoding needed for display). */
+function extractTaskNoticeTag(source: string, tag: string): string | undefined {
+  const match = source.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
+  return match?.[1]?.trim()
+}
+
+/** Collapses to a single line and truncates to at most maxChars, appending an ellipsis. */
+function truncateTaskNoticeSummary(
+  text: string,
+  maxChars: number = TASK_NOTICE_SUMMARY_MAX_CHARS,
+): string {
+  const singleLine = text.replace(/\s+/g, ' ').trim()
+  if (singleLine.length <= maxChars) return singleLine
+  return `${singleLine.slice(0, Math.max(0, maxChars - 1))}…`
+}
+
+/**
+ * Formats a synthetic <task-notification> user message (produced by src/tasks/framework.ts) into
+ * a compact single-line label. Never returns the raw XML or the notification's output tail.
+ * Falls back to a generic label when the message isn't a notification, or the expected tags are
+ * missing/empty (malformed).
+ */
+export function formatTaskNoticeLabel(text: string): string {
+  if (!text.startsWith(TASK_NOTICE_PREFIX)) return TASK_NOTICE_GENERIC_LABEL
+  const taskId = extractTaskNoticeTag(text, 'task_id')
+  const status = extractTaskNoticeTag(text, 'status')
+  const summary = extractTaskNoticeTag(text, 'summary')
+  if (!taskId || !status || !summary) return TASK_NOTICE_GENERIC_LABEL
+  return `Task › ${taskId} ${status}: ${truncateTaskNoticeSummary(summary)}`
+}
+
 /**
  * MessageList renders the chronological history of user messages and agent turns,
  * rendering tool usages as compact <ToolCard> components.
@@ -65,6 +101,16 @@ export function MessageList(props: { messages?: CanonicalMessage[] }) {
             typeof msg.content === 'string'
               ? msg.content
               : msg.content.map((c) => (c.type === 'text' ? c.text : '')).join('')
+          if (text.startsWith(TASK_NOTICE_PREFIX)) {
+            return (
+              // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
+              <Box key={index} flexDirection="column" marginY={0}>
+                <Text color="yellow" dimColor>
+                  {formatTaskNoticeLabel(text)}
+                </Text>
+              </Box>
+            )
+          }
           return (
             // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
             <Box key={index} flexDirection="column" marginY={0}>

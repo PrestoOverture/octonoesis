@@ -3,7 +3,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { render } from 'ink-testing-library'
 import React from 'react'
-import { App, type CanonicalMessage } from '../../../src/ui/App'
+import { App, type CanonicalMessage, formatTaskNoticeLabel } from '../../../src/ui/App'
 
 describe('App TUI component', () => {
   it('renders MessageList, StreamingResponse, and Input regions', () => {
@@ -84,5 +84,104 @@ describe('App TUI component', () => {
     // Clean up
     await fs.rm(testDir, { recursive: true, force: true })
     process.env.OCTONOESIS_MEMORY_DIR = undefined
+  })
+
+  it('renders a well-formed <task-notification> message as a compact task-notice line', () => {
+    const messages: CanonicalMessage[] = [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'text',
+            text:
+              '<task-notification>\n<task_id>shell-ab12cd34</task_id>\n<task_type>shell</task_type>\n' +
+              '<status>completed</status>\n<exit_code>0</exit_code>\n' +
+              '<output_file>.octonoesis/tasks/shell-ab12cd34.log</output_file>\n' +
+              '<summary>Task "bun test" completed (exit code 0)</summary>\n</task-notification>\n' +
+              'Last output:\nsome captured stdout that must never reach the frame',
+          },
+        ],
+      },
+    ]
+
+    const { lastFrame } = render(<App messages={messages} />)
+    const frame = lastFrame()
+    expect(frame).toBeDefined()
+    if (!frame) return
+    expect(frame).toContain('Task ›')
+    expect(frame).toContain('shell-ab12cd34')
+    expect(frame).toContain('completed')
+    expect(frame).toContain('bun test')
+    expect(frame).not.toContain('User ›')
+    expect(frame).not.toContain('<task-notification>')
+    expect(frame).not.toContain('<task_id>')
+    expect(frame).not.toContain('Last output:')
+    expect(frame).not.toContain('some captured stdout')
+  })
+
+  it('falls back to a generic label for a malformed <task-notification> message', () => {
+    const messages: CanonicalMessage[] = [
+      { role: 'user', content: '<task-notification>\nnot well-formed, no closing tags at all' },
+    ]
+
+    const { lastFrame } = render(<App messages={messages} />)
+    const frame = lastFrame()
+    expect(frame).toBeDefined()
+    if (!frame) return
+    expect(frame).toContain('Task › background task update')
+    expect(frame).not.toContain('User ›')
+    expect(frame).not.toContain('<task-notification>')
+  })
+
+  it('still renders an ordinary user message as a User › bubble, unaffected', () => {
+    const messages: CanonicalMessage[] = [
+      { role: 'user', content: 'a completely ordinary message, not a task notice' },
+    ]
+
+    const { lastFrame } = render(<App messages={messages} />)
+    const frame = lastFrame()
+    expect(frame).toBeDefined()
+    if (!frame) return
+    expect(frame).toContain('User ›')
+    expect(frame).toContain('a completely ordinary message, not a task notice')
+    expect(frame).not.toContain('Task ›')
+  })
+})
+
+describe('formatTaskNoticeLabel', () => {
+  it('truncates a long summary to at most 80 characters with an ellipsis', () => {
+    const longSummary = `Task "bun test with a very long command line" completed ${'x'.repeat(60)}`
+    const text = `<task-notification>\n<task_id>agent-1</task_id>\n<status>completed</status>\n<summary>${longSummary}</summary>\n</task-notification>`
+
+    const label = formatTaskNoticeLabel(text)
+
+    expect(label.startsWith('Task › agent-1 completed: ')).toBe(true)
+    const renderedSummary = label.slice('Task › agent-1 completed: '.length)
+    expect(renderedSummary.length).toBeLessThan(81)
+    expect(renderedSummary.endsWith('…')).toBe(true)
+  })
+
+  it('falls back to the generic label when task_id is missing', () => {
+    const text =
+      '<task-notification>\n<status>completed</status>\n<summary>done</summary>\n</task-notification>'
+    expect(formatTaskNoticeLabel(text)).toBe('Task › background task update')
+  })
+
+  it('falls back to the generic label when status is missing', () => {
+    const text =
+      '<task-notification>\n<task_id>agent-1</task_id>\n<summary>done</summary>\n</task-notification>'
+    expect(formatTaskNoticeLabel(text)).toBe('Task › background task update')
+  })
+
+  it('falls back to the generic label when summary is missing', () => {
+    const text =
+      '<task-notification>\n<task_id>agent-1</task_id>\n<status>completed</status>\n</task-notification>'
+    expect(formatTaskNoticeLabel(text)).toBe('Task › background task update')
+  })
+
+  it('falls back to the generic label for text that is not a task notification', () => {
+    expect(formatTaskNoticeLabel('just a normal user message')).toBe(
+      'Task › background task update',
+    )
   })
 })
