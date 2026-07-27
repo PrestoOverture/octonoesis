@@ -1,12 +1,17 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
+import { registerPromptHandler, unregisterPromptHandler } from '../../src/permissions/confirm'
 import { setProvider } from '../../src/providers'
 import type { LLMProvider } from '../../src/providers/types'
 import { runQuery } from '../../src/query'
 
 describe('Phase 2 - End-to-End tool_use Loop', () => {
   let callCount = 0
+  let originalRepoRoot: string | undefined
 
   beforeAll(() => {
+    originalRepoRoot = process.env.OCTONOESIS_REPO_ROOT
+    process.env.OCTONOESIS_REPO_ROOT = process.cwd()
+    registerPromptHandler(async () => 'allow_always')
     const mockProvider: LLMProvider = {
       name: 'anthropic',
       createMessageStream: async function* (messages, tools, opts) {
@@ -44,6 +49,12 @@ describe('Phase 2 - End-to-End tool_use Loop', () => {
 
   afterAll(() => {
     setProvider(null)
+    unregisterPromptHandler()
+    if (originalRepoRoot === undefined) {
+      Reflect.deleteProperty(process.env, 'OCTONOESIS_REPO_ROOT')
+    } else {
+      process.env.OCTONOESIS_REPO_ROOT = originalRepoRoot
+    }
   })
 
   it('successfully loops tool execution and returns the final response', async () => {

@@ -11,12 +11,15 @@ import {
 import { setProvider } from '../../src/providers'
 import type { LLMProvider } from '../../src/providers/types'
 import { query } from '../../src/query'
+import { bashTool } from '../../src/tools/Bash'
 import { runTool } from '../../src/tools/execute'
+import { getTool, registerTool, unregisterTool } from '../../src/tools/registry'
 
 describe('Fingerprint Journal Integration', () => {
   const tempDir = join(os.tmpdir(), `octonoesis-fp-integration-${Date.now()}`)
   const journalFile = join(tempDir, 'journal.jsonl')
   let originalMemoryDir: string | undefined
+  let originalBashTool = getTool('Bash')
 
   beforeAll(async () => {
     originalMemoryDir = process.env.OCTONOESIS_MEMORY_DIR
@@ -26,6 +29,8 @@ describe('Fingerprint Journal Integration', () => {
 
     // Auto-approve command executions in tests
     registerPromptHandler(async () => 'allow_always')
+    originalBashTool = getTool('Bash')
+    registerTool(bashTool)
   })
 
   beforeEach(() => {
@@ -41,6 +46,8 @@ describe('Fingerprint Journal Integration', () => {
     await rm(tempDir, { recursive: true, force: true })
     setProvider(null)
     unregisterPromptHandler()
+    unregisterTool(bashTool.name, bashTool)
+    if (originalBashTool) registerTool(originalBashTool)
   })
 
   it('should scrub output, extract fingerprint via mock LLM, and log to journal', async () => {

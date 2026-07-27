@@ -67,6 +67,7 @@ let baseTempDir = ''
 let originalMemoryDir: string | undefined
 let originalRepoRoot: string | undefined
 let originalProvider: string | undefined
+let originalDisableAutoDistill: string | undefined
 // biome-ignore lint/suspicious/noExplicitAny: Bun process handle mock
 let originalSpawn: any
 let activeSession: ActiveSession | null = null
@@ -486,6 +487,8 @@ beforeAll(async () => {
   originalMemoryDir = process.env.OCTONOESIS_MEMORY_DIR
   originalRepoRoot = process.env.OCTONOESIS_REPO_ROOT
   originalProvider = process.env.LLM_PROVIDER
+  originalDisableAutoDistill = process.env.OCTONOESIS_DISABLE_AUTO_DISTILL
+  process.env.OCTONOESIS_DISABLE_AUTO_DISTILL = 'true'
   baseTempDir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'octonoesis-phase19-cross-')))
 
   // biome-ignore lint/suspicious/noExplicitAny: Bun global object
@@ -503,6 +506,11 @@ afterAll(async () => {
   process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
   process.env.OCTONOESIS_REPO_ROOT = originalRepoRoot
   process.env.LLM_PROVIDER = originalProvider
+  if (originalDisableAutoDistill === undefined) {
+    Reflect.deleteProperty(process.env, 'OCTONOESIS_DISABLE_AUTO_DISTILL')
+  } else {
+    process.env.OCTONOESIS_DISABLE_AUTO_DISTILL = originalDisableAutoDistill
+  }
 
   if (baseTempDir) {
     await rm(baseTempDir, { recursive: true, force: true })
