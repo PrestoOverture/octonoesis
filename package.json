@@ -1,6 +1,6 @@
 {
   "name": "octonoesis",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A self-calibrating terminal coding agent that learns your repo — Bun + Ink, with MCP, sub-agents, background tasks, and an evidence-gated learning loop",
   "license": "MIT",
   "repository": {
@@ -22,7 +22,8 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "test": "bun test test/unit test/integration",
-    "check": "bun run typecheck && bun run lint"
+    "check": "bun run typecheck && bun run lint",
+    "prepublishOnly": "bun run check && bun test && bun run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.1",

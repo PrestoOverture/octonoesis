@@ -108,7 +108,7 @@ function formatExperimentList(experiments: ExperimentRecord[]): string {
 
 const program = new Command()
 
-program.name('octonoesis').description('An open-source terminal coding agent').version('1.0.0')
+program.name('octonoesis').description('An open-source terminal coding agent').version('1.1.0')
 
 program
   .command('rebuild-rules')

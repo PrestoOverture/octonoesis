@@ -178,7 +178,7 @@ describe('query failure surfaces', () => {
     ])
 
     expect(code).toBe(0)
-    expect(stdout.trim()).toBe('1.0.0')
+    expect(stdout.trim()).toBe('1.1.0')
     expect(stderr).toBe('')
   })
 
