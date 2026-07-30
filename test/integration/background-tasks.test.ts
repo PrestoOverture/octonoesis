@@ -97,7 +97,12 @@ describe('background task engine integration', () => {
             },
           }
         } else if (turn === 2) {
-          await new Promise((resolve) => setTimeout(resolve, 250))
+          const deadline = Date.now() + 5_000
+          while (Date.now() < deadline) {
+            const done = Array.from(ctx.tasks?.values() ?? []).some((t) => t.status === 'completed')
+            if (done) break
+            await new Promise((resolve) => setTimeout(resolve, 10))
+          }
           yield {
             type: 'tool_use',
             id: 'read-while-running',

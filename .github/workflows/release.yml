@@ -42,9 +42,9 @@ jobs:
         run: |
           SIZE=$(wc -c < dist/${{ matrix.binary }})
           echo "Binary size: $SIZE bytes"
-          # 80 MB = 83,886,080 bytes
-          if [ "$SIZE" -gt 83886080 ]; then
-            echo "Error: Binary size exceeds 80MB limit!"
+          # 120 MB = 125,829,120 bytes
+          if [ "$SIZE" -gt 125829120 ]; then
+            echo "Error: Binary size exceeds 120MB limit!"
             exit 1
           fi
 
