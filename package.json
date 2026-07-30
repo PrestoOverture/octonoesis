@@ -1,6 +1,6 @@
 {
   "name": "octonoesis",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "A self-calibrating terminal coding agent that learns your repo — Bun + Ink, with MCP, sub-agents, background tasks, and an evidence-gated learning loop",
   "license": "MIT",
   "repository": {
@@ -10,7 +10,7 @@
   "keywords": ["coding-agent", "cli", "terminal", "ai", "llm", "bun"],
   "type": "module",
   "bin": {
-    "octonoesis": "./dist/cli.js"
+    "octonoesis": "dist/cli.js"
   },
   "files": ["dist/cli.js", "LICENSE", "README.md"],
   "scripts": {
