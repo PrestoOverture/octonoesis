@@ -99,6 +99,15 @@ octonoesis --stats                  # 每个 bucket 的 Beta 后验 + 95% 可信
 bun install -g octonoesis
 ```
 
+也可以用 npm 或 npx —— 本包已发布到 npm registry：
+
+```bash
+npm install -g octonoesis
+npx octonoesis "修复 src/user.ts 里失败的测试"
+```
+
+**Bun 是运行时依赖，不只是构建工具。** 发布的产物是 Bun bundle（`#!/usr/bin/env bun`），在 Node 下无法运行——即使通过 npm 安装，`PATH` 里仍然需要有 `bun`。如果不想安装 Bun，可以从 [Releases](https://github.com/PrestoOverture/octonoesis/releases) 下载独立二进制（`octonoesis-linux-x64`、`octonoesis-macos-arm64`），它们已把 Bun 编译进去，没有任何运行时依赖。
+
 ## 快速开始
 
 ```bash

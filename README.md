@@ -99,6 +99,15 @@ The active pool is capped at 150 rules — when full, rules compete on `specific
 bun install -g octonoesis
 ```
 
+npm and npx work too — the package is published to the npm registry:
+
+```bash
+npm install -g octonoesis
+npx octonoesis "Fix the failing test in src/user.ts"
+```
+
+**Bun is a runtime requirement, not just a build tool.** The published binary is a Bun bundle (`#!/usr/bin/env bun`) and will not run under Node — installing through npm still needs `bun` on your `PATH`. If you'd rather not install Bun, grab a standalone binary from [Releases](https://github.com/PrestoOverture/octonoesis/releases) (`octonoesis-linux-x64`, `octonoesis-macos-arm64`); those are compiled with Bun embedded and have no runtime dependency.
+
 ## Quickstart
 
 ```bash
