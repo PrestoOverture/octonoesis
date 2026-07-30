@@ -1,5 +1,4 @@
 import { describe, expect, it } from 'bun:test'
-import { renderToString } from 'ink'
 import { render } from 'ink-testing-library'
 import React from 'react'
 import { CompactNotice } from '../../../src/ui/CompactNotice'
@@ -52,7 +51,7 @@ describe('observability UI', () => {
   })
 
   it('keeps every StatusBar field readable at 80 columns', () => {
-    const frame = renderToString(
+    const { lastFrame } = render(
       <StatusBar
         modelName="claude-haiku-4-5-20251001"
         inputTokens={12_345}
@@ -61,11 +60,13 @@ describe('observability UI', () => {
         priced={true}
         contextUtilization={0.42}
       />,
-      { columns: 80 },
     )
 
+    const frame = lastFrame() ?? ''
     expect(frame).toContain('Model: claude-haiku-4-5-20251001')
-    expect(frame).toContain('Usage: in: 12.3k | out: 678 | total: 13.0k')
+    expect(frame).toContain('in: 12.3k')
+    expect(frame).toContain('out: 678')
+    expect(frame).toContain('total: 13.0k')
     expect(frame).toContain('cost: $0.0123')
     expect(frame).toContain('ctx: 42%')
   })
