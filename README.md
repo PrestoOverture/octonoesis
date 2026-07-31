@@ -5,9 +5,11 @@
 [![CI](https://github.com/PrestoOverture/octonoesis/actions/workflows/ci.yml/badge.svg)](https://github.com/PrestoOverture/octonoesis/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-A self-calibrating terminal coding agent that gets better at *your* repo over time. It reads code, edits files with diff-previewed approvals, runs tests, connects to MCP servers, delegates to sub-agents, runs background tasks — and unlike agents that forget everything between sessions, it keeps an append-only observation ledger of every action and outcome, distills failure→fix episodes into human-readable rules, and injects those rules the next time the same class of error appears.
+A terminal coding agent that learns from its own mistakes.
 
-Built in TypeScript on **Bun**, with an **Ink** TUI. One design rule holds everywhere: **the LLM interprets, the harness authorizes.** Models may draft rules and summaries; only external evidence (a failing test turning green) and explicit user action may promote a rule, grant autonomy, or touch the ledger.
+Octonoesis reads code, edits files, runs tests, connects to MCP servers, and delegates to sub-agents. The difference is what happens after. Every tool call goes into an append-only journal. Failures get fingerprinted. A state machine segments them into fail→fix→verify episodes, and an LLM distiller turns those into rules — plain markdown files you can read, edit, or delete. Next time the same kind of error comes up, the relevant rules get injected into context. Confidence is earned by evidence (the failing command passes again), not model self-assessment.
+
+TypeScript on **Bun**, **Ink** TUI. One design rule: **the LLM interprets, the harness authorizes.**
 
 <img src="demo/hero.gif" alt="Octonoesis fixing a real bug end-to-end: search, diff-previewed edit, permission prompt, tests passing" width="800">
 
@@ -15,30 +17,30 @@ Built in TypeScript on **Bun**, with an **Ink** TUI. One design rule holds every
 
 ## Features
 
-**Core agent**
-- 7 built-in tools (Read, Glob, Grep, Edit, Write, Bash, TodoWrite) with Zod-validated inputs, serial execution, and repo-root path confinement.
-- Interactive TUI and one-shot mode; streaming responses; clean `Ctrl+C` cancellation; 429/5xx retry with exponential backoff.
-- Permission gate on every mutating action — `[y] once / [n] no / [a] always`, with colorized unified-diff previews for edits.
-- Anthropic Claude by default; any OpenAI-compatible endpoint (GPT, DeepSeek, Qwen, Ollama) via `LLM_PROVIDER=openai` + `OPENAI_BASE_URL`.
+**Core**
+- 7 built-in tools (Read, Glob, Grep, Edit, Write, Bash, TodoWrite). Zod-validated, serial execution, repo-root confined.
+- Interactive TUI and one-shot CLI. Streaming output. `Ctrl+C` to cancel. Retries on 429/5xx with backoff.
+- Permission prompt on every mutation — `[y] once / [n] no / [a] always` — with diff preview for edits.
+- Claude by default; any OpenAI-compatible endpoint via `LLM_PROVIDER=openai`.
 
 **Context & memory**
-- Auto-compaction: near the context limit, a forked summarizer compresses history and the session keeps going — 20+ turn sessions without overflow.
-- Long-term memory: durable facts are auto-extracted at session end into `.octonoesis/memory/` (four types: user, feedback, project, reference) and recalled per query.
-- Project instructions: `CLAUDE.md` is loaded into the system prompt; drop an `OCTONOESIS.md` beside it to take precedence, or set `projectInstructions: "off"`.
-- Live observability: StatusBar shows model, tokens, cost, and context %; every session appends to `.octonoesis/stats.jsonl` and prints a cost summary on exit.
+- Auto-compaction near the context limit (forked summarizer), so 20+ turn sessions work fine.
+- Long-term memory: facts extracted at session end into `.octonoesis/memory/`, recalled per query.
+- Project instructions from `CLAUDE.md` (or `OCTONOESIS.md` to override).
+- StatusBar shows model, tokens, cost, context %. Stats logged to `.octonoesis/stats.jsonl`.
 
-**Learning loop** — see [below](#learning-loop)
+**Learning loop** — [details below](#learning-loop)
 
 **Extensibility**
-- Skills: drop a markdown file in `.octonoesis/skills/` and invoke it as `/my-skill` — inline (shapes the current conversation) or forked (isolated, read-only child).
-- Hooks: shell commands on six lifecycle events (`pre_tool_use`, `post_tool_use`, `stop`, `session_start`, `session_end`, `compact`), configured in one file, time-budgeted so they can never stall the loop.
-- One config file — `.octonoesis/config.json`: model, max turns, sandbox, MCP servers, hooks, permission allow/deny patterns. A trust gate keeps a *committed* config in a freshly cloned repo from running foreign hooks or servers until you opt in.
-- macOS sandbox: opt-in `sandbox-exec` confinement for Bash — denies reads of `~/.ssh` & credential stores and writes to the observation ledger, while the permission prompt stays as the last line of defense.
+- **Skills**: drop a markdown file in `.octonoesis/skills/`, call it as `/my-skill`.
+- **Hooks**: shell commands on 6 lifecycle events, time-budgeted.
+- **Config**: one file (`.octonoesis/config.json`) for model, MCP servers, hooks, permissions, sandbox. Cloned repos can't run foreign hooks/servers until you opt in.
+- **macOS sandbox**: opt-in `sandbox-exec` for Bash, blocking `~/.ssh` and credential stores.
 
 **Integration**
-- MCP: stdio servers from config, connected on first assembly (5s timeout, nonfatal), tools namespaced `mcp__{server}__{tool}` with the same permission treatment as built-ins.
-- Sub-agents: delegate research to a read-only child agent (`Agent` tool) that shares your prompt cache; background agents run in isolated detached-HEAD git worktrees and accept mid-run `SendMessage` steering.
-- Background tasks: run long commands with `run_in_background` — the conversation continues, a TaskChip ticks in the TUI, output streams to `.octonoesis/tasks/{id}.log`, and a `<task-notification>` reaches the model when the task finishes.
+- **MCP**: stdio servers from config, tools namespaced `mcp__{server}__{tool}`.
+- **Sub-agents**: read-only child agents (`Agent` tool), prompt cache shared. Background agents run in detached-HEAD worktrees with `SendMessage` steering.
+- **Background tasks**: `run_in_background` keeps the conversation going while a command runs. Output to `.octonoesis/tasks/{id}.log`, notification when done.
 
 <img src="demo/v1-integration.gif" alt="Background bun test + sub-agent delegation + task notification, in one session" width="800">
 
@@ -46,7 +48,9 @@ Built in TypeScript on **Bun**, with an **Ink** TUI. One design rule holds every
 
 ## Learning Loop
 
-Every tool call is journaled with a three-level error fingerprint (`tool|error_class`, `+file`, `+expression`). A deterministic state machine segments the journal into fail→fix→verify **episodes**; an LLM distiller turns eligible episodes into **rules** — one markdown file each, readable, diffable, deletable; and on the next matching failure, the best rules (max 2) are **injected** alongside the tool output. A rule only earns confidence when the same command that failed comes back passing — Bayesian Beta posteriors, never model self-assessment.
+Tool calls are journaled with three-level error fingerprints (`tool|error_class`, `+file`, `+expression`). A state machine segments the journal into fail→fix→verify **episodes**. An LLM distiller turns eligible episodes into **rules** — one markdown file each. On the next matching failure, the best rules (max 2) get **injected** with the tool output.
+
+A rule earns confidence only when the command that originally failed passes again. Bayesian Beta posteriors — never model self-assessment.
 
 ```mermaid
 flowchart LR
@@ -60,7 +64,7 @@ flowchart LR
 
 <img src="demo/learning-loop.gif" alt="Session 1 fails and fixes a bug, distilling a rule; session 2 hits the same error class and fixes it first try" width="800">
 
-A rule is just a file you can read, pin, ban, or delete:
+A rule is just a file:
 
 ```yaml
 ---
@@ -82,31 +86,32 @@ Check the call site — the caller may be passing `null` where a valid object is
 
 ```bash
 ls .octonoesis/rules/               # every rule is a file
-octonoesis rebuild-rules --force    # regenerate all rules from episodes.jsonl
+octonoesis rebuild-rules --force    # regenerate from episodes.jsonl
 octonoesis --stats                  # per-bucket Beta posterior + 95% credible interval
 ```
 
-The active pool is capped at 150 rules — when full, rules compete on `specificity × confidence × time-decay`. Evidence (journal, episodes) grows without bound; beliefs stay bounded.
+Active pool caps at 150 rules. When full, they compete on `specificity × confidence × time-decay`. Evidence grows unbounded; beliefs stay bounded.
 
 ---
 
 ## Installation
 
+**Requirements:**
 - **Bun** ≥ 1.2.0 — `curl -fsSL https://bun.sh/install | bash`
-- **ripgrep** (optional fallback if the bundled `@vscode/ripgrep` can't run): `brew install ripgrep` / `apt install ripgrep`
+- **ripgrep** (optional fallback if bundled `@vscode/ripgrep` can't run)
 
 ```bash
 bun install -g octonoesis
 ```
 
-npm and npx work too — the package is published to the npm registry:
+npm / npx work too:
 
 ```bash
 npm install -g octonoesis
 npx octonoesis "Fix the failing test in src/user.ts"
 ```
 
-**Bun is a runtime requirement, not just a build tool.** The published binary is a Bun bundle (`#!/usr/bin/env bun`) and will not run under Node — installing through npm still needs `bun` on your `PATH`. If you'd rather not install Bun, grab a standalone binary from [Releases](https://github.com/PrestoOverture/octonoesis/releases) (`octonoesis-linux-x64`, `octonoesis-macos-arm64`); those are compiled with Bun embedded and have no runtime dependency.
+**Bun is a runtime dependency**, not just a build tool. The package is a Bun bundle (`#!/usr/bin/env bun`) that won't run under Node — `bun` needs to be on your `PATH` even when installed via npm. For a zero-dependency option, grab a standalone binary from [Releases](https://github.com/PrestoOverture/octonoesis/releases).
 
 ## Quickstart
 
@@ -117,16 +122,16 @@ export ANTHROPIC_API_KEY="sk-..."
 # ...or any OpenAI-compatible endpoint
 export LLM_PROVIDER="openai"
 export OPENAI_API_KEY="sk-..."
-# export OPENAI_BASE_URL="https://api.deepseek.com"   # optional
+# export OPENAI_BASE_URL="https://api.deepseek.com"
 ```
 
 ```bash
 octonoesis                                        # interactive TUI
-octonoesis "Fix the failing test in src/user.ts"  # one-shot to stdout
-octonoesis --sandbox "run the build"              # Bash confined by macOS sandbox
+octonoesis "Fix the failing test in src/user.ts"  # one-shot
+octonoesis --sandbox "run the build"              # Bash in macOS sandbox
 ```
 
-Optional per-repo configuration in `.octonoesis/config.json`:
+Per-repo config (`.octonoesis/config.json`):
 
 ```jsonc
 {
@@ -146,9 +151,9 @@ Optional per-repo configuration in `.octonoesis/config.json`:
 
 ## API key handling
 
-At startup, Octonoesis captures provider API keys in module memory and removes them from `process.env`. Tool subprocesses do not receive those keys by default; set `OCTONOESIS_INHERIT_API_KEYS=1` to opt Bash and background-shell children back into key inheritance. Provider fork children used for compaction, memory work, and sub-agents do receive the keys because they call the model provider.
+At startup, Octonoesis captures API keys in module memory and clears them from `process.env`. Subprocesses don't get keys by default — set `OCTONOESIS_INHERIT_API_KEYS=1` to opt in. Fork children (compaction, memory, sub-agents) do get keys since they call the model.
 
-Keys exported by your shell can still be visible to other same-user processes through OS process inspection. Prefer placing keys in the repository's `.env` file, which Bun loads without putting them in the exec-time environment. Every shell command remains permission-gated; that prompt is the operative security boundary.
+Keys exported by your shell are still visible to same-user processes via OS inspection. Put keys in the repo `.env` instead — Bun loads it directly. The permission prompt on every shell command is the operative security boundary.
 
 ---
 
@@ -169,20 +174,20 @@ flowchart TD
     EXEC -. every event .-> J[("journal.jsonl\nappend-only ledger")]
 ```
 
-Three layers, strictly ordered: the **journal** is the source of truth (append-only, never edited); **episodes, rules, and calibration** are derived views — rebuildable from the ledger at any time; the **context compiler** assembles a per-task packet under per-source token budgets, split into a cache-stable system prompt and a volatile preamble so prompt caching survives every turn.
+Three layers: the **journal** is the source of truth (append-only, never edited). **Episodes, rules, and calibration** are derived views — rebuildable from the journal. The **context compiler** assembles per-task packets under token budgets, split into cache-stable system prompt and volatile preamble.
 
 ---
 
 ## Research & Validation
 
-The learning loop's claims are measured, not asserted — including the null and negative results. Highlights from the experimental record:
+The learning loop's claims are measured, not asserted. Null and negative results included.
 
-- 150-fixture validation across 15 error scenarios and 7 fingerprint buckets, plus 24 negative-control runs.
-- **Cross-model rule transfer**: a rule distilled from a strong model's (Claude Haiku) resolved episode lifted a weak solver (gpt-4o-mini) from **2/20 to 20/20** on unseen instances of the same error class (exact McNemar p<0.001, pre-registered, negative control exactly null).
-- **Self-loop**: the weak model teaching itself reached 11/20 from the same 2/20 floor — real, partial, and honestly bounded by distiller quality.
-- A documented negative finding (RepoQuirk) and a methodology lesson (weak-model probes) are reported as such, not spun.
+- 150-fixture validation: 15 error scenarios, 7 fingerprint buckets, 24 negative-control runs.
+- **Cross-model transfer**: a rule from Claude Haiku lifted gpt-4o-mini from **2/20 to 20/20** on unseen instances (McNemar p<0.001, pre-registered, negative control null).
+- **Self-loop**: weak model teaching itself reached 11/20 from 2/20 — real but bounded by distiller quality.
+- One negative finding (RepoQuirk) and one methodology lesson (weak-model probes) reported as-is.
 
-Full tables, pre-registrations, and transcripts: **[reports.md](reports.md)**.
+Full data: **[reports.md](reports.md)**.
 
 ---
 
