@@ -80,7 +80,7 @@ export async function startLocalShellTask(
   }
 
   const taskId = `shell-${crypto.randomUUID().slice(0, 8)}`
-  const logPath = await taskLogPath(options.ctx.repoRoot, taskId)
+  const logPath = await taskLogPath(taskId)
   await fs.writeFile(logPath, '')
   const log = await fs.open(logPath, 'a')
 

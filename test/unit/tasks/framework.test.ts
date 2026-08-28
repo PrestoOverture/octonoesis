@@ -9,29 +9,63 @@ import {
   taskLogPath,
 } from '../../../src/tasks/framework'
 
+const originalMemoryDir = process.env.OCTONOESIS_MEMORY_DIR
 const roots: string[] = []
+
+// taskLogPath resolves its directory via getMemoryDir(), so each test points
+// OCTONOESIS_MEMORY_DIR at a subdirectory of its own temp root before calling it.
+async function makeRoot(prefix: string): Promise<string> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), prefix))
+  roots.push(root)
+  process.env.OCTONOESIS_MEMORY_DIR = path.join(root, '.octonoesis')
+  return root
+}
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })))
+  if (originalMemoryDir === undefined) {
+    Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')
+  } else {
+    process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
+  }
 })
 
 describe('background task framework', () => {
   it('creates the task-log directory lazily and returns the session-local log path', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'octonoesis-task-framework-'))
-    roots.push(root)
+    const root = await makeRoot('octonoesis-task-framework-')
     const tasksDir = path.join(root, '.octonoesis', 'tasks')
     await expect(fs.access(tasksDir)).rejects.toThrow()
 
-    const logPath = await taskLogPath(root, 'shell-ab12cd34')
+    const logPath = await taskLogPath('shell-ab12cd34')
 
     expect(logPath).toBe(path.join(tasksDir, 'shell-ab12cd34.log'))
     expect((await fs.stat(tasksDir)).isDirectory()).toBe(true)
   })
 
+  it('places the log under OCTONOESIS_MEMORY_DIR, not a hardcoded repoRoot-derived path', async () => {
+    const root = await makeRoot('octonoesis-task-memdir-')
+    const memoryDir = path.join(root, '.octonoesis')
+
+    const logPath = await taskLogPath('shell-memdir01')
+
+    expect(logPath).toBe(path.join(memoryDir, 'tasks', 'shell-memdir01.log'))
+    expect(logPath.startsWith(memoryDir + path.sep)).toBe(true)
+
+    // Changing OCTONOESIS_MEMORY_DIR must move where the log is written.
+    const otherRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'octonoesis-task-memdir-other-'))
+    roots.push(otherRoot)
+    const otherMemoryDir = path.join(otherRoot, '.octonoesis')
+    process.env.OCTONOESIS_MEMORY_DIR = otherMemoryDir
+
+    const otherLogPath = await taskLogPath('shell-memdir02')
+
+    expect(otherLogPath).toBe(path.join(otherMemoryDir, 'tasks', 'shell-memdir02.log'))
+    expect(otherLogPath.startsWith(memoryDir + path.sep)).toBe(false)
+  })
+
   it('delivers one deterministic notification with a capped tail and evicts the task', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'octonoesis-task-notification-'))
-    roots.push(root)
-    const logPath = await taskLogPath(root, 'shell-ab12cd34')
+    const root = await makeRoot('octonoesis-task-notification-')
+    const logPath = await taskLogPath('shell-ab12cd34')
     await fs.writeFile(logPath, `discard-me-${'x'.repeat(2_100)}`)
     const task: TaskState = {
       id: 'shell-ab12cd34',
@@ -62,9 +96,8 @@ describe('background task framework', () => {
   })
 
   it('reads only a bounded tail from a log file larger than 1 MB, matching the old whole-file-read answer', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'octonoesis-task-tail-bounded-'))
-    roots.push(root)
-    const logPath = await taskLogPath(root, 'shell-bounded01')
+    const root = await makeRoot('octonoesis-task-tail-bounded-')
+    const logPath = await taskLogPath('shell-bounded01')
     // > 1 MB of ASCII content with a distinctive, non-repeating tail so a truncation-boundary
     // bug would be visible even if it merely shifted by a few characters.
     const filler = 'x'.repeat(1_100_000)
@@ -97,8 +130,7 @@ describe('background task framework', () => {
   })
 
   it('returns an empty output tail for a missing log file', async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'octonoesis-task-tail-missing-'))
-    roots.push(root)
+    const root = await makeRoot('octonoesis-task-tail-missing-')
     const missingLogPath = path.join(root, '.octonoesis', 'tasks', 'shell-missing01.log')
     const task: TaskState = {
       id: 'shell-missing01',

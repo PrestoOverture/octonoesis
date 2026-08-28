@@ -7,6 +7,8 @@ import { readCalibrationRecords } from '../../../../src/memory/calibration/stats
 const TEST_DIR = path.join(__dirname, '../../../../test-calibration-hook-memory')
 
 describe('Calibration Session-End Hook', () => {
+  const originalMemoryDir = process.env.OCTONOESIS_MEMORY_DIR
+
   beforeEach(async () => {
     process.env.OCTONOESIS_MEMORY_DIR = TEST_DIR
     try {
@@ -15,7 +17,11 @@ describe('Calibration Session-End Hook', () => {
   })
 
   afterEach(async () => {
-    process.env.OCTONOESIS_MEMORY_DIR = undefined
+    if (originalMemoryDir === undefined) {
+      Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')
+    } else {
+      process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
+    }
     try {
       await fs.rm(TEST_DIR, { recursive: true, force: true })
     } catch {}

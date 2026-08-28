@@ -42,48 +42,55 @@ describe('App TUI component', () => {
 
   it('intercepts /stats command and displays calibration stats inline', async () => {
     const testDir = path.join(__dirname, '../../../test-app-stats-memory')
+    const originalMemoryDir = process.env.OCTONOESIS_MEMORY_DIR
     process.env.OCTONOESIS_MEMORY_DIR = testDir
-    await fs.mkdir(testDir, { recursive: true })
+    try {
+      await fs.mkdir(testDir, { recursive: true })
 
-    const mockRecord = {
-      session_id: 'sess-test-app',
-      ts: new Date().toISOString(),
-      bucket_key: 'bun-test|TypeError',
-      model_id: 'gpt-5-nano',
-      attempt_count: 5,
-      first_attempt_success: true,
-      user_modifications: 0,
-      user_reverts: 0,
-      resolved: true,
+      const mockRecord = {
+        session_id: 'sess-test-app',
+        ts: new Date().toISOString(),
+        bucket_key: 'bun-test|TypeError',
+        model_id: 'gpt-5-nano',
+        attempt_count: 5,
+        first_attempt_success: true,
+        user_modifications: 0,
+        user_reverts: 0,
+        resolved: true,
+      }
+      await fs.writeFile(
+        path.join(testDir, 'calibration.jsonl'),
+        `${JSON.stringify(mockRecord)}\n`,
+        'utf8',
+      )
+
+      const { stdin, lastFrame } = render(<App />)
+      // Simulate typing "/stats"
+      stdin.write('/stats')
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      // Simulate pressing Enter (carriage return)
+      stdin.write('\r')
+
+      // Wait a brief moment for the async import and fs call to flush
+      await new Promise((resolve) => setTimeout(resolve, 150))
+
+      const frame = lastFrame()
+      expect(frame).toBeDefined()
+      if (frame) {
+        expect(frame).toContain('User ›')
+        expect(frame).toContain('/stats')
+        expect(frame).toContain('bun-test|TypeError')
+        expect(frame).toContain('uncertain') // because total attempts is 1 (< 3 attempts)
+      }
+    } finally {
+      // Clean up
+      await fs.rm(testDir, { recursive: true, force: true })
+      if (originalMemoryDir === undefined) {
+        Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')
+      } else {
+        process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
+      }
     }
-    await fs.writeFile(
-      path.join(testDir, 'calibration.jsonl'),
-      `${JSON.stringify(mockRecord)}\n`,
-      'utf8',
-    )
-
-    const { stdin, lastFrame } = render(<App />)
-    // Simulate typing "/stats"
-    stdin.write('/stats')
-    await new Promise((resolve) => setTimeout(resolve, 50))
-    // Simulate pressing Enter (carriage return)
-    stdin.write('\r')
-
-    // Wait a brief moment for the async import and fs call to flush
-    await new Promise((resolve) => setTimeout(resolve, 150))
-
-    const frame = lastFrame()
-    expect(frame).toBeDefined()
-    if (frame) {
-      expect(frame).toContain('User ›')
-      expect(frame).toContain('/stats')
-      expect(frame).toContain('bun-test|TypeError')
-      expect(frame).toContain('uncertain') // because total attempts is 1 (< 3 attempts)
-    }
-
-    // Clean up
-    await fs.rm(testDir, { recursive: true, force: true })
-    process.env.OCTONOESIS_MEMORY_DIR = undefined
   })
 
   it('renders a well-formed <task-notification> message as a compact task-notice line', () => {

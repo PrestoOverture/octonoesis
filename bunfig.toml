@@ -1,2 +1,3 @@
 [test]
 pathIgnorePatterns = ["**/test/fixtures/buggy-repo/**"]
+preload = ["./test/setup.ts"]

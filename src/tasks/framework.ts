@@ -2,14 +2,15 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { appendJournal } from '../memory/journal'
 import type { QueryLoopContext, TaskState } from '../query/types'
+import { getMemoryDir } from '../utils/path'
 
 const notificationQueues = new WeakMap<QueryLoopContext, TaskState[]>()
 const sessionTaskLogs = new WeakMap<QueryLoopContext, Set<string>>()
 const TERMINAL_STATUSES = new Set<TaskState['status']>(['completed', 'failed', 'killed'])
 const TASK_OUTPUT_TAIL_CHARS = 2_000
 
-export async function taskLogPath(repoRoot: string, taskId: string): Promise<string> {
-  const directory = path.join(repoRoot, '.octonoesis', 'tasks')
+export async function taskLogPath(taskId: string): Promise<string> {
+  const directory = path.join(getMemoryDir(), 'tasks')
   await fs.mkdir(directory, { recursive: true })
   return path.join(directory, `${taskId}.log`)
 }

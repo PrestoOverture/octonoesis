@@ -16,6 +16,7 @@ import { clearRegistry, getAllTools, registerTool } from '../../src/tools/regist
 describe('sandbox journal metadata', () => {
   let memoryDir: string
   let originalTools: Tool[]
+  const originalMemoryDir = process.env.OCTONOESIS_MEMORY_DIR
 
   beforeEach(async () => {
     memoryDir = await mkdtemp(path.join(os.tmpdir(), 'octonoesis-sandbox-journal-'))
@@ -46,7 +47,11 @@ describe('sandbox journal metadata', () => {
     clearRegistry()
     for (const tool of originalTools) registerTool(tool)
     setSessionId('')
-    process.env.OCTONOESIS_MEMORY_DIR = undefined
+    if (originalMemoryDir === undefined) {
+      Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')
+    } else {
+      process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
+    }
     await rm(memoryDir, { recursive: true, force: true })
   })
 

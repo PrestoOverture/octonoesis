@@ -53,7 +53,7 @@ export async function startLocalAgent(options: StartLocalAgentOptions): Promise<
   const removeWorktree = options.removeWorktree ?? removeAgentWorktree
   let logPath: string
   try {
-    logPath = await taskLogPath(options.ctx.repoRoot, agentId)
+    logPath = await taskLogPath(agentId)
     await fs.writeFile(logPath, '')
   } catch (error) {
     await removeWorktree(worktree)

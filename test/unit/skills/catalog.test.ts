@@ -32,6 +32,7 @@ describe('formatSkillCatalog', () => {
 
   test('emits a low-priority stable-system source iff skills exist', async () => {
     const root = await mkdtemp(path.join(tmpdir(), 'skill-catalog-'))
+    const originalMemoryDir = process.env.OCTONOESIS_MEMORY_DIR
     process.env.OCTONOESIS_MEMORY_DIR = path.join(root, 'memory')
     const ctx = { repoRoot: root, tasks: new Map(), hooks: new HookRegistry() }
     try {
@@ -82,7 +83,11 @@ describe('formatSkillCatalog', () => {
       expect(firstCompiled.systemStable).toContain('## Skills')
       expect(firstCompiled.systemStable).toBe(secondCompiled.systemStable)
     } finally {
-      Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')
+      if (originalMemoryDir === undefined) {
+        Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')
+      } else {
+        process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
+      }
       await rm(root, { recursive: true, force: true })
     }
   })

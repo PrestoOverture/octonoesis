@@ -136,9 +136,13 @@ describe('local background agent registry', () => {
   })
 
   it('removes the worktree if task-log setup fails before the child starts', async () => {
-    const invalidRoot = path.join(memoryDir, 'not-a-directory')
-    await fs.writeFile(invalidRoot, 'file')
-    const ctx: QueryLoopContext = { repoRoot: invalidRoot, tasks: new Map() }
+    // taskLogPath resolves its directory via getMemoryDir() (OCTONOESIS_MEMORY_DIR), not
+    // ctx.repoRoot, so the failure is injected by pointing the memory dir at a file instead
+    // of a directory, forcing fs.mkdir to fail.
+    const invalidMemoryDir = path.join(memoryDir, 'not-a-directory')
+    await fs.writeFile(invalidMemoryDir, 'file')
+    process.env.OCTONOESIS_MEMORY_DIR = invalidMemoryDir
+    const ctx: QueryLoopContext = { repoRoot: memoryDir, tasks: new Map() }
     let removed = 0
 
     await expect(
