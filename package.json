@@ -23,6 +23,7 @@
     "format": "biome format --write .",
     "test": "bun test test/unit test/integration",
     "check": "bun run typecheck && bun run lint",
+    "check:ledger": "scripts/check-ledger-isolation.sh",
     "prepublishOnly": "bun run check && bun test && bun run build"
   },
   "dependencies": {

@@ -14,7 +14,8 @@
 // preload's env var assignment lands, racing the very isolation it exists to
 // guarantee. Synchronous calls finish before this module — and therefore
 // this preload — is considered loaded.
-import { mkdtempSync } from 'node:fs'
+import { afterAll } from 'bun:test'
+import { mkdtempSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { getRepoRoot } from '../src/utils/path'
@@ -30,6 +31,28 @@ import { getRepoRoot } from '../src/utils/path'
 // deterministically, regardless of test execution order.
 getRepoRoot()
 
+// Tracked separately from process.env.OCTONOESIS_MEMORY_DIR so the cleanup
+// below only ever removes the directory *this preload* created — never a
+// directory some test later pointed the variable at.
+let createdMemoryDir: string | undefined
+
 if (!process.env.OCTONOESIS_MEMORY_DIR) {
-  process.env.OCTONOESIS_MEMORY_DIR = mkdtempSync(path.join(os.tmpdir(), 'octonoesis-test-memory-'))
+  createdMemoryDir = mkdtempSync(path.join(os.tmpdir(), 'octonoesis-test-memory-'))
+  process.env.OCTONOESIS_MEMORY_DIR = createdMemoryDir
 }
+
+// `process.on('exit'/'beforeExit')` is the conventional place for this kind of
+// cleanup, and cleanup handlers of that shape must stay synchronous — but
+// under `bun test` neither event actually fires (verified empirically: Bun's
+// test runner tears the process down through a path that skips both). A
+// top-level `afterAll` registered here, in the preload, runs exactly once
+// after every test in the run finishes and is the one hook that is reliably
+// invoked, so it stands in for the exit handler. The callback itself stays
+// synchronous (rmSync, not the promises API) to match the spirit of an exit
+// handler even though the API used to register it differs.
+afterAll(() => {
+  if (!createdMemoryDir) return
+  try {
+    rmSync(createdMemoryDir, { recursive: true, force: true })
+  } catch {}
+})
