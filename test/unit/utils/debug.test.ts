@@ -4,7 +4,7 @@ describe('dbg', () => {
   it('does not write when DEBUG is off', () => {
     const original = process.env.DEBUG
     try {
-      process.env.DEBUG = undefined
+      Reflect.deleteProperty(process.env, 'DEBUG')
       const errors: string[] = []
       const originalError = console.error
       console.error = (...args: unknown[]) => {
@@ -20,7 +20,9 @@ describe('dbg', () => {
         console.error = originalError
       }
     } finally {
-      if (original !== undefined) {
+      if (original === undefined) {
+        Reflect.deleteProperty(process.env, 'DEBUG')
+      } else {
         process.env.DEBUG = original
       }
     }

@@ -81,12 +81,12 @@ describe('End-to-End Learning Loop', () => {
   afterAll(async () => {
     // Restore environment variables
     if (originalMemoryDir === undefined) {
-      process.env.OCTONOESIS_MEMORY_DIR = undefined
+      Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')
     } else {
       process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
     }
     if (originalRepoRoot === undefined) {
-      process.env.OCTONOESIS_REPO_ROOT = undefined
+      Reflect.deleteProperty(process.env, 'OCTONOESIS_REPO_ROOT')
     } else {
       process.env.OCTONOESIS_REPO_ROOT = originalRepoRoot
     }

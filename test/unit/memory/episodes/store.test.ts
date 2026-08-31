@@ -22,7 +22,7 @@ describe('Episode Storage Store Module', () => {
 
   afterAll(async () => {
     if (originalMemoryDir === undefined) {
-      process.env.OCTONOESIS_MEMORY_DIR = undefined
+      Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')
     } else {
       process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
     }

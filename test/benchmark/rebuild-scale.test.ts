@@ -55,7 +55,15 @@ type BunSpawn = (options: {
 const COMMAND = 'bun test'
 const EXTRACTOR_VERSION = '0.2.0'
 const MODEL_ID = 'mock'
-const BASE_TIME = Date.parse('2026-06-01T00:00:00.000Z')
+// Anchored relative to Date.now() (not a hardcoded calendar date) so this fixture's
+// rules and episodes stay fresh forever: src/memory/rules/lifecycle.ts demotes an
+// 'active' rule to 'dormant' -- and loadAllRules() drops dormant rules from the hot
+// set -- once Date.now() - created_at exceeds 90 days. A fixed absolute BASE_TIME
+// (e.g. 2026-06-01) silently crosses that 90-day line as real time passes and takes
+// every rule/assertion below down with it. Seven days comfortably represents
+// "a pre-existing rule" for the specificity/decay math while staying far inside the
+// 90-day dormancy window on every future run, indefinitely.
+const BASE_TIME = Date.now() - 7 * 24 * 60 * 60 * 1000
 const realSpawn = (globalThis as typeof globalThis & { Bun: { spawn: BunSpawn } }).Bun.spawn
 
 let baseTempDir = ''

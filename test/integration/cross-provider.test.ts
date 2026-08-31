@@ -86,7 +86,7 @@ describe('LLM Providers & Router Integration', () => {
 
   describe('Routing & Configuration', () => {
     it('resolves AnthropicProvider by default or when set', () => {
-      process.env.LLM_PROVIDER = undefined
+      Reflect.deleteProperty(process.env, 'LLM_PROVIDER')
       const provider = getProvider()
       expect(provider instanceof AnthropicProvider).toBe(true)
       expect(provider.name).toBe('anthropic')
@@ -106,9 +106,9 @@ describe('LLM Providers & Router Integration', () => {
 
     it('resolves models correctly following priority constraints', () => {
       // 1. Default fallback
-      process.env.MODEL = undefined
-      process.env.ANTHROPIC_MODEL = undefined
-      process.env.OPENAI_MODEL = undefined
+      Reflect.deleteProperty(process.env, 'MODEL')
+      Reflect.deleteProperty(process.env, 'ANTHROPIC_MODEL')
+      Reflect.deleteProperty(process.env, 'OPENAI_MODEL')
       process.env.LLM_PROVIDER = 'anthropic'
       expect(getResolvedModel()).toBe('claude-haiku-4-5-20251001')
 
