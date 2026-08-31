@@ -20,6 +20,7 @@ import {
   byScenario,
   materializeRepo,
 } from '../../fixtures/learning-demo/fixtures.ts'
+import { restoreEnv } from '../../helpers/env.ts'
 
 type SpawnResult = {
   exitCode: number
@@ -503,9 +504,9 @@ afterAll(async () => {
   // biome-ignore lint/suspicious/noExplicitAny: Bun global object
   ;(globalThis as any).Bun.spawn = originalSpawn
 
-  process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
-  process.env.OCTONOESIS_REPO_ROOT = originalRepoRoot
-  process.env.LLM_PROVIDER = originalProvider
+  restoreEnv('OCTONOESIS_MEMORY_DIR', originalMemoryDir)
+  restoreEnv('OCTONOESIS_REPO_ROOT', originalRepoRoot)
+  restoreEnv('LLM_PROVIDER', originalProvider)
   if (originalDisableAutoDistill === undefined) {
     Reflect.deleteProperty(process.env, 'OCTONOESIS_DISABLE_AUTO_DISTILL')
   } else {

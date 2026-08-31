@@ -24,6 +24,7 @@ import {
   SCENARIO_TYPES,
   materializeRepo,
 } from '../fixtures/learning-demo/fixtures.ts'
+import { restoreEnv } from '../helpers/env.ts'
 
 type TestEnv = {
   repoRoot: string
@@ -368,9 +369,9 @@ beforeAll(async () => {
 afterAll(async () => {
   setProvider(null)
   unregisterPromptHandler()
-  process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
-  process.env.OCTONOESIS_REPO_ROOT = originalRepoRoot
-  process.env.LLM_PROVIDER = originalProvider
+  restoreEnv('OCTONOESIS_MEMORY_DIR', originalMemoryDir)
+  restoreEnv('OCTONOESIS_REPO_ROOT', originalRepoRoot)
+  restoreEnv('LLM_PROVIDER', originalProvider)
   if (baseTempDir) {
     await rm(baseTempDir, { recursive: true, force: true })
   }

@@ -14,6 +14,7 @@ import {
 import type { RuleFile } from '../../../../src/memory/rules/types.ts'
 import { setProvider } from '../../../../src/providers/index.ts'
 import type { CanonicalMessage, LLMProvider } from '../../../../src/providers/types.ts'
+import { restoreEnv } from '../../../helpers/env.ts'
 
 describe('Rebuild rules capability', () => {
   const tempDir = join(os.tmpdir(), `octonoesis-rebuild-rules-test-${Date.now()}`)
@@ -276,7 +277,7 @@ describe('Rebuild rules capability', () => {
       expect(await readFile(survivorArchivePath, 'utf-8')).toBe(survivorContentBefore)
       expect(hotRules.some((rule) => rule.id === 'rule-pre-existing-archived')).toBe(false)
     } finally {
-      process.env.OCTONOESIS_MEMORY_DIR = priorMemoryDir
+      restoreEnv('OCTONOESIS_MEMORY_DIR', priorMemoryDir)
       await rm(scenarioDir, { recursive: true, force: true })
     }
   })

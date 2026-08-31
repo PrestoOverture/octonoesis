@@ -10,6 +10,7 @@ import {
   getProviderCredentialEnvironment,
   setProviderCredentialsForTests,
 } from '../../src/utils/env'
+import { restoreEnv } from '../helpers/env.ts'
 
 const CREDENTIAL_COMMAND = `printf '%s|%s' "$ANTHROPIC_API_KEY" "$OPENAI_API_KEY"`
 const originalAnthropicKey = process.env.ANTHROPIC_API_KEY
@@ -18,11 +19,6 @@ const originalOptOut = process.env.OCTONOESIS_INHERIT_API_KEYS
 const originalCapturedCredentials = getProviderCredentialEnvironment()
 let repoRoot = ''
 const contexts: QueryLoopContext[] = []
-
-function restoreEnv(key: string, value: string | undefined): void {
-  if (value === undefined) Reflect.deleteProperty(process.env, key)
-  else process.env[key] = value
-}
 
 async function waitForTerminalTask(task: TaskState): Promise<void> {
   const deadline = Date.now() + 5_000
