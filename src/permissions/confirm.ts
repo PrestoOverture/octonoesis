@@ -43,12 +43,23 @@ interface FallbackPromptState {
   bufferedLines: string[]
   pending?: (answer: string | null) => void
   eof: boolean
+  closed: boolean
 }
 
 let fallbackPromptInput: NodeJS.ReadableStream = process.stdin
 let fallbackPromptState: FallbackPromptState | undefined
 
 function pauseFallbackPrompt(state: FallbackPromptState): void {
+  // Bun 1.4.0 aligned readline with Node: pause() on an already-closed interface
+  // throws ERR_USE_AFTER_CLOSE ("readline was closed"). Bun 1.3.14 tolerated it,
+  // which is why this was invisible locally. The interface can close on its own
+  // (see the 'close' listener below, which sets state.closed) whenever the
+  // underlying input stream ends -- not only when resetFallbackPromptState()
+  // calls .close() itself -- so any caller can still hold a state whose
+  // interface has already closed. Tracking closed-ness explicitly here, instead
+  // of relying on readline's own (untyped, version-dependent) internal state,
+  // keeps this correct across Node/Bun readline implementations.
+  if (state.closed) return
   state.interface.pause()
   state.input.pause()
 }
@@ -63,6 +74,7 @@ function createFallbackPromptState(): FallbackPromptState {
     interface: promptInterface,
     bufferedLines: [],
     eof: false,
+    closed: false,
   }
 
   promptInterface.on('line', (line) => {
@@ -79,6 +91,7 @@ function createFallbackPromptState(): FallbackPromptState {
     }
   })
   promptInterface.on('close', () => {
+    state.closed = true
     state.eof = true
     const pending = state.pending
     if (pending) {

@@ -62,23 +62,32 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  setProvider(null)
-  clearAllowlist()
-  unregisterPromptHandler()
-  setPermissionInputStreamForTests()
-  input?.destroy()
-  input = undefined
-  await flushJournal()
-  await fs.rm(memoryDir, { recursive: true, force: true })
-  if (originalMemoryDir === undefined) {
-    Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')
-  } else {
-    process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
-  }
-  if (originalDisableCompact === undefined) {
-    Reflect.deleteProperty(process.env, 'OCTONOESIS_DISABLE_COMPACT')
-  } else {
-    process.env.OCTONOESIS_DISABLE_COMPACT = originalDisableCompact
+  // The env restores below (OCTONOESIS_MEMORY_DIR, OCTONOESIS_DISABLE_COMPACT) must
+  // run even if an earlier teardown step throws -- e.g. setPermissionInputStreamForTests()
+  // resets a readline interface that, on Bun 1.4.0, can throw if it already closed
+  // itself (see src/permissions/confirm.ts's pauseFallbackPrompt() fix). Without this
+  // try/finally, that throw would skip the restores and leak this test's overrides
+  // into every test that runs afterward in the same process.
+  try {
+    setProvider(null)
+    clearAllowlist()
+    unregisterPromptHandler()
+    setPermissionInputStreamForTests()
+    input?.destroy()
+    input = undefined
+    await flushJournal()
+    await fs.rm(memoryDir, { recursive: true, force: true })
+  } finally {
+    if (originalMemoryDir === undefined) {
+      Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')
+    } else {
+      process.env.OCTONOESIS_MEMORY_DIR = originalMemoryDir
+    }
+    if (originalDisableCompact === undefined) {
+      Reflect.deleteProperty(process.env, 'OCTONOESIS_DISABLE_COMPACT')
+    } else {
+      process.env.OCTONOESIS_DISABLE_COMPACT = originalDisableCompact
+    }
   }
 })
 
