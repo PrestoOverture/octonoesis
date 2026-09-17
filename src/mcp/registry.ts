@@ -7,6 +7,13 @@ import { connectMcpServer } from './client'
 
 const sessionTools = new WeakMap<QueryLoopContext, MCPTool[]>()
 
+/**
+ * Initializes and connects configured MCP servers for the current query context.
+ * Validates configuration trust, establishes client connections, registers MCP proxy tools
+ * into the global tool registry, and attaches connections to the context for cleanup.
+ *
+ * @param ctx - Active query loop context containing configuration, repository root, and connection state.
+ */
 export async function initializeMcp(ctx: QueryLoopContext): Promise<void> {
   if (ctx.mcpConnections) return
   ctx.mcpConnections = new Map()
@@ -42,6 +49,12 @@ export async function initializeMcp(ctx: QueryLoopContext): Promise<void> {
   }
 }
 
+/**
+ * Unregisters all MCP proxy tools created for the query session and terminates
+ * all active MCP client connections.
+ *
+ * @param ctx - Active query loop context whose MCP connections should be closed.
+ */
 export async function cleanupMcp(ctx: QueryLoopContext): Promise<void> {
   const tools = sessionTools.get(ctx) ?? []
   sessionTools.delete(ctx)

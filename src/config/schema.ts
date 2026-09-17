@@ -100,13 +100,26 @@ export type OctonoesisConfig = z.infer<typeof octonoesisConfigSchema>
 
 export const DEFAULT_CONFIG: OctonoesisConfig = octonoesisConfigSchema.parse({})
 
+/**
+ * Error thrown when user or project configuration fails schema validation or contains unrecognized keys.
+ */
 export class ConfigValidationError extends Error {
+  /**
+   * @param issues Array of descriptive validation failure messages.
+   */
   constructor(issues: string[]) {
     super(`Invalid Octonoesis config:\n${issues.join('\n')}`)
     this.name = 'ConfigValidationError'
   }
 }
 
+/**
+ * Validates and parses a raw configuration payload against octonoesisConfigSchema.
+ * Strictly checks for recognized keys and valid parameter constraints.
+ * @param raw The raw unvalidated configuration object or value (undefined defaults to empty object).
+ * @returns The parsed and typed OctonoesisConfig.
+ * @throws {ConfigValidationError} If the configuration is invalid or contains unrecognized keys.
+ */
 export function parseConfig(raw: unknown): OctonoesisConfig {
   const parsed = octonoesisConfigSchema.safeParse(raw === undefined ? {} : raw)
   if (parsed.success) return parsed.data

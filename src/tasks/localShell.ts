@@ -29,6 +29,12 @@ export interface StartLocalShellTaskOptions {
 
 const shellTasks = new Map<string, LocalShellTaskRecord>()
 
+/**
+ * Reads chunks sequentially from a ReadableStream and passes them to an append consumer.
+ *
+ * @param stream - Readable byte stream (e.g., process stdout or stderr).
+ * @param append - Async callback to consume stream chunks.
+ */
 async function pumpStream(
   stream: ReadableStream<Uint8Array>,
   append: (chunk: Uint8Array) => Promise<void>,
@@ -45,6 +51,12 @@ async function pumpStream(
   }
 }
 
+/**
+ * Transmits an OS signal to the process group of a background shell task.
+ *
+ * @param record - Task record containing the process handle.
+ * @param signal - Signal to send (SIGTERM or SIGKILL).
+ */
 function signalProcessGroup(record: LocalShellTaskRecord, signal: NodeJS.Signals): void {
   try {
     process.kill(-record.process.pid, signal)
@@ -55,6 +67,12 @@ function signalProcessGroup(record: LocalShellTaskRecord, signal: NodeJS.Signals
   }
 }
 
+/**
+ * Initiates graceful termination of a background shell process using SIGTERM,
+ * escalating to SIGKILL after a 2-second grace period if the process has not exited.
+ *
+ * @param record - Task record to terminate.
+ */
 async function killProcess(record: LocalShellTaskRecord): Promise<void> {
   record.killRequested = true
   signalProcessGroup(record, 'SIGTERM')
@@ -69,6 +87,14 @@ async function killProcess(record: LocalShellTaskRecord): Promise<void> {
   await record.result
 }
 
+/**
+ * Spawns a background shell command in a detached process, streaming its output to a log file.
+ * Enforces the maximum concurrent background shell task limit (4) and registers the task in context.
+ *
+ * @param options - Options including query context, command string, and optional sandbox config.
+ * @returns Promise resolving to the created LocalShellTaskRecord.
+ * @throws Error If the background shell task limit is reached or if process spawning fails.
+ */
 export async function startLocalShellTask(
   options: StartLocalShellTaskOptions,
 ): Promise<LocalShellTaskRecord> {
@@ -170,6 +196,11 @@ export async function startLocalShellTask(
   return record
 }
 
+/**
+ * Terminates all running background shell tasks belonging to a query context.
+ *
+ * @param ctx - Active query loop context.
+ */
 export async function cleanupLocalShellTasks(ctx: QueryLoopContext): Promise<void> {
   const records = Array.from(shellTasks.values()).filter((record) => record.ctx === ctx)
   for (const record of records) {
@@ -177,6 +208,11 @@ export async function cleanupLocalShellTasks(ctx: QueryLoopContext): Promise<voi
   }
 }
 
+/**
+ * Removes a shell task record from the global map of background shell tasks.
+ *
+ * @param taskId - Identifier of the shell task to remove.
+ */
 export function evictLocalShellTask(taskId: string): void {
   shellTasks.delete(taskId)
 }

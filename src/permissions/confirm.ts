@@ -49,6 +49,11 @@ interface FallbackPromptState {
 let fallbackPromptInput: NodeJS.ReadableStream = process.stdin
 let fallbackPromptState: FallbackPromptState | undefined
 
+/**
+ * Pauses readline and standard input streams for the fallback prompt to prevent unhandled input capture.
+ * Safely guards against already-closed interfaces on Bun 1.4+.
+ * @param state Active FallbackPromptState.
+ */
 function pauseFallbackPrompt(state: FallbackPromptState): void {
   // Bun 1.4.0 aligned readline with Node: pause() on an already-closed interface
   // throws ERR_USE_AFTER_CLOSE ("readline was closed"). Bun 1.3.14 tolerated it,
@@ -64,6 +69,10 @@ function pauseFallbackPrompt(state: FallbackPromptState): void {
   state.input.pause()
 }
 
+/**
+ * Initializes a new readline interface and buffering state for CLI interactive confirmation prompts.
+ * @returns A freshly initialized FallbackPromptState.
+ */
 function createFallbackPromptState(): FallbackPromptState {
   const promptInterface = readline.createInterface({
     input: fallbackPromptInput,
@@ -103,11 +112,18 @@ function createFallbackPromptState(): FallbackPromptState {
   return state
 }
 
+/**
+ * Lazily retrieves or creates the singleton FallbackPromptState.
+ * @returns The active FallbackPromptState.
+ */
 function getFallbackPromptState(): FallbackPromptState {
   fallbackPromptState ??= createFallbackPromptState()
   return fallbackPromptState
 }
 
+/**
+ * Resets and closes the active fallback readline interface and clears state.
+ */
 function resetFallbackPromptState(): void {
   const state = fallbackPromptState
   fallbackPromptState = undefined
@@ -116,6 +132,11 @@ function resetFallbackPromptState(): void {
   state.interface.close()
 }
 
+/**
+ * Reads a single line of response from the fallback prompt interface, draining buffered lines first.
+ * @param prompt Prompt label string to display.
+ * @returns The user's input line, or null on EOF.
+ */
 async function readFallbackAnswer(prompt: string): Promise<string | null> {
   const state = getFallbackPromptState()
   const buffered = state.bufferedLines.shift()
@@ -136,6 +157,9 @@ async function readFallbackAnswer(prompt: string): Promise<string | null> {
   })
 }
 
+/**
+ * Cancels a pending fallback prompt request and pauses the interface.
+ */
 function cancelFallbackAnswer(): void {
   const state = fallbackPromptState
   if (!state) return
@@ -143,6 +167,14 @@ function cancelFallbackAnswer(): void {
   pauseFallbackPrompt(state)
 }
 
+/**
+ * Races an async operation against an optional AbortSignal.
+ * Resolves with PERMISSION_ABORTED if aborted.
+ * @param operation The promise representing the async task.
+ * @param signal Optional AbortSignal.
+ * @param onAbort Optional callback invoked when abortion triggers.
+ * @returns The resolved operation value or the PERMISSION_ABORTED sentinel.
+ */
 async function raceWithAbort<T>(
   operation: Promise<T>,
   signal?: AbortSignal,

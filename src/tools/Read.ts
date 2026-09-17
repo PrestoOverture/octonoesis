@@ -16,14 +16,32 @@ class ReadTool implements Tool<ReadInput, string> {
   description = 'Read the contents of a file from the filesystem with line numbers.'
   inputSchema = ReadInputSchema
 
+  /**
+   * Indicates whether Read operations are concurrency safe.
+   *
+   * @returns True, as reading files does not mutate filesystem state.
+   */
   isConcurrencySafe(): boolean {
     return true // Reading files has no side effects and is concurrency safe
   }
 
+  /**
+   * Indicates whether Read is a read-only tool.
+   *
+   * @returns True, allowing execution without confirmation prompts.
+   */
   isReadOnly(): boolean {
     return true // Read is a read-only tool and skips permission prompts
   }
 
+  /**
+   * Reads a file from the repository, formats its content with 1-indexed line numbers and tabs,
+   * and updates the file read hash cache for edit verification.
+   *
+   * @param input - Object containing the file path to read.
+   * @param ctx - Tool execution context containing repository root and file cache state.
+   * @returns ToolResult with line-numbered file content or an error.
+   */
   async call(input: ReadInput, ctx: ToolContext): Promise<ToolResult<string>> {
     const guard = await assertInsideRepo(input.path, ctx.repoRoot)
     if (!guard.ok) return guard

@@ -14,6 +14,11 @@ export class CachedExtractor {
   private customCacheFilePath?: string
   private isLoaded = false
 
+  /**
+   * Initializes the cached extractor with an optional custom cache file path.
+   *
+   * @param cacheFilePath - Optional custom path for the cache JSONL file.
+   */
   constructor(cacheFilePath?: string) {
     if (cacheFilePath) {
       this.customCacheFilePath = cacheFilePath
@@ -22,10 +27,18 @@ export class CachedExtractor {
 
   private lastLoadedPath?: string
 
+  /**
+   * Resolves the active filesystem path to the fingerprint cache JSONL file.
+   *
+   * @returns Cache file path.
+   */
   private getCacheFilePath(): string {
     return this.customCacheFilePath || path.join(getMemoryDir(), 'fingerprint-cache.jsonl')
   }
 
+  /**
+   * Lazily loads cached fingerprints from disk into memory if not already loaded for the current path.
+   */
   private async ensureLoaded() {
     const currentPath = this.getCacheFilePath()
     if (this.isLoaded && this.lastLoadedPath === currentPath) return
@@ -61,6 +74,11 @@ export class CachedExtractor {
 
   /**
    * Retrieves a cached fingerprint for the scrubbed output or creates one using the LLM extractor.
+   *
+   * @param scrubbed - Scrubbed error text.
+   * @param command - Shell command that produced the error.
+   * @param ctx - Context object containing the model identifier.
+   * @returns Promise resolving to the Fingerprint record.
    */
   public async getOrCreate(
     scrubbed: string,

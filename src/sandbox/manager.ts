@@ -12,7 +12,7 @@ export interface SandboxConfigEnvironment {
 export interface SandboxConfigSources {
   repoRoot: string
   cliEnabled?: boolean
-  /** Phase 33 can pass the parsed `.octonoesis/config.json` sandbox section here. */
+  /** Parsed `.octonoesis/config.json` sandbox settings. */
   config?: SandboxConfig
   environment?: SandboxConfigEnvironment
 }
@@ -22,6 +22,11 @@ export interface SandboxAvailabilityEnvironment {
   findExecutable?: (name: string) => string | null
 }
 
+/**
+ * Scans directories in PATH to locate an executable by filename.
+ * @param name Executable filename to find.
+ * @returns Absolute path to the executable, or null if not found or not executable.
+ */
 function findExecutable(name: string): string | null {
   for (const directory of (process.env.PATH ?? '').split(path.delimiter)) {
     const candidate = path.join(directory || process.cwd(), name)
@@ -33,12 +38,23 @@ function findExecutable(name: string): string | null {
   return null
 }
 
+/**
+ * Checks whether the platform and environment support sandbox execution (macOS darwin with sandbox-exec binary).
+ * @param environment Optional platform and lookup function overrides.
+ * @returns True if sandbox execution is available, false otherwise.
+ */
 export function isSandboxAvailable(environment: SandboxAvailabilityEnvironment = {}): boolean {
   const platform = environment.platform ?? process.platform
   const lookup = environment.findExecutable ?? findExecutable
   return platform === 'darwin' && lookup('sandbox-exec') !== null
 }
 
+/**
+ * Asserts that macOS sandbox-exec is available before attempting sandboxed execution.
+ * Refuses to fall back to unsandboxed execution if sandboxing was requested.
+ * @param availabilityCheck Optional custom availability probe function.
+ * @throws {Error} If sandbox is unavailable.
+ */
 export function assertSandboxAvailable(
   availabilityCheck: () => boolean = () => isSandboxAvailable(),
 ): void {
@@ -49,6 +65,11 @@ export function assertSandboxAvailable(
   }
 }
 
+/**
+ * Resolves symlinks and canonicalizes a path, preserving any trailing non-existent segments.
+ * @param input Path string to canonicalize.
+ * @returns Canonicalized path.
+ */
 function canonicalizePath(input: string): string {
   const absolute = path.resolve(input)
   let existing = absolute
@@ -65,16 +86,35 @@ function canonicalizePath(input: string): string {
   return path.join(canonicalBase, ...missingSegments)
 }
 
+/**
+ * Expands '~' to homeDir, relative paths to repoRoot, and returns absolute paths unchanged.
+ * @param input Raw path string.
+ * @param repoRoot Absolute repo root path.
+ * @param homeDir User home directory path.
+ * @returns Expanded path string.
+ */
 function expandPath(input: string, repoRoot: string, homeDir: string): string {
   if (input === '~') return homeDir
   if (input.startsWith('~/')) return path.join(homeDir, input.slice(2))
   return path.isAbsolute(input) ? input : path.resolve(repoRoot, input)
 }
 
+/**
+ * Deduplicates an array of strings while preserving insertion order.
+ * @param items Array of strings.
+ * @returns Deduplicated string array.
+ */
 function unique(items: string[]): string[] {
   return [...new Set(items)]
 }
 
+/**
+ * Merges CLI flags, config file rules, and default security boundaries into a fully resolved sandbox configuration.
+ * Sets up allowWrite paths (repoRoot, TMPDIR, /dev/null), denyRead paths (~/.ssh, ~/.aws, etc.), and protectedWrite (.octonoesis).
+ * @param sources Configuration sources including repoRoot, CLI flags, config file, and environment overrides.
+ * @returns Fully resolved ResolvedSandboxConfig.
+ * @throws {Error} If per-domain network filtering is requested (unsupported).
+ */
 export function resolveSandboxConfig(sources: SandboxConfigSources): ResolvedSandboxConfig {
   const homeDir = canonicalizePath(sources.environment?.homeDir ?? process.env.HOME ?? os.homedir())
   const repoRoot = canonicalizePath(sources.repoRoot)

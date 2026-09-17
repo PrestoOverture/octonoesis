@@ -139,10 +139,13 @@ export function isVerificationCommand(command: string, verificationCommand?: str
 }
 
 /**
- * Executes a tool by resolving it, validating input, running hooks, checking permissions, and calling the tool.
- * @param name The name of the tool to run.
- * @param rawInput The unvalidated input arguments.
- * @param ctx The tool execution context.
+ * Executes a tool by resolving it, validating its input schema, invoking pre-tool hooks,
+ * evaluating permission gates, dispatching execution, extracting error fingerprints if verification fails,
+ * and recording outcome metrics to the journal.
+ *
+ * @param name - The name of the registered tool to execute.
+ * @param rawInput - The unvalidated input payload.
+ * @param ctx - The query loop context containing execution state, abort signals, and configuration.
  * @returns A promise resolving to the ToolResult from the execution.
  */
 export async function runTool(

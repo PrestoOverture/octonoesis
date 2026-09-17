@@ -3,7 +3,14 @@ import type { RuleFile } from './types.ts'
 
 const COLLISION_HASH_LENGTH = 8
 
-/** Keeps the model slug when unused and adds a stable signature hash only on collision. */
+/**
+ * Keeps the model slug when unused and adds a stable signature hash only on collision with existing rule IDs.
+ *
+ * @param rule - The rule to potentially disambiguate
+ * @param signature - The failure or context signature used to derive hash suffixes
+ * @param existingRules - List of already registered rules to check for ID collisions
+ * @returns A rule with either the original ID or a collision-disambiguated ID
+ */
 export function disambiguateRuleId(
   rule: RuleFile,
   signature: string,

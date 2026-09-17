@@ -25,9 +25,9 @@ class TodoWriteTool implements Tool<TodoWriteInput, string> {
   inputSchema = TodoWriteInputSchema
 
   /**
-   * Indicates that the TodoWrite tool is safe to execute concurrently.
+   * Indicates that TodoWrite is classified as concurrency-safe because its update is a synchronous assignment.
    *
-   * @returns True, since todo updates are concurrency safe.
+   * @returns True, allowing it to run alongside other tool calls.
    */
   isConcurrencySafe(): boolean {
     return true

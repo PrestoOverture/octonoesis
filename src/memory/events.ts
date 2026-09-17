@@ -158,6 +158,12 @@ const unknownJournalEventSchema = z.object({ kind: z.string() }).passthrough()
 
 export type UnknownJournalEvent = z.infer<typeof unknownJournalEventSchema>
 
+/**
+ * Safely parses a raw object into a typed JournalEvent or an unknown event fallback.
+ *
+ * @param raw - Unknown event payload to parse.
+ * @returns Validated JournalEvent or UnknownJournalEvent, or null if schema parsing fails.
+ */
 export function parseJournalEvent(raw: unknown): JournalEvent | UnknownJournalEvent | null {
   const known = journalEventSchema.safeParse(raw)
   if (known.success) return known.data
@@ -166,6 +172,12 @@ export function parseJournalEvent(raw: unknown): JournalEvent | UnknownJournalEv
   return unknown.success ? unknown.data : null
 }
 
+/**
+ * Type guard verifying whether a parsed event belongs to the recognized set of journal events.
+ *
+ * @param event - Event object to inspect.
+ * @returns True if the event kind exists in EVENT_SCHEMA_VERSIONS.
+ */
 export function isKnownJournalEvent(
   event: JournalEvent | UnknownJournalEvent,
 ): event is JournalEvent {

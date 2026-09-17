@@ -95,9 +95,16 @@ const EXIT_REASONS = new Set<ExitReason>([
 
 const AGENT_TOOL_NAMES = new Set(['Agent', 'AgentTool'])
 
+/**
+ * Error thrown when a proposed fork violates constitutional isolation invariants
+ * (e.g. recursion depth > 1, or requesting disallowed tools).
+ */
 export class ForkInvariantError extends Error {
   readonly reason: 'recursion_depth' | 'tool_not_allowed'
 
+  /**
+   * @param reason Specific invariant violation reason.
+   */
   constructor(reason: 'recursion_depth' | 'tool_not_allowed') {
     super(`Fork invariant violated: ${reason}`)
     this.name = 'ForkInvariantError'
@@ -105,11 +112,24 @@ export class ForkInvariantError extends Error {
   }
 }
 
+/**
+ * Reads the current fork recursion depth from the environment.
+ * @param env Optional environment map; defaults to process.env.
+ * @returns Non-negative integer indicating fork depth.
+ */
 export function getForkDepth(env: Record<string, string | undefined> = process.env): number {
   const depth = Number(env.OCTONOESIS_FORK_DEPTH)
   return Number.isInteger(depth) && depth > 0 ? depth : 0
 }
 
+/**
+ * Validates and prepares options for spawning a child fork process.
+ * Enforces depth limit, purpose-specific tool allowlists, budget bounds, and path resolution.
+ * @param opts User-supplied ForkOptions.
+ * @returns PreparedFork structure ready for child serialization.
+ * @throws {ForkInvariantError} If fork depth is exceeded or tools are disallowed for the fork purpose.
+ * @throws {RangeError} If maxTurns is not a positive integer.
+ */
 export function prepareForkInput(opts: ForkOptions): PreparedFork {
   const depth = getForkDepth()
   if (depth >= 1) {
@@ -147,6 +167,12 @@ export function prepareForkInput(opts: ForkOptions): PreparedFork {
   }
 }
 
+/**
+ * Builds the executable command arguments to spawn the current agent executable in fork child mode.
+ * @param execPath Executable path (defaults to process.execPath).
+ * @param main Main entry script path (defaults to Bun.main).
+ * @returns Array of command arguments.
+ */
 export function buildForkCommand(
   execPath: string = process.execPath,
   main: string = Bun.main,
@@ -155,6 +181,12 @@ export function buildForkCommand(
   return isCompiled ? [execPath, '--fork-child'] : [execPath, main, '--fork-child']
 }
 
+/**
+ * Serializes a PreparedFork object to a JSON string payload for transmission via child stdin.
+ * @param prepared The PreparedFork object.
+ * @returns The serialized JSON payload string.
+ * @throws {TypeError} If serialization produces undefined.
+ */
 export function serializeForkPayload(prepared: PreparedFork): string {
   const payload = JSON.stringify(prepared)
   if (payload === undefined) {
@@ -163,10 +195,17 @@ export function serializeForkPayload(prepared: PreparedFork): string {
   return payload
 }
 
+/**
+ * Returns an array of process IDs for all currently active fork child subprocesses.
+ * @returns Array of active child PIDs.
+ */
 export function getActiveForkPids(): number[] {
   return Array.from(activeForkChildren, (child) => child.pid)
 }
 
+/**
+ * Force-terminates all active child processes with SIGKILL.
+ */
 function forceKillForkChildren(): void {
   for (const child of activeForkChildren) {
     try {
@@ -175,7 +214,13 @@ function forceKillForkChildren(): void {
   }
 }
 
-/** Builds the provider-capable environment used only by fork child processes. */
+/**
+ * Builds the provider-capable environment used only by fork child processes.
+ * Includes provider API credentials and the child's specific environment flags.
+ * @param childEnv Additional child environment variables.
+ * @param source Base environment record (defaults to process.env).
+ * @returns Combined environment object for spawning fork children.
+ */
 export function buildForkChildEnvironment(
   childEnv: Record<string, string>,
   source: Record<string, string | undefined> = process.env,
@@ -187,6 +232,10 @@ export function buildForkChildEnvironment(
   return { ...env, ...getProviderCredentialEnvironment(), ...childEnv }
 }
 
+/**
+ * Registers signal handlers on the parent process to kill all active fork children on exit or termination.
+ * @param signal Termination signal ('SIGINT' or 'SIGTERM').
+ */
 function installParentSignalCleanup(signal: 'SIGINT' | 'SIGTERM'): void {
   const handleSignal = () => {
     forceKillForkChildren()
@@ -202,10 +251,21 @@ process.once('exit', forceKillForkChildren)
 installParentSignalCleanup('SIGINT')
 installParentSignalCleanup('SIGTERM')
 
+/**
+ * Type guard checking whether a value is a non-null, non-array object.
+ * @param value The value to inspect.
+ * @returns True if value is a non-null, non-array object.
+ */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/**
+ * Validates and parses the single JSON-line output emitted by a completed fork child process.
+ * @param output Raw stdout string from the fork child.
+ * @returns The parsed ForkResult object.
+ * @throws {TypeError} If output is not exactly one line or fails schema validation.
+ */
 function parseForkResult(output: string): ForkResult {
   const line = output.trim()
   if (line.length === 0 || line.split(/\r?\n/).length !== 1) {
@@ -236,6 +296,11 @@ function parseForkResult(output: string): ForkResult {
   return result as unknown as ForkResult
 }
 
+/**
+ * Constructs a standardized fatal_error ForkResult from an error value.
+ * @param error The error value or message.
+ * @returns A ForkResult with exitReason 'fatal_error'.
+ */
 function runtimeFailure(error: unknown): ForkResult {
   return {
     text: '',
@@ -246,6 +311,10 @@ function runtimeFailure(error: unknown): ForkResult {
   }
 }
 
+/**
+ * Constructs a standardized user_cancel ForkResult.
+ * @returns A ForkResult with exitReason 'user_cancel'.
+ */
 function userCancellation(): ForkResult {
   return {
     text: '',
@@ -256,6 +325,10 @@ function userCancellation(): ForkResult {
   }
 }
 
+/**
+ * Gracefully terminates a fork child with SIGTERM, escalating to SIGKILL after a grace period.
+ * @param child The ForkSubprocess to terminate.
+ */
 async function terminateForkChild(child: ForkSubprocess): Promise<void> {
   try {
     child.kill('SIGTERM')
@@ -278,6 +351,11 @@ async function terminateForkChild(child: ForkSubprocess): Promise<void> {
   await child.exited
 }
 
+/**
+ * Spawns a new fork child subprocess using Bun.spawn and adds it to the active tracking set.
+ * @param prepared Validated and prepared fork parameters.
+ * @returns The spawned ForkSubprocess handle.
+ */
 function spawnForkChild(prepared: PreparedFork): ForkSubprocess {
   const child = Bun.spawn({
     cmd: buildForkCommand(),
@@ -291,6 +369,12 @@ function spawnForkChild(prepared: PreparedFork): ForkSubprocess {
   return child
 }
 
+/**
+ * Spawns an isolated forked agent child process, awaits its completion, and parses its output.
+ * Handles timeouts, user cancellation, process lifecycle, and cleanup.
+ * @param opts Options configuring prompt, messages, tools, model, and limits.
+ * @returns The ForkResult summarizing output, usage, and exit reason.
+ */
 export async function forkAgent(opts: ForkOptions): Promise<ForkResult> {
   const prepared = prepareForkInput(opts)
   if (opts.signal?.aborted) return userCancellation()
@@ -372,7 +456,13 @@ export async function forkAgent(opts: ForkOptions): Promise<ForkResult> {
   }
 }
 
-/** Starts an agent fork with stdin kept open for bounded NDJSON message delivery. */
+/**
+ * Starts a background agent fork with stdin kept open for bounded NDJSON message delivery.
+ * @param opts Options configuring prompt, messages, tools, model, and limits.
+ * @returns A ForkHandle with PID, completion promise, sendMessage, and kill controls.
+ * @throws {ForkInvariantError} If forkPurpose is not 'agent'.
+ * @throws {RangeError} If timeoutMs is negative.
+ */
 export function startForkAgent(opts: ForkOptions): ForkHandle {
   if (opts.forkPurpose !== 'agent') {
     throw new ForkInvariantError('tool_not_allowed')

@@ -4,6 +4,12 @@ import type { hookSchema } from '../config/schema'
 
 export type ConfiguredHook = z.infer<typeof hookSchema>
 
+/**
+ * Loads the configured lifecycle hooks defined in the project configuration.
+ *
+ * @param repoRoot - Repository root directory path.
+ * @returns Array of configured hook objects.
+ */
 export async function loadHooksConfig(repoRoot: string): Promise<ConfiguredHook[]> {
   return (await loadConfig(repoRoot)).hooks
 }

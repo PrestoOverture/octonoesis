@@ -12,6 +12,11 @@ export interface AgentWorktree {
   path: string
 }
 
+/**
+ * Asserts that the given directory path is inside a working Git repository.
+ * @param repoRoot Path to the repository root.
+ * @throws {Error} If the path is not a git repository.
+ */
 async function assertGitRepository(repoRoot: string): Promise<void> {
   try {
     const { stdout } = await execFileAsync('git', [
@@ -26,6 +31,14 @@ async function assertGitRepository(repoRoot: string): Promise<void> {
   }
 }
 
+/**
+ * Creates an isolated detached-HEAD git worktree for a background agent subtask under os.tmpdir().
+ * Prunes dead worktrees and removes any pre-existing directory for agentId.
+ * @param repoRoot Repository root path.
+ * @param agentId Unique identifier for the background agent.
+ * @returns An AgentWorktree object containing repoRoot and the realpath of the created worktree directory.
+ * @throws {Error} If git repository verification fails or worktree creation fails.
+ */
 export async function createAgentWorktree(
   repoRoot: string,
   agentId: string,
@@ -44,6 +57,10 @@ export async function createAgentWorktree(
   }
 }
 
+/**
+ * Force-removes a background agent worktree via git worktree remove and deletes its filesystem directory.
+ * @param worktree The AgentWorktree to remove.
+ */
 export async function removeAgentWorktree(worktree: AgentWorktree): Promise<void> {
   try {
     await execFileAsync('git', [

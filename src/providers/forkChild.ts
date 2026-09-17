@@ -42,14 +42,29 @@ interface ForkMockConfig {
   validatePairing?: boolean
 }
 
+/**
+ * Checks whether an unknown value is a non-null object record.
+ * @param value The value to inspect.
+ * @returns True if value is a record object.
+ */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
+/**
+ * Checks whether an unknown value is a record where all values are strings.
+ * @param value The value to inspect.
+ * @returns True if value is a string record.
+ */
 function isStringRecord(value: unknown): value is Record<string, string> {
   return isRecord(value) && Object.values(value).every((entry) => typeof entry === 'string')
 }
 
+/**
+ * Validates whether a value conforms to the ContentBlock schema.
+ * @param value The value to inspect.
+ * @returns True if value is a valid ContentBlock.
+ */
 function isContentBlock(value: unknown): value is ContentBlock {
   if (!isRecord(value) || typeof value.type !== 'string') return false
 
@@ -67,10 +82,20 @@ function isContentBlock(value: unknown): value is ContentBlock {
   return false
 }
 
+/**
+ * Validates whether a value is a valid message content payload (string or ContentBlock array).
+ * @param value The value to inspect.
+ * @returns True if value is valid message content.
+ */
 function isContent(value: unknown): value is string | ContentBlock[] {
   return typeof value === 'string' || (Array.isArray(value) && value.every(isContentBlock))
 }
 
+/**
+ * Validates whether an object conforms to the CanonicalMessage structure.
+ * @param value The value to inspect.
+ * @returns True if value is a CanonicalMessage.
+ */
 function isCanonicalMessage(value: unknown): value is CanonicalMessage {
   if (!isRecord(value) || typeof value.role !== 'string') return false
 
@@ -84,6 +109,11 @@ function isCanonicalMessage(value: unknown): value is CanonicalMessage {
   return false
 }
 
+/**
+ * Validates whether an object conforms to CanonicalTool schema.
+ * @param value The value to inspect.
+ * @returns True if value is a CanonicalTool.
+ */
 function isCanonicalTool(value: unknown): value is CanonicalTool {
   return (
     isRecord(value) &&
@@ -93,6 +123,11 @@ function isCanonicalTool(value: unknown): value is CanonicalTool {
   )
 }
 
+/**
+ * Validates whether a deserialized object is a complete PreparedFork.
+ * @param value The value to inspect.
+ * @returns True if value is a PreparedFork.
+ */
 function isPreparedFork(value: unknown): value is PreparedFork {
   if (!isRecord(value) || !isRecord(value.budget)) return false
 
@@ -115,6 +150,12 @@ function isPreparedFork(value: unknown): value is PreparedFork {
   )
 }
 
+/**
+ * Parses and validates the fork payload JSON string read from child stdin.
+ * @param input Raw stdin JSON string.
+ * @returns Validated PreparedFork instance.
+ * @throws {TypeError} If the payload cannot be parsed or fails validation.
+ */
 function parsePreparedFork(input: string): PreparedFork {
   const parsed: unknown = JSON.parse(input)
   if (!isPreparedFork(parsed)) {
@@ -123,6 +164,12 @@ function parsePreparedFork(input: string): PreparedFork {
   return parsed
 }
 
+/**
+ * Parses the OCTONOESIS_FORK_MOCK environment variable string into a structured ForkMockConfig.
+ * @param raw Raw JSON string from OCTONOESIS_FORK_MOCK.
+ * @returns The parsed ForkMockConfig.
+ * @throws {TypeError} If the JSON or schema is invalid.
+ */
 function parseMockConfig(raw: string): ForkMockConfig {
   const parsed: unknown = JSON.parse(raw)
   if (!isRecord(parsed)) {
@@ -160,6 +207,12 @@ function parseMockConfig(raw: string): ForkMockConfig {
   }
 }
 
+/**
+ * Verifies that every assistant tool_use block in the message history is followed by a tool_result.
+ * Throws a simulated Anthropic 400 error if any dangling tool_use is detected.
+ * @param messages The canonical message array to validate.
+ * @throws {Error & { status: 400 }} If an unpaired tool_use is found.
+ */
 function assertToolUsePairing(messages: CanonicalMessage[]): void {
   for (const [index, message] of messages.entries()) {
     if (message.role !== 'assistant') continue
@@ -183,6 +236,11 @@ function assertToolUsePairing(messages: CanonicalMessage[]): void {
   }
 }
 
+/**
+ * Type guard for validating mock StreamEvent objects.
+ * @param value The value to inspect.
+ * @returns True if value is a valid StreamEvent.
+ */
 function isMockStreamEvent(value: unknown): value is StreamEvent {
   if (!isRecord(value) || typeof value.type !== 'string') return false
   if (value.type === 'text_delta') return typeof value.text === 'string'
@@ -197,6 +255,12 @@ function isMockStreamEvent(value: unknown): value is StreamEvent {
   )
 }
 
+/**
+ * Delays execution for mock testing, respecting cancellation from an AbortSignal.
+ * @param delayMs Delay duration in milliseconds.
+ * @param signal AbortSignal to interrupt the delay.
+ * @returns Promise that resolves when delay elapses.
+ */
 function waitForMockDelay(delayMs: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) {
@@ -220,6 +284,8 @@ function waitForMockDelay(delayMs: number, signal: AbortSignal): Promise<void> {
 /**
  * Test-only provider selected by OCTONOESIS_FORK_MOCK. It keeps process-boundary tests
  * deterministic and keyless while exercising the real child loop.
+ * @param config Mock configuration specifying scripted events or text.
+ * @returns An LLMProvider instance.
  */
 function createMockProvider(config: ForkMockConfig): LLMProvider {
   let turn = 0
@@ -290,15 +356,29 @@ function createMockProvider(config: ForkMockConfig): LLMProvider {
   }
 }
 
+/**
+ * Resolves the LLM provider for the fork child, preferring mock providers when OCTONOESIS_FORK_MOCK is set.
+ * @returns The active LLMProvider instance.
+ */
 function getChildProvider(): LLMProvider {
   const mockConfig = process.env.OCTONOESIS_FORK_MOCK
   return mockConfig === undefined ? getProvider() : createMockProvider(parseMockConfig(mockConfig))
 }
 
+/**
+ * Extracts a formatted error message string from an unknown error value.
+ * @param error The error value.
+ * @returns The extracted error message.
+ */
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+/**
+ * Appends streaming text to the last block in content if it is a text block, or pushes a new text block.
+ * @param content The ContentBlock array to mutate.
+ * @param text The new text string to append.
+ */
 function appendTextBlock(content: ContentBlock[], text: string): void {
   const lastBlock = content[content.length - 1]
   if (lastBlock?.type === 'text') {
@@ -314,6 +394,14 @@ const readOnlyForkTools = new Map<string, Tool>([
   [globTool.name, globTool],
 ])
 
+/**
+ * Executes read-only tool calls (Read, Grep, Glob) requested by the fork assistant.
+ * Strictly enforces that tools are read-only and allowed for the fork purpose.
+ * @param prepared Prepared fork parameters.
+ * @param assistantContent Content blocks from the assistant containing tool_use blocks.
+ * @param messages The conversation message array to which tool_result blocks are appended.
+ * @param signal AbortSignal for cancellation.
+ */
 async function executeReadOnlyToolUses(
   prepared: PreparedFork,
   assistantContent: ContentBlock[],
@@ -364,10 +452,24 @@ async function executeReadOnlyToolUses(
   }
 }
 
+/**
+ * Checks whether the current loop turn has reached or exceeded maxTurns.
+ * @param turn Current turn count.
+ * @param maxTurns Maximum turns allowed.
+ * @returns True if max turns reached.
+ */
 export function hasReachedMaxTurns(turn: number, maxTurns: number): boolean {
   return turn >= maxTurns
 }
 
+/**
+ * Runs the fork child agent query loop, executing provider requests and read-only tools until completion or turn limit.
+ * @param prepared Validated fork specifications.
+ * @param provider LLMProvider instance.
+ * @param signal AbortSignal for cancellation.
+ * @param messageChannel Optional incoming message channel for interactive sub-agents.
+ * @returns The final ForkResult.
+ */
 export async function runForkLoop(
   prepared: PreparedFork,
   provider: LLMProvider,
@@ -462,6 +564,11 @@ export async function runForkLoop(
   return { text, usage, turns, exitReason: 'max_turns', systemPromptSha256 }
 }
 
+/**
+ * Main entry point for the fork child process spawned via `--fork-child`.
+ * Reads stdin, runs the fork loop, outputs the JSON result to stdout, and exits.
+ * @returns Exit code (0 on success, 1 on error).
+ */
 export async function forkChildMain(): Promise<number> {
   try {
     if (getForkDepth() > 1) {

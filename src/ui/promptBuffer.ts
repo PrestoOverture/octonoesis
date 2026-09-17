@@ -23,14 +23,35 @@ export type PromptInputAction =
   | { type: 'history'; direction: 'older' | 'newer' }
   | { type: 'none'; buffer: PromptBuffer }
 
+/**
+ * Creates a bounded PromptBuffer with text and cursor index clamped within text length.
+ *
+ * @param text - Initial buffer text (defaults to empty string)
+ * @param cursor - Cursor character index (defaults to text end)
+ * @returns Initialized PromptBuffer
+ */
 export function createPromptBuffer(text = '', cursor = text.length): PromptBuffer {
   return { text, cursor: Math.max(0, Math.min(cursor, text.length)) }
 }
 
+/**
+ * Constructs an edit action payload with a newly created prompt buffer.
+ *
+ * @param text - Updated prompt text
+ * @param cursor - Target cursor position
+ * @returns PromptInputAction representing an edit
+ */
 function edit(text: string, cursor: number): PromptInputAction {
   return { type: 'edit', buffer: createPromptBuffer(text, cursor) }
 }
 
+/**
+ * Calculates new cursor index when navigating vertically within a multiline buffer.
+ *
+ * @param buffer - Current prompt buffer
+ * @param direction - Direction to move ('up' or 'down')
+ * @returns Updated cursor character index
+ */
 function moveVertically(buffer: PromptBuffer, direction: 'up' | 'down'): number {
   const { text, cursor } = buffer
   const lineStart = text.lastIndexOf('\n', cursor - 1) + 1
@@ -51,6 +72,17 @@ function moveVertically(buffer: PromptBuffer, direction: 'up' | 'down'): number 
   return followingStart + Math.min(column, followingEnd - followingStart)
 }
 
+/**
+ * Processes a keystroke or text input event against the current prompt buffer.
+ *
+ * Supports multiline editing (Meta+Enter or trailing backslash-newline), cursor navigation,
+ * single-line history navigation, character deletion, and submission.
+ *
+ * @param buffer - Current prompt buffer
+ * @param input - Raw input characters
+ * @param key - Structured key event details
+ * @returns PromptInputAction describing the resulting state modification or action
+ */
 export function applyPromptInput(
   buffer: PromptBuffer,
   input: string,

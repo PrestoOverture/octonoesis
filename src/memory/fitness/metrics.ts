@@ -90,10 +90,22 @@ export interface LedgerCoverage {
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
+/**
+ * Rounds a floating-point metric value to 12 decimal digits to prevent platform precision drift.
+ *
+ * @param value - Numeric value to round.
+ * @returns Clean rounded number.
+ */
 function roundMetric(value: number): number {
   return Number(value.toFixed(12))
 }
 
+/**
+ * Converts an ISO timestamp string into a standard UTC ISO week string (e.g. `'2026-W24'`).
+ *
+ * @param timestamp - ISO 8601 timestamp string.
+ * @returns Formatted ISO week string, or null if the timestamp is invalid.
+ */
 export function toIsoWeek(timestamp: string): string | null {
   const source = new Date(timestamp)
   if (Number.isNaN(source.getTime())) return null
@@ -109,6 +121,11 @@ export function toIsoWeek(timestamp: string): string | null {
   return `${isoYear}-W${week.toString().padStart(2, '0')}`
 }
 
+/**
+ * Returns a new zero-initialized counts record for all RuleStatus states.
+ *
+ * @returns Record with zero count for each status.
+ */
 function emptyStatusCounts(): RuleStatusCounts {
   return {
     candidate: 0,
@@ -121,6 +138,12 @@ function emptyStatusCounts(): RuleStatusCounts {
   }
 }
 
+/**
+ * Computes rule hit/miss accounting and posterior Beta distributions grouped by distillation prompt hash.
+ *
+ * @param rules - Array of RuleFile records.
+ * @returns Array of hit rate metrics grouped by prompt hash.
+ */
 export function computeRuleHitRates(rules: RuleFile[]): PromptHashHitRate[] {
   const groups = new Map<string, RuleFile[]>()
   for (const rule of rules) {
@@ -157,6 +180,13 @@ export function computeRuleHitRates(rules: RuleFile[]): PromptHashHitRate[] {
     })
 }
 
+/**
+ * Computes walk-forward calibration accuracy metrics (Brier score and first-attempt success rate)
+ * across chronological records, grouped by ISO week.
+ *
+ * @param records - Array of CalibrationRecord items.
+ * @returns Aggregate calibration trend metrics including weekly breakdown.
+ */
 export function computeCalibrationTrend(records: CalibrationRecord[]): CalibrationTrend {
   const ordered = records
     .map((record, index) => ({
@@ -206,12 +236,26 @@ export function computeCalibrationTrend(records: CalibrationRecord[]): Calibrati
   }
 }
 
+/**
+ * Safely extracts the medium fingerprint string from an unknown fingerprint object.
+ *
+ * @param value - Unknown fingerprint value.
+ * @returns Non-empty medium fingerprint string, or null if absent or malformed.
+ */
 function fingerprintMedium(value: unknown): string | null {
   if (typeof value !== 'object' || value === null) return null
   const medium = (value as { medium?: unknown }).medium
   return typeof medium === 'string' && medium.length > 0 ? medium : null
 }
 
+/**
+ * Computes weekly repeat failure rates by checking whether failure fingerprints in new sessions
+ * replicate previously resolved episodes from earlier sessions.
+ *
+ * @param events - Array of journal events to inspect for failure occurrences.
+ * @param episodes - Array of known segmented episodes.
+ * @returns Array of weekly repeat failure trend objects.
+ */
 export function computeRepeatFailureTrend(
   events: JournalEvent[],
   episodes: Episode[],
@@ -269,6 +313,14 @@ export function computeRepeatFailureTrend(
     }))
 }
 
+/**
+ * Computes rule pool health metrics including capacity utilization, status distributions,
+ * confidence statistics, and rule match staleness.
+ *
+ * @param rules - Array of RuleFile objects.
+ * @param now - Reference current Date for computing staleness.
+ * @returns Comprehensive RulePoolHealth analysis object.
+ */
 export function computeRulePoolHealth(rules: RuleFile[], now: Date): RulePoolHealth {
   const statusCounts = emptyStatusCounts()
   for (const rule of rules) statusCounts[rule.status] += 1
@@ -325,10 +377,25 @@ export function computeRulePoolHealth(rules: RuleFile[], now: Date): RulePoolHea
   }
 }
 
+/**
+ * Checks whether an episode's failure signature matches a coarse error bucket filter prefix.
+ *
+ * @param signature - Full failure signature string.
+ * @param bucket - Coarse bucket name to match.
+ * @returns True if the signature matches or prefixes the bucket.
+ */
 function matchesCoarseBucket(signature: string, bucket: string): boolean {
   return signature === bucket || signature.startsWith(`${bucket}|`)
 }
 
+/**
+ * Computes weekly cost per resolved episode, unit cost metrics, and all-session cost totals.
+ *
+ * @param episodes - List of recorded Episode objects.
+ * @param statsRecords - List of recorded SessionStatsRecord objects.
+ * @param bucket - Optional coarse bucket filter.
+ * @returns Calculated cost per resolved task breakdown.
+ */
 export function computeCostPerResolvedTask(
   episodes: Episode[],
   statsRecords: SessionStatsRecord[],
@@ -393,6 +460,15 @@ export function computeCostPerResolvedTask(
   }
 }
 
+/**
+ * Summarizes coverage across all ledger streams (journal timestamps, sessions, episodes, calibration records, and stats rows).
+ *
+ * @param journal - Journal read result.
+ * @param episodes - Array of parsed episodes.
+ * @param calibrationRecords - Array of parsed calibration records.
+ * @param stats - Session statistics read result.
+ * @returns Coverage summary object.
+ */
 export function computeLedgerCoverage(
   journal: JournalReadResult,
   episodes: Episode[],

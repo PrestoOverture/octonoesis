@@ -7,6 +7,13 @@ export type PathGuardResult =
   | { ok: true; resolvedPath: string; realPath: string }
   | { ok: false; error: string }
 
+/**
+ * Guards against directory traversal and symlink escapes by asserting that a path resides inside the repository root.
+ * Resolves symlinks using realpath to ensure the real filesystem target is also contained inside repoRoot.
+ * @param inputPath File or directory path to check (relative or absolute).
+ * @param repoRoot Absolute path to the repository root.
+ * @returns A PathGuardResult object indicating whether the path is safely inside repoRoot, with resolved paths or error message.
+ */
 export async function assertInsideRepo(
   inputPath: string,
   repoRoot: string,

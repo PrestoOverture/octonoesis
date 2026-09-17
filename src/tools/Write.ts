@@ -16,14 +16,33 @@ class WriteTool implements Tool<WriteInput, string> {
   description = 'Create a new file with the specified content. Fails if the file already exists.'
   inputSchema = WriteInputSchema
 
+  /**
+   * Indicates whether Write operations can run concurrently.
+   *
+   * @returns False, as writing files mutates filesystem state.
+   */
   isConcurrencySafe(): boolean {
     return false // Writing files can have side effects on the filesystem
   }
 
+  /**
+   * Indicates whether Write is a read-only tool.
+   *
+   * @returns False, as file creation alters the filesystem and requires permission prompts.
+   */
   isReadOnly(): boolean {
     return false // Write is a modifying tool and requires permission prompts
   }
 
+  /**
+   * Creates a new file with the specified content.
+   * Enforces repository boundary containment, checks that the target file does not already exist,
+   * and verifies that the parent directory exists within the repository root.
+   *
+   * @param input - Contains target file path and file content string.
+   * @param ctx - Tool execution context containing repository root.
+   * @returns ToolResult indicating success message or descriptive failure error.
+   */
   async call(input: WriteInput, ctx: ToolContext): Promise<ToolResult<string>> {
     // 1. Resolve absolute path relative to repoRoot
     const targetPath = resolve(ctx.repoRoot, input.path)

@@ -1,18 +1,44 @@
 import { RULE_STATUSES } from './metrics.ts'
 import type { FitnessDashboard } from './schema.ts'
 
+/**
+ * Formats a ratio value (0.0 to 1.0) as a human-readable percentage string, or 'n/a' if null.
+ *
+ * @param value - Float ratio or null.
+ * @returns Formatted percentage string.
+ */
 function percent(value: number | null): string {
   return value === null ? 'n/a' : `${(value * 100).toFixed(1)}%`
 }
 
+/**
+ * Formats a number to a fixed decimal precision, or 'n/a' if null.
+ *
+ * @param value - Float number or null.
+ * @param digits - Decimal places (default 3).
+ * @returns Formatted decimal string.
+ */
 function decimal(value: number | null, digits = 3): string {
   return value === null ? 'n/a' : value.toFixed(digits)
 }
 
+/**
+ * Formats a dollar amount with 4 decimal places, or 'n/a' if null.
+ *
+ * @param value - Dollar float amount or null.
+ * @returns Formatted currency string.
+ */
 function money(value: number | null): string {
   return value === null ? 'n/a' : `$${value.toFixed(4)}`
 }
 
+/**
+ * Renders a plain-text ASCII table with aligned columns and a header divider line.
+ *
+ * @param headers - Array of column header strings.
+ * @param rows - 2D array of string table cells.
+ * @returns Multi-line formatted ASCII table string.
+ */
 function table(headers: string[], rows: string[][]): string {
   const widths = headers.map((header, column) =>
     Math.max(header.length, ...rows.map((row) => row[column]?.length ?? 0)),
@@ -29,12 +55,24 @@ function table(headers: string[], rows: string[][]): string {
   ].join('\n')
 }
 
+/**
+ * Summarizes non-zero rule status counts as a comma-separated string (e.g. `'active:10, candidate:2'`).
+ *
+ * @param counts - Status counts record.
+ * @returns Formatted status string.
+ */
 function statusSummary(counts: FitnessDashboard['rule_pool_health']['status_counts']): string {
   return RULE_STATUSES.filter((status) => counts[status] > 0)
     .map((status) => `${status}:${counts[status]}`)
     .join(', ')
 }
 
+/**
+ * Formats the entire FitnessDashboard report as a structured plain-text document with ASCII tables.
+ *
+ * @param report - The populated FitnessDashboard object.
+ * @returns Human-readable multi-section dashboard report.
+ */
 export function formatFitnessDashboard(report: FitnessDashboard): string {
   const lines = [
     'Octonoesis Fitness Dashboard',

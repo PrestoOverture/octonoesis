@@ -23,7 +23,12 @@ export type SystemPromptPart = {
   cache_control?: { type: 'ephemeral' }
 }
 
-/** Maps Anthropic billing/context usage to the canonical usage record. */
+/**
+ * Maps Anthropic API billing/context usage to the canonical Usage record.
+ * Handles cache creation and cache read token counts when present.
+ * @param usage Raw usage object from Anthropic API message response.
+ * @returns The standardized canonical Usage object.
+ */
 export function toCanonicalUsage(
   usage?: Record<string, unknown> & { input_tokens?: number; output_tokens?: number },
 ): Usage {

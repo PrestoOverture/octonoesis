@@ -15,6 +15,12 @@ export interface PromptInputProps {
   initialValue?: string
 }
 
+/**
+ * Renders the prompt text buffer with an inverse-color terminal cursor indicator.
+ *
+ * @param props - Component properties containing the active buffer and placeholder text
+ * @returns Formatted text element displaying buffer content and cursor
+ */
 function BufferView(props: { buffer: PromptBuffer; placeholder: string }) {
   const { buffer, placeholder } = props
   if (buffer.text.length === 0) return <Text color="gray">{placeholder}</Text>
@@ -36,6 +42,15 @@ function BufferView(props: { buffer: PromptBuffer; placeholder: string }) {
   )
 }
 
+/**
+ * Interactive prompt input component for the terminal user interface.
+ *
+ * Supports keyboard editing, cursor movement, multiline entry (via Alt+Enter or trailing backslash),
+ * history navigation via arrow keys, and submission handling.
+ *
+ * @param props - Component properties including history list, submit callback, and placeholder
+ * @returns Rendered prompt input UI box
+ */
 export function PromptInput(props: PromptInputProps) {
   const {
     history,

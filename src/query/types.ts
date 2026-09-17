@@ -110,7 +110,7 @@ export interface QueryState {
   abortSignal?: AbortSignal
   repoRoot: string
   compactBoundary?: number
-  /** Initialized concretely by the engine; optional here for Batch 0 construction compatibility. */
+  /** Initialized by the engine; optional so callers can construct pre-initialization state. */
   compactConsecutiveFailures?: number
   compactCircuitOpen?: boolean
   lastCompactTurn?: number

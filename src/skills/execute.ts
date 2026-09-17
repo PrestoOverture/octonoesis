@@ -17,12 +17,27 @@ export interface ExecuteSkillOptions {
   onForkUsage?: (usage: Usage) => void
 }
 
+/**
+ * Formats inline skill prompt content, appending any user-supplied arguments to the body.
+ *
+ * @param skill - Skill definition containing Markdown content.
+ * @param args - Optional invocation arguments.
+ * @returns Formatted content string.
+ */
 function inlineContent(skill: SkillDefinition, args?: string): string {
   return args === undefined || args.length === 0
     ? skill.content
     : `${skill.content}\n\nArguments: ${args}`
 }
 
+/**
+ * Executes a skill definition either inline or within a sandboxed sub-agent fork process.
+ * Records skill execution duration and context to the memory journal.
+ *
+ * @param skill - Skill definition to execute.
+ * @param options - Execution options including arguments, context, system prompt, and usage callback.
+ * @returns ToolResult containing execution output string or error message.
+ */
 export async function executeSkill(
   skill: SkillDefinition,
   options: ExecuteSkillOptions,
@@ -79,6 +94,14 @@ export async function executeSkill(
   }
 }
 
+/**
+ * Rewrites a leading slash command input (e.g. `/commit`) into a natural language instruction
+ * invoking the matching skill via the Skill tool if the skill is known.
+ *
+ * @param input - Raw user input string.
+ * @param repoRoot - Repository root directory used to load available skills.
+ * @returns Rewritten prompt string if a matching skill is found; otherwise original input.
+ */
 export async function rewriteSkillSlashCommand(input: string, repoRoot: string): Promise<string> {
   const match = input.match(/^\/([a-z0-9][a-z0-9-]*)(\s+.*)?$/)
   if (!match) return input

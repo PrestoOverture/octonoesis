@@ -55,6 +55,13 @@ function isSameParentDirectory(pathA: string, pathB: string): boolean {
   return getParentDir(pathA) === getParentDir(pathB)
 }
 
+/**
+ * Normalizes an edit candidate path to a repository-relative path with POSIX separators.
+ *
+ * @param candidatePath - Absolute or relative path to a modified file.
+ * @param repoRoot - Optional repository root directory path.
+ * @returns Normalized POSIX-style relative path.
+ */
 function normalizeCandidatePath(candidatePath: string, repoRoot?: string): string {
   if (!repoRoot || !path.isAbsolute(candidatePath)) return candidatePath
 

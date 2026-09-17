@@ -7,6 +7,12 @@ export interface TaskChipProps {
   pollIntervalMs?: number
 }
 
+/**
+ * Terminal UI component that renders live status chips for background tasks with elapsed times.
+ *
+ * @param props - Component properties containing the query context and optional polling interval
+ * @returns Rendered box containing task status chips, or null if no tasks exist
+ */
 export function TaskChip({ ctx, pollIntervalMs = 1_000 }: TaskChipProps) {
   const [, setTick] = useState(0)
   useEffect(() => {

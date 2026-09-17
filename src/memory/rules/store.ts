@@ -66,8 +66,10 @@ export function serializeRule(rule: RuleFile): string {
 
 /**
  * Parses a YAML-frontmatter markdown string into a RuleFile object.
- * @param content The raw rule markdown content.
- * @returns The parsed RuleFile object.
+ *
+ * @param content - The raw rule markdown content
+ * @returns The parsed RuleFile object
+ * @throws If frontmatter is missing, required keys are omitted, or field values are invalid
  */
 export function parseRule(content: string): RuleFile {
   const fmRegex = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/

@@ -36,6 +36,12 @@ export interface JournalReadResult {
   events: JournalEvent[]
 }
 
+/**
+ * Reads and parses all recognized journal events from `journal.jsonl`, counting total lines.
+ *
+ * @param filePath - Optional path to the journal file.
+ * @returns Promise resolving to an object containing raw line count and parsed known events.
+ */
 export async function readJournalEvents(
   filePath: string = path.join(getMemoryDir(), 'journal.jsonl'),
 ): Promise<JournalReadResult> {
@@ -61,6 +67,12 @@ export async function readJournalEvents(
   return { line_count: lineCount, events }
 }
 
+/**
+ * Reads and parses session statistics records from `stats.jsonl`, keeping the latest record per session ID.
+ *
+ * @param filePath - Optional path to the stats file.
+ * @returns Promise resolving to row count and deduplicated authoritative session records.
+ */
 export async function readStatsRecords(
   filePath: string = path.join(getMemoryDir(), 'stats.jsonl'),
 ): Promise<StatsReadResult> {
@@ -88,6 +100,13 @@ export async function readStatsRecords(
   return { row_count: rowCount, records: [...lastBySession.values()] }
 }
 
+/**
+ * Concurrently loads all ledger datasets (journal events, episodes, hot and archived rules,
+ * calibration records, and session stats) for fitness metric computations.
+ *
+ * @param memoryDir - Base directory containing ledger files.
+ * @returns Promise resolving to the composite FitnessInput data structure.
+ */
 export async function loadFitnessInput(memoryDir: string = getMemoryDir()): Promise<FitnessInput> {
   const [journal, episodes, rules, calibrationRecords, stats] = await Promise.all([
     readJournalEvents(path.join(memoryDir, 'journal.jsonl')),

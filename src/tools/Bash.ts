@@ -32,6 +32,12 @@ const blockedPatterns: [RegExp, string][] = [
   [/\bsudo\b/, 'sudo'],
 ]
 
+/**
+ * Checks whether a shell command matches any forbidden patterns (e.g., recursive forceful deletion, curl/wget, sudo).
+ *
+ * @param command - The raw command line string to check.
+ * @returns The forbidden operation label if blocked; otherwise null.
+ */
 export function isBlockedCommand(command: string): string | null {
   const normalized = command.replace(/\s+/g, ' ').trim()
   for (const [pattern, label] of blockedPatterns) {
@@ -40,6 +46,12 @@ export function isBlockedCommand(command: string): string | null {
   return null
 }
 
+/**
+ * Resolves the sandbox configuration from the tool context if sandboxing is enabled.
+ *
+ * @param ctx - The tool context containing sandbox settings and repository root.
+ * @returns Fully resolved sandbox configuration if enabled; otherwise undefined.
+ */
 function resolveToolSandbox(ctx: ToolContext): ResolvedSandboxConfig | undefined {
   if (!ctx.sandbox?.enabled) return undefined
 
@@ -62,14 +74,32 @@ class BashTool implements Tool<BashInput, string> {
     'Execute a shell command in a non-interactive bash session. Long commands can run in the background and notify you when they finish.'
   inputSchema = BashInputSchema
 
+  /**
+   * Indicates whether Bash can run concurrently with other actions.
+   *
+   * @returns False, as shell executions can mutate shared environment and filesystem state.
+   */
   isConcurrencySafe(): boolean {
     return false // Shell executions are dangerous to run in parallel as they can mutate state
   }
 
+  /**
+   * Indicates whether Bash is read-only.
+   *
+   * @returns False, as shell commands can modify the filesystem or external systems.
+   */
   isReadOnly(): boolean {
     return false // Shell executions can mutate the filesystem and are not read-only
   }
 
+  /**
+   * Executes a shell command in the foreground or initiates a background task.
+   * Enforces command safety blocks, execution timeouts (120s), cancellation signals, and optional sandbox confinement.
+   *
+   * @param input - The command string and optional run_in_background flag.
+   * @param ctx - The execution context with repoRoot, abortSignal, and sandbox configuration.
+   * @returns A ToolResult with exit code, stdout, and stderr as a JSON string, or task metadata if backgrounded.
+   */
   async call(input: BashInput, ctx: ToolContext): Promise<ToolResult<string>> {
     const blocked = isBlockedCommand(input.command)
     if (blocked) {
@@ -198,6 +228,11 @@ class BashTool implements Tool<BashInput, string> {
   }
 }
 
+/**
+ * Sends a SIGTERM signal to the process group of a spawned process, falling back to direct process termination.
+ *
+ * @param proc - Bun subprocess handle.
+ */
 // biome-ignore lint/suspicious/noExplicitAny: Bun process handle
 function signalProcessGroup(proc: any): void {
   if (!proc) return

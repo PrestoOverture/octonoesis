@@ -16,6 +16,12 @@ export interface SessionStatsExtras {
   ts?: string
 }
 
+/**
+ * Initializes a new SessionState object with zeroed counters and timestamped start time.
+ * @param sessionId Unique identifier for the session.
+ * @param model Active model identifier string.
+ * @returns A fresh SessionState instance.
+ */
 export function createSessionState(sessionId: string, model: string): SessionState {
   return {
     sessionId,
@@ -29,6 +35,12 @@ export function createSessionState(sessionId: string, model: string): SessionSta
   }
 }
 
+/**
+ * Appends a session statistics snapshot row asynchronously to stats.jsonl in the memory directory.
+ * Writes are queued sequentially to avoid interleaved file corruption.
+ * @param state Current session state.
+ * @param extras Additional metrics including duration, pricing status, and optional timestamp.
+ */
 export function appendSessionStats(state: SessionState, extras: SessionStatsExtras): void {
   const statsPath = path.join(getMemoryDir(), 'stats.jsonl')
   const row = {
@@ -53,10 +65,19 @@ export function appendSessionStats(state: SessionState, extras: SessionStatsExtr
   })
 }
 
+/**
+ * Awaits the completion of all pending stats.jsonl append writes.
+ */
 export async function flushSessionStats(): Promise<void> {
   await writeQueue
 }
 
+/**
+ * Formats a single-line summary of session statistics (turns, tokens, cost, compactions) for display.
+ * @param state Current session state.
+ * @param priced Whether the session's model has known pricing data.
+ * @returns A human-readable session summary string.
+ */
 export function formatSessionSummary(state: SessionState, priced: boolean): string {
   const cost = priced ? `$${state.costUsd.toFixed(4)}` : 'n/a'
   return `Session summary: ${state.turns.toLocaleString('en-US')} turns | in: ${state.usage.input_tokens.toLocaleString('en-US')} | out: ${state.usage.output_tokens.toLocaleString('en-US')} | cost: ${cost} | compactions: ${state.compactCount.toLocaleString('en-US')}`

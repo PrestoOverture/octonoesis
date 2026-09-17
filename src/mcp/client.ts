@@ -8,6 +8,14 @@ import type { McpClientConnection, McpServerConfig } from './types'
 
 const CLIENT_INFO = { name: 'octonoesis', version: '1.0.0' }
 
+/**
+ * Formats a user-friendly connection error when connecting to an MCP server fails or times out.
+ *
+ * @param serverName - Name of the MCP server.
+ * @param timeoutMs - Configured connection timeout in milliseconds.
+ * @param error - The caught error or rejection reason.
+ * @returns An Error object with descriptive messaging.
+ */
 function connectionError(serverName: string, timeoutMs: number, error: unknown): Error {
   if (error instanceof Error && error.name === 'AbortError') {
     return new Error(`MCP server "${serverName}" timed out after ${timeoutMs}ms`, { cause: error })
@@ -15,6 +23,16 @@ function connectionError(serverName: string, timeoutMs: number, error: unknown):
   return error instanceof Error ? error : new Error(String(error))
 }
 
+/**
+ * Connects to a Model Context Protocol (MCP) server over standard I/O, queries available tools,
+ * and returns an active client connection handle.
+ *
+ * @param serverName - Name identifying the MCP server instance.
+ * @param config - Server configuration specifying executable command, args, environment, and timeout.
+ * @param repoRoot - Working directory path to spawn the server process in.
+ * @returns Active McpClientConnection containing connected client, tools list, and cleanup handler.
+ * @throws Error If connection fails, times out, or fails during tool listing.
+ */
 export async function connectMcpServer(
   serverName: string,
   config: McpServerConfig,

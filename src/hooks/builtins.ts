@@ -3,6 +3,13 @@ import { appendSessionStats } from '../state/session'
 import { estimateCost } from '../utils/cost'
 import type { HookRegistry } from './registry'
 
+/**
+ * Registers built-in lifecycle hooks into the provided hook registry.
+ * Installs the 'stop' event hook for automated memory extraction and the 'session_end'
+ * event hook for pricing calculation and session summary statistics recording.
+ *
+ * @param registry - Target hook registry to register built-in hooks into.
+ */
 export function registerBuiltinHooks(registry: HookRegistry): void {
   registry.register({
     event: 'stop',

@@ -25,11 +25,23 @@ export interface AutoDistillOptions {
   attemptedEpisodeIds?: Set<string>
 }
 
+/**
+ * Checks whether an environment variable string represents a truthy boolean value.
+ *
+ * @param value - Raw environment variable string
+ * @returns True if value is '1', 'true', 'yes', or 'on' (case-insensitive), false otherwise
+ */
 function isTruthyEnv(value: string | undefined): boolean {
   if (!value) return false
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
+/**
+ * Generates progressively coarser levels of a pipe-delimited error signature.
+ *
+ * @param signature - Full pipe-delimited error signature string
+ * @returns Array of unique signature strings from finest to coarsest
+ */
 function signatureLevels(signature: string): string[] {
   const parts = signature.split('|')
   const levels = [signature]
@@ -38,14 +50,33 @@ function signatureLevels(signature: string): string[] {
   return [...new Set(levels)]
 }
 
+/**
+ * Determines whether a rule triggers on any specificity level of an error signature.
+ *
+ * @param rule - The rule file to inspect
+ * @param signature - The error signature to test against rule triggers
+ * @returns True if the rule covers any level of the signature, false otherwise
+ */
 function ruleCoversSignature(rule: RuleFile, signature: string): boolean {
   return signatureLevels(signature).some((level) => rule.triggers.error_signatures.includes(level))
 }
 
+/**
+ * Checks whether a rule has a status stored in the archive (retired, superseded, or dormant).
+ *
+ * @param rule - The rule file to check
+ * @returns True if the rule should be stored in the archive, false otherwise
+ */
 function isTerminalRule(rule: RuleFile): boolean {
   return rule.status === 'retired' || rule.status === 'superseded' || rule.status === 'dormant'
 }
 
+/**
+ * Evaluates whether an episode meets criteria for automatic distillation.
+ *
+ * @param episode - The episode to test
+ * @returns True if non-excluded, resolved, attributable, and above minimum value score
+ */
 function isAutoDistillEligible(episode: Episode): boolean {
   return (
     !episode.is_excluded &&
@@ -56,8 +87,15 @@ function isAutoDistillEligible(episode: Episode): boolean {
 }
 
 /**
- * Incrementally distills eligible episodes produced by one completed session.
- * Existing candidate rules collect equivalent evidence without another LLM call.
+ * Incrementally distills eligible episodes produced by one completed session into memory rules.
+ *
+ * Existing candidate rules collect equivalent evidence without making another LLM call.
+ * Handles pool capping and moves terminal rules to archive storage.
+ *
+ * @param sessionId - Identifier of the completed session
+ * @param repoRoot - Root directory of the repository for lifecycle updates
+ * @param options - Configuration options such as memory directory, max calls, and model overrides
+ * @returns Promise resolving when distillation and persistence complete
  */
 export async function runSessionEndAutoDistill(
   sessionId: string,

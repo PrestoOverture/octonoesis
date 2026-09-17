@@ -1,7 +1,9 @@
 import { activeSubprocesses } from '../tools/Bash'
 
 /**
- * Terminates all active shell subprocesses by sending SIGTERM to their process groups, falling back to SIGKILL after a 5s grace period.
+ * Terminates all active shell subprocesses by sending SIGTERM to their process groups,
+ * falling back to SIGKILL after a 5-second grace period.
+ * Unrefs the fallback timeout so it does not prevent process termination.
  */
 export function killAllShellTasks(): void {
   const pidsToKill = Array.from(activeSubprocesses).map((proc) => (proc as { pid: number }).pid)

@@ -42,6 +42,12 @@ export interface AppProps {
   }
 }
 
+/**
+ * Extracts plain text from a canonical user message.
+ *
+ * @param message - Canonical message to inspect
+ * @returns Concatenated text content, or empty string if not a user message
+ */
 function canonicalUserText(message: CanonicalMessage): string {
   if (message.role !== 'user') return ''
   return typeof message.content === 'string'
@@ -53,14 +59,25 @@ const TASK_NOTICE_PREFIX = '<task-notification>'
 const TASK_NOTICE_GENERIC_LABEL = 'Task › background task update'
 const TASK_NOTICE_SUMMARY_MAX_CHARS = 80
 
-/** Extracts a single known tag's inner text (the producer XML-escapes content, so a plain
- * non-greedy regex is sufficient — no entity decoding needed for display). */
+/**
+ * Extracts a single known tag's inner text from an XML task notification.
+ *
+ * @param source - Raw XML notification string
+ * @param tag - XML tag name to extract
+ * @returns Trimmed tag content, or undefined if not matched
+ */
 function extractTaskNoticeTag(source: string, tag: string): string | undefined {
   const match = source.match(new RegExp(`<${tag}>([\\s\\S]*?)<\\/${tag}>`))
   return match?.[1]?.trim()
 }
 
-/** Collapses to a single line and truncates to at most maxChars, appending an ellipsis. */
+/**
+ * Collapses whitespace to a single line and truncates text to at most maxChars with an ellipsis.
+ *
+ * @param text - Raw summary string
+ * @param maxChars - Maximum allowed character length (defaults to 80)
+ * @returns Truncated single-line summary string
+ */
 function truncateTaskNoticeSummary(
   text: string,
   maxChars: number = TASK_NOTICE_SUMMARY_MAX_CHARS,
@@ -71,10 +88,10 @@ function truncateTaskNoticeSummary(
 }
 
 /**
- * Formats a synthetic <task-notification> user message (produced by src/tasks/framework.ts) into
- * a compact single-line label. Never returns the raw XML or the notification's output tail.
- * Falls back to a generic label when the message isn't a notification, or the expected tags are
- * missing/empty (malformed).
+ * Formats a synthetic `<task-notification>` user message into a compact single-line label.
+ *
+ * @param text - Notification message content
+ * @returns Formatted label for display in chat history, or generic label if malformed
  */
 export function formatTaskNoticeLabel(text: string): string {
   if (!text.startsWith(TASK_NOTICE_PREFIX)) return TASK_NOTICE_GENERIC_LABEL

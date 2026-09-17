@@ -19,14 +19,33 @@ class EditTool implements Tool<EditInput, string> {
   description = 'Replace a unique occurrence of old_string with new_string in a file.'
   inputSchema = EditInputSchema
 
+  /**
+   * Indicates whether Edit operations are concurrency safe.
+   *
+   * @returns False, as file modifications mutate filesystem state.
+   */
   isConcurrencySafe(): boolean {
     return false // Editing files has side effects on the filesystem
   }
 
+  /**
+   * Indicates whether Edit is a read-only tool.
+   *
+   * @returns False, as editing files mutates content and requires user permission.
+   */
   isReadOnly(): boolean {
     return false // Edit is a modifying tool and requires permission prompts
   }
 
+  /**
+   * Replaces a unique occurrence of `old_string` with `new_string` in the target file.
+   * Enforces repository boundary containment, read-before-edit staleness checks, uniqueness of target text,
+   * and a maximum 200-line diff limit. Updates file state cache upon successful write.
+   *
+   * @param input - Contains file path, old string to find, and new replacement string.
+   * @param ctx - Tool execution context containing repository root and file state cache.
+   * @returns ToolResult indicating success message or descriptive error.
+   */
   async call(input: EditInput, ctx: ToolContext): Promise<ToolResult<string>> {
     const guard = await assertInsideRepo(input.path, ctx.repoRoot)
     if (!guard.ok) return guard

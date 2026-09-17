@@ -24,14 +24,36 @@ const LOAD_LIMIT = 500
 const TRUNCATE_THRESHOLD = 1_000
 const appendQueues = new Map<string, Promise<void>>()
 
+/**
+ * Resolves the path to the input history JSONL file inside the given memory directory.
+ *
+ * @param memoryDir - Path to persistent memory directory
+ * @returns Absolute or relative path to `input_history.jsonl`
+ */
 export function getInputHistoryPath(memoryDir: string): string {
   return path.join(memoryDir, 'input_history.jsonl')
 }
 
+/**
+ * Creates an empty input history navigation cursor.
+ *
+ * @returns Fresh InputHistoryCursor pointing to no history entry with an empty draft
+ */
 export function createInputHistoryCursor(): InputHistoryCursor {
   return { index: null, draft: '' }
 }
 
+/**
+ * Navigates through historical input entries, preserving in-progress draft text.
+ *
+ * Only single-line inputs participate in history navigation; multiline inputs return the current value.
+ *
+ * @param entries - Array of historical prompt strings (oldest to newest)
+ * @param cursor - Current history cursor
+ * @param direction - Direction to move ('older' or 'newer')
+ * @param currentValue - Current prompt input value
+ * @returns Navigation result with updated prompt value and cursor position
+ */
 export function navigateInputHistory(
   entries: string[],
   cursor: InputHistoryCursor,
@@ -59,6 +81,12 @@ export function navigateInputHistory(
   return { value: cursor.draft, cursor: createInputHistoryCursor() }
 }
 
+/**
+ * Parses JSONL content into an array of valid input history entries, discarding corrupt lines.
+ *
+ * @param content - Raw JSONL file content
+ * @returns Array of valid history entries
+ */
 function parseEntries(content: string): InputHistoryEntry[] {
   const entries: InputHistoryEntry[] = []
   for (const line of content.split('\n')) {
@@ -75,6 +103,13 @@ function parseEntries(content: string): InputHistoryEntry[] {
   return entries
 }
 
+/**
+ * Reads the raw input history file, returning empty string if the file does not exist.
+ *
+ * @param memoryDir - Memory directory containing input history
+ * @returns Raw file text or empty string if missing
+ * @throws If read fails for reasons other than ENOENT
+ */
 async function readHistoryFile(memoryDir: string): Promise<string> {
   try {
     return await fs.readFile(getInputHistoryPath(memoryDir), 'utf8')
@@ -84,6 +119,13 @@ async function readHistoryFile(memoryDir: string): Promise<string> {
   }
 }
 
+/**
+ * Loads the most recent input history entries from disk.
+ *
+ * @param memoryDir - Memory directory containing input history
+ * @param limit - Maximum number of entries to return (defaults to 500)
+ * @returns Array of loaded history entries ordered chronologically
+ */
 export async function loadInputHistory(
   memoryDir: string,
   limit = LOAD_LIMIT,
@@ -92,6 +134,14 @@ export async function loadInputHistory(
   return entries.slice(-Math.max(0, limit))
 }
 
+/**
+ * Appends a history entry without concurrency locking, truncating when exceeding threshold.
+ *
+ * @param memoryDir - Memory directory
+ * @param text - Prompt text to record
+ * @param options - Append options such as timestamp override
+ * @returns Promise resolving when write completes
+ */
 async function appendInputHistoryUnlocked(
   memoryDir: string,
   text: string,
@@ -117,6 +167,16 @@ async function appendInputHistoryUnlocked(
   await fs.appendFile(getInputHistoryPath(memoryDir), `${JSON.stringify(entry)}\n`, 'utf8')
 }
 
+/**
+ * Appends a user prompt to input history with serialized per-file concurrency queuing.
+ *
+ * Deduplicates consecutive identical entries and truncates the file if it exceeds the threshold.
+ *
+ * @param memoryDir - Memory directory path
+ * @param text - Prompt text to persist
+ * @param options - Append options such as timestamp override
+ * @returns Promise resolving when the append operation finishes
+ */
 export async function appendInputHistory(
   memoryDir: string,
   text: string,

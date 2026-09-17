@@ -25,20 +25,26 @@ export interface Tool<Input = unknown, Output = unknown> {
 
   /**
    * Tells the system if this tool can be run concurrently with other actions.
-   * @param input
+   *
+   * @param input - The validated input payload for the tool.
+   * @returns True if the execution is concurrency safe; otherwise false.
    */
   isConcurrencySafe(input: Input): boolean
 
   /**
    * Tells the system if this tool only performs read actions (skips security prompts).
-   * @param input
+   *
+   * @param input - The validated input payload for the tool.
+   * @returns True if the tool does not mutate state or perform write operations; otherwise false.
    */
   isReadOnly(input: Input): boolean
 
   /**
    * Performs the tool execution.
-   * @param input
-   * @param ctx
+   *
+   * @param input - The validated input payload for the tool.
+   * @param ctx - Contextual information and helpers provided to the tool during execution.
+   * @returns A promise resolving to a ToolResult containing either success value or error.
    */
   call(input: Input, ctx: ToolContext): Promise<ToolResult<Output>>
 }

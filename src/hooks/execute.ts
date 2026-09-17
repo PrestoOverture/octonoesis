@@ -22,10 +22,24 @@ export interface ExecuteHooksOptions {
 
 type HookRuntimeContext = Omit<HookContext, 'payload'>
 
+/**
+ * Computes elapsed execution duration in milliseconds from a high-resolution start timestamp.
+ *
+ * @param started - Start timestamp from `performance.now()`.
+ * @returns Elapsed duration in non-negative rounded milliseconds.
+ */
 function hookDuration(started: number): number {
   return Math.max(0, Math.round(performance.now() - started))
 }
 
+/**
+ * Appends a hook execution event to the memory journal ledger.
+ *
+ * @param payload - The payload associated with the hook trigger event.
+ * @param type - Execution handler type (`'shell'` or `'function'`).
+ * @param started - Start timestamp from `performance.now()`.
+ * @param outcome - Result outcome of the hook run (`'success'`, `'failure'`, or `'timeout'`).
+ */
 function journalHook(
   payload: HookPayload,
   type: 'shell' | 'function',
@@ -41,6 +55,12 @@ function journalHook(
   })
 }
 
+/**
+ * Sends a signal to the process group of a spawned hook process, falling back to direct process signal.
+ *
+ * @param proc - Process handle with PID and kill method.
+ * @param signal - OS signal to transmit (e.g. SIGTERM or SIGKILL).
+ */
 function killProcessGroup(
   proc: { pid: number; kill(signal?: NodeJS.Signals): void },
   signal: NodeJS.Signals,
@@ -54,6 +74,15 @@ function killProcessGroup(
   }
 }
 
+/**
+ * Executes a shell hook command in a detached shell process, piping JSON payload over stdin and enforcing timeouts.
+ *
+ * @param command - Shell command string to execute.
+ * @param payload - Hook event payload serialized to stdin.
+ * @param runtime - Runtime context containing repository root.
+ * @param options - Execution options containing timeout and grace period in milliseconds.
+ * @returns Promise resolving to the hook execution result.
+ */
 async function runShell(
   command: string,
   payload: HookPayload,
@@ -111,6 +140,14 @@ async function runShell(
   return { outcome: exitCode === 0 ? 'success' : 'failure', denied: false }
 }
 
+/**
+ * Wraps a promise in a timeout guard, returning either the resolved value or a timed-out indicator.
+ *
+ * @param operation - The asynchronous operation promise to race.
+ * @param timeoutMs - Maximum execution duration in milliseconds before timing out.
+ * @param onTimeout - Optional callback triggered if the timeout fires before resolution.
+ * @returns Object indicating whether the operation timed out and containing the value on success.
+ */
 async function withTimeout<T>(
   operation: Promise<T>,
   timeoutMs: number,
@@ -130,6 +167,16 @@ async function withTimeout<T>(
   return result
 }
 
+/**
+ * Matches and executes all registered hooks for a given event, logging outcomes to the memory journal.
+ * Evaluates both shell-based and TypeScript function handlers, observing timeout limits and denial responses.
+ *
+ * @param registry - Hook registry containing registered matchers.
+ * @param payload - Event details including event name, optional tool, inputs, and outcomes.
+ * @param runtime - Execution context containing repository root and abort signals.
+ * @param options - Execution timeout and termination grace options.
+ * @returns Summary of all executed hooks including whether any hook denied execution.
+ */
 export async function executeHooks(
   registry: HookRegistry,
   payload: HookPayload,
@@ -209,6 +256,14 @@ export async function executeHooks(
   }
 }
 
+/**
+ * Executes hooks attached to a query context if a HookRegistry is present.
+ *
+ * @param context - Context object potentially containing an attached HookRegistry and repoRoot.
+ * @param payload - Hook event payload.
+ * @param state - Optional query state (system prompt and messages) for hook handlers.
+ * @returns Summary of hook execution outcomes, or an empty result if no hooks are registered.
+ */
 export async function executeAttachedHooks(
   context: object & { repoRoot: string; abortSignal?: AbortSignal; hooks?: HookRegistry },
   payload: HookPayload,

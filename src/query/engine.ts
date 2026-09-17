@@ -91,7 +91,12 @@ const ONE_SHOT_FAILURE_REASONS = new Set<ExitReason>([
   'budget_exceeded',
 ])
 
-/** Formats a non-successful query result for CLI and TUI presentation. */
+/**
+ * Formats a non-successful query result for CLI and TUI presentation.
+ *
+ * @param result - Query execution result to format
+ * @returns Formatted failure message string, or undefined if the query succeeded or was cancelled
+ */
 export function formatQueryFailure(result: QueryResult): string | undefined {
   if (result.exit_reason === 'completed' || result.exit_reason === 'user_cancel') return undefined
   const detail =
@@ -136,6 +141,12 @@ type StreamPhaseResult =
   | { kind: 'complete'; assistantBlocks: ContentBlock[] }
   | { kind: 'exit'; result: QueryResult }
 
+/**
+ * Accumulates token usage metrics into a target usage object.
+ *
+ * @param target - Destination usage object to mutate
+ * @param usage - Source token counts to add
+ */
 function addUsage(target: Usage, usage: Usage): void {
   target.input_tokens += usage.input_tokens
   target.output_tokens += usage.output_tokens
@@ -149,10 +160,24 @@ function addUsage(target: Usage, usage: Usage): void {
   }
 }
 
+/**
+ * Creates a shallow copy of session state with cloned usage metrics.
+ *
+ * @param sessionState - Active session state
+ * @returns Cloned snapshot of the session state
+ */
 function sessionStateSnapshot(sessionState: SessionState): SessionState {
   return { ...sessionState, usage: { ...sessionState.usage } }
 }
 
+/**
+ * Constructs a session state stream event with updated cost and context utilization.
+ *
+ * @param state - Current engine state
+ * @param ctx - Query loop context containing session state
+ * @returns Stream event containing the updated session state
+ * @throws If session state is not initialized in context
+ */
 function currentSessionStateEvent(
   state: EngineState,
   ctx: QueryLoopContext,
@@ -172,6 +197,15 @@ function currentSessionStateEvent(
   }
 }
 
+/**
+ * Records turn metrics, updating session token usage, turn count, and pricing.
+ *
+ * @param state - Current engine state
+ * @param ctx - Query loop context
+ * @param usage - Turn token usage to accumulate
+ * @returns Stream event with the updated session state
+ * @throws If session state is not initialized in context
+ */
 function recordSessionTurn(
   state: EngineState,
   ctx: QueryLoopContext,
@@ -184,6 +218,12 @@ function recordSessionTurn(
   return currentSessionStateEvent(state, ctx)
 }
 
+/**
+ * Constructs a cancellation query result when query execution is aborted by user.
+ *
+ * @param state - Engine state at time of cancellation
+ * @returns QueryResult representing user cancellation
+ */
 function cancellationResult(state: EngineState): QueryResult {
   return {
     exit_reason: 'user_cancel',
@@ -193,6 +233,11 @@ function cancellationResult(state: EngineState): QueryResult {
   }
 }
 
+/**
+ * Logs a cancellation record to the memory journal.
+ *
+ * @param state - Engine state containing input digest
+ */
 function recordCancellation(state: EngineState): void {
   appendJournal({
     kind: 'user',
@@ -202,8 +247,14 @@ function recordCancellation(state: EngineState): void {
 }
 
 /**
- * Creates the Batch 0 QueryState while preserving identity with the live tool context.
- * Prompt/provider setup remains deferred until after the initial abort check.
+ * Creates the initial EngineState while preserving identity with the live tool context.
+ *
+ * Sets up session identity, loads memory rules and experiment arms, and logs user prompt receipt.
+ *
+ * @param input - User prompt string
+ * @param ctx - Query loop context
+ * @param signal - Optional abort signal for cancellation
+ * @returns Promise resolving to the initialized engine state
  */
 export async function initQueryState(
   input: string,
@@ -290,6 +341,16 @@ export async function initQueryState(
   }
 }
 
+/**
+ * Prepares the engine state for execution by draining tasks, assembling prompts, and loading tools.
+ *
+ * Appends the user message, recalls relevant memories, loads skills and MCP tools, registers
+ * session agent tools, sets up prompt contexts, and triggers the `session_start` hook.
+ *
+ * @param state - Initialized engine state
+ * @param ctx - Query loop context
+ * @returns Promise resolving to the fully prepared engine state ready for execution turns
+ */
 async function prepareQueryState(
   state: EngineState,
   ctx: QueryLoopContext,
@@ -364,6 +425,13 @@ async function prepareQueryState(
   return state as ReadyEngineState
 }
 
+/**
+ * Drains pending background task notifications and appends them as synthetic user messages.
+ *
+ * @param state - Target state containing message history
+ * @param ctx - Query loop context managing active background tasks
+ * @returns Promise resolving when notifications are drained and appended
+ */
 async function injectTaskNotifications(
   state: Pick<QueryState, 'messages'>,
   ctx: QueryLoopContext,
@@ -373,6 +441,12 @@ async function injectTaskNotifications(
   }
 }
 
+/**
+ * Initializes the hook registry, registering built-in hooks and configured project hooks.
+ *
+ * @param ctx - Query loop context to attach hooks to
+ * @returns Promise resolving when hooks have been registered
+ */
 async function initializeHooks(ctx: QueryLoopContext): Promise<void> {
   const hookRegistry = new HookRegistry()
   registerBuiltinHooks(hookRegistry)
@@ -388,7 +462,15 @@ async function initializeHooks(ctx: QueryLoopContext): Promise<void> {
   }
 }
 
-/** Phase 1: compact old context when needed and yield the inline compact event. */
+/**
+ * Phase 1: compacts old conversation context when needed and yields inline compact event.
+ *
+ * Tracks failure circuit breaking and cooldown turns between compaction attempts.
+ *
+ * @param state - Ready engine state
+ * @param ctx - Query loop context
+ * @returns AsyncGenerator yielding compact events and returning loop direction ('proceed' or 'restart_loop')
+ */
 export async function* maybeCompact(
   state: ReadyEngineState,
   ctx: QueryLoopContext,
@@ -478,7 +560,12 @@ export async function* maybeCompact(
   return 'proceed'
 }
 
-/** Phase 2: return the once-built prompt/tool packet with the current live messages. */
+/**
+ * Phase 2: packages the once-built prompt/tool configuration with current live messages.
+ *
+ * @param state - Ready engine state
+ * @returns Promise resolving to the assembled context packet
+ */
 export async function assembleContext(state: ReadyEngineState): Promise<AssembledContext> {
   return {
     system: state.system,
@@ -488,13 +575,27 @@ export async function assembleContext(state: ReadyEngineState): Promise<Assemble
   }
 }
 
-/** Matches provider errors that indicate the context window was exceeded. */
+/**
+ * Evaluates whether an error indicates that the LLM context window limit was exceeded.
+ *
+ * @param error - Error object or string to check
+ * @returns True if the error matches known prompt-too-long message patterns, false otherwise
+ */
 export function isPromptTooLongError(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error)
   return /prompt is too long|maximum context length|context_length_exceeded/i.test(message)
 }
 
-/** Phase 3: stream one provider turn, update usage/context state, and yield normalized events. */
+/**
+ * Phase 3: streams one provider turn, accumulates token usage, and yields normalized stream events.
+ *
+ * Handles abort cancellation mid-stream, detects context length errors, and updates session state.
+ *
+ * @param state - Ready engine state
+ * @param context - Assembled prompt context
+ * @param ctx - Query loop context
+ * @returns AsyncGenerator yielding StreamEvents and returning StreamPhaseResult
+ */
 export async function* streamFromProvider(
   state: ReadyEngineState,
   context: AssembledContext,
@@ -579,7 +680,16 @@ export async function* streamFromProvider(
   return { kind: 'complete', assistantBlocks }
 }
 
-/** Executes post-tool-use hooks after the canonical result has been appended. */
+/**
+ * Executes post-tool-use hooks after the canonical tool result has been recorded.
+ *
+ * @param state - Active query state
+ * @param ctx - Query loop context
+ * @param tool - Executed tool name
+ * @param input - Invocation arguments passed to the tool
+ * @param outcome - Tool execution result or error
+ * @returns Promise resolving when all registered post_tool_use hooks have completed
+ */
 export async function executePostToolUseHooks(
   state: QueryState,
   ctx: QueryLoopContext,
@@ -594,7 +704,17 @@ export async function executePostToolUseHooks(
   )
 }
 
-/** Phase 4: execute every requested tool serially and append canonical tool results. */
+/**
+ * Phase 4: executes requested tool calls sequentially and appends canonical tool results.
+ *
+ * Checks cancellation between tool executions, verifies rule outcomes when verification runs
+ * complete, injects memory advice on new error fingerprints, and triggers post-tool hooks.
+ *
+ * @param state - Ready engine state
+ * @param ctx - Query loop context
+ * @param assistantBlocks - Assistant message blocks containing tool use requests
+ * @returns AsyncGenerator yielding tool execution events and returning loop restart status
+ */
 export async function* executeTools(
   state: ReadyEngineState,
   ctx: QueryLoopContext,
@@ -726,17 +846,34 @@ export async function* executeTools(
   return { restartLoop: ctx.abortSignal?.aborted === true }
 }
 
-/** Returns whether an assistant response has finished without requesting tools. */
+/**
+ * Evaluates whether an assistant response has concluded without requesting any further tool calls.
+ *
+ * @param assistantBlocks - Content blocks emitted by the assistant
+ * @returns True if no tool use blocks are present, false otherwise
+ */
 export function shouldStop(assistantBlocks: ContentBlock[]): boolean {
   return !assistantBlocks.some((block) => block.type === 'tool_use')
 }
 
-/** Executes clean-stop hooks before the completed QueryResult is returned. */
+/**
+ * Executes clean-stop hooks before the completed QueryResult is returned.
+ *
+ * @param state - Active query state
+ * @param ctx - Query loop context
+ * @returns Promise resolving when all registered stop hooks have executed
+ */
 export async function executeStopHooks(state: QueryState, ctx: QueryLoopContext): Promise<void> {
   await executeAttachedHooks(ctx, { event: 'stop', sessionId: ctx.sessionId }, state)
 }
 
-/** Phase 6: return a terminal result when cumulative billed usage exceeds the configured cap. */
+/**
+ * Phase 6: checks cumulative billed token usage against configured session token budget.
+ *
+ * @param state - Active query state
+ * @param ctx - Query loop context with optional token budget cap
+ * @returns QueryResult with 'budget_exceeded' if cap is breached, or undefined
+ */
 export async function checkBudget(
   state: QueryState,
   ctx: QueryLoopContext,
@@ -752,7 +889,19 @@ export async function checkBudget(
   return undefined
 }
 
-/** Runs the phased agentic query loop. */
+/**
+ * Runs the phased agentic query loop, yielding incremental stream events and returning the final result.
+ *
+ * Executes turns with compaction checks, LLM provider streaming, sequential tool execution,
+ * and post-turn hooks until reaching a terminal stop condition (completion, cancellation,
+ * budget cap, or error). In the `finally` block, unregisters session tools, runs session-end
+ * hooks, flushes journals, and triggers calibration and rule distillation.
+ *
+ * @param input - User prompt or instruction
+ * @param ctx - Query loop context
+ * @param signal - Optional abort signal for cancellation
+ * @returns AsyncGenerator yielding normalized StreamEvents and returning the final QueryResult
+ */
 export async function* query(
   input: string,
   ctx: QueryLoopContext,
@@ -924,7 +1073,18 @@ export interface RunQueryOptions {
   memoryDir?: string
 }
 
-/** Runs one-shot mode while preserving the established stdout format. */
+/**
+ * Executes a query in non-interactive one-shot CLI mode, streaming progress to standard output.
+ *
+ * Sets up session context, streams text and tool execution notifications to stdout/stderr,
+ * handles task cleanup, flushes session statistics, and logs formatted session summaries.
+ *
+ * @param userPrompt - User prompt or command instruction to execute
+ * @param sandbox - Optional resolved sandbox configuration
+ * @param config - Optional configuration overrides
+ * @param options - Execution options including initial messages, session persistence, and memory directory
+ * @returns Promise resolving when query execution and post-processing finish
+ */
 export async function runQuery(
   userPrompt: string,
   sandbox?: ResolvedSandboxConfig,

@@ -12,11 +12,18 @@ export interface ContextSnapshot {
 
 /**
  * Estimates token usage using the repository-wide four-characters-per-token fallback.
+ * @param text The input text string to estimate.
+ * @returns Estimated number of tokens.
  */
 export function estimateTextTokens(text: string): number {
   return Math.ceil(text.length / 4)
 }
 
+/**
+ * Estimates token usage for a single canonical content block (text, tool_use, or tool_result).
+ * @param block The content block to evaluate.
+ * @returns Estimated token count for the block.
+ */
 function estimateBlockTokens(block: ContentBlock): number {
   if (block.type === 'text') return estimateTextTokens(block.text)
   if (block.type === 'tool_use') {
@@ -26,7 +33,9 @@ function estimateBlockTokens(block: ContentBlock): number {
 }
 
 /**
- * Estimates the serialized conversational payload plus a small per-message framing cost.
+ * Estimates the serialized conversational payload plus a per-message framing overhead.
+ * @param messages Array of canonical conversation messages.
+ * @returns Total estimated token count.
  */
 export function estimateMessagesTokens(messages: CanonicalMessage[]): number {
   return messages.reduce((total, message) => {
@@ -38,7 +47,11 @@ export function estimateMessagesTokens(messages: CanonicalMessage[]): number {
   }, 0)
 }
 
-/** Returns the complete context represented by an API usage record. */
+/**
+ * Returns the total tokens consumed according to an API usage record, including cache tokens.
+ * @param usage Provider usage report.
+ * @returns The total sum of input, output, and cache creation/read tokens.
+ */
 export function totalTokensFromUsage(usage: Usage): number {
   return (
     usage.input_tokens +
@@ -49,7 +62,11 @@ export function totalTokensFromUsage(usage: Usage): number {
 }
 
 /**
- * Uses the latest API count as an anchor and estimates only messages appended after it.
+ * Calculates current context token usage, utilizing a known API usage snapshot as an anchor
+ * and estimating only subsequent messages appended after the snapshot.
+ * @param messages Current array of conversation messages.
+ * @param snapshot Optional token snapshot from a prior API turn.
+ * @returns Total estimated context tokens.
  */
 export function contextTokensWithEstimation(
   messages: CanonicalMessage[],
@@ -59,7 +76,11 @@ export function contextTokensWithEstimation(
   return snapshot.tokens + estimateMessagesTokens(messages.slice(snapshot.coveredCount))
 }
 
-/** Resolves the supported context window from the configured model ID. */
+/**
+ * Resolves the maximum supported context window size in tokens for a given model identifier.
+ * @param model The model identifier string.
+ * @returns The context window size in tokens.
+ */
 export function getContextWindowSize(model: string): number {
   const normalizedModel = model.toLowerCase()
   if (normalizedModel.startsWith('claude-')) return 200_000
@@ -68,7 +89,12 @@ export function getContextWindowSize(model: string): number {
   return DEFAULT_CONTEXT_WINDOW
 }
 
-/** Returns the absolute context size at which automatic compaction should begin. */
+/**
+ * Returns the context size threshold in tokens at which automatic conversation compaction begins.
+ * Respects OCTONOESIS_COMPACT_THRESHOLD environment variable override if set.
+ * @param model The model identifier string.
+ * @returns The compact threshold in tokens.
+ */
 export function getCompactThreshold(model: string): number {
   const override = process.env.OCTONOESIS_COMPACT_THRESHOLD
   if (override && /^\d+$/.test(override)) {

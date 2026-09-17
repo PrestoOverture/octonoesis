@@ -10,19 +10,30 @@ import { enforcePoolCap } from './pool.ts'
 import { archiveRule, getRulesDir, loadAllRulesIncludingArchived, saveRule } from './store.ts'
 import type { RuleFile } from './types.ts'
 
-/** Mirrors autoDistill.ts's terminal-status predicate: retired/superseded/dormant rules archive. */
+/**
+ * Checks whether a rule has a status stored in the archive (retired, superseded, or dormant).
+ *
+ * @param rule - The rule file to inspect
+ * @returns True if the rule should be archived, false otherwise
+ */
 function isTerminalRule(rule: RuleFile): boolean {
   return rule.status === 'retired' || rule.status === 'superseded' || rule.status === 'dormant'
 }
 
 /**
  * Rebuilds all rules from episodes.jsonl, preserving metrics & user status modifications.
- * @param episodesPath Path to the episodes JSONL file.
- * @param rulesDir Directory path where rule markdown files are stored.
- * @param ctx The extraction execution context.
+ *
+ * Clears active rule files from the target directory and rewrites rebuilt rules, routing
+ * terminal rules to the archive.
+ *
+ * @param episodesPath - Path to the episodes JSONL file
+ * @param rulesDir - Directory path where rule markdown files are stored
+ * @param ctx - Execution context options including model override, extractor version, forceDistill flag, and repo root
+ * @returns Promise resolving when rebuilding and writing to disk completes
+ * @throws Propagates file system or model extraction errors encountered during the rebuild
  */
 export async function rebuildRules(
-  episodesPath: string, // Passed for API compatibility, readEpisodes determines path internally
+  episodesPath: string, // Explicit episodes JSONL source for this rebuild.
   rulesDir: string,
   ctx: { model?: string; extractorVersion: string; forceDistill?: boolean; repoRoot?: string },
 ): Promise<void> {

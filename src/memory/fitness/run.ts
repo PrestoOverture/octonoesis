@@ -11,6 +11,13 @@ export interface RenderFitnessDashboardOptions {
   bucket?: string
 }
 
+/**
+ * Loads fitness input data, compiles the fitness dashboard report, and formats it as text or JSON.
+ *
+ * @param options - Configuration options including memory directory, reference date, filters, and JSON flag
+ * @returns Formatted fitness dashboard as either human-readable text or serialized JSON
+ * @throws If file reading fails or invalid options (such as non-positive weeks) are provided
+ */
 export async function renderFitnessDashboard(
   options: RenderFitnessDashboardOptions = {},
 ): Promise<string> {

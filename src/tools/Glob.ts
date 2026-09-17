@@ -18,14 +18,32 @@ class GlobTool implements Tool<GlobInput, string[]> {
     'Find files matching a glob pattern relative to the repository root or a given subdirectory.'
   inputSchema = GlobInputSchema
 
+  /**
+   * Indicates whether Glob can run concurrently with other actions.
+   *
+   * @returns True, as file searching has no mutating side effects.
+   */
   isConcurrencySafe(): boolean {
     return true // Glob has no side effects and is concurrency safe
   }
 
+  /**
+   * Indicates whether Glob is a read-only tool.
+   *
+   * @returns True, as glob search does not modify the filesystem.
+   */
   isReadOnly(): boolean {
     return true // Glob only searches/lists and is read-only
   }
 
+  /**
+   * Searches for files matching a glob pattern relative to the repository root or a subpath.
+   * Enforces repository confinement, ignores node_modules and .git folders, and applies result limits.
+   *
+   * @param input - Glob parameters including pattern, optional cwd, and optional result limit (default 5000).
+   * @param ctx - Tool execution context containing repository root.
+   * @returns ToolResult with an array of matched relative file paths, or an error.
+   */
   async call(input: GlobInput, ctx: ToolContext): Promise<ToolResult<string[]>> {
     // 1. Determine target directory, resolving relative to repoRoot
     const absoluteCwd = input.cwd ? resolve(ctx.repoRoot, input.cwd) : ctx.repoRoot

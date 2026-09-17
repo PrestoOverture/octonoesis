@@ -41,6 +41,10 @@ export function setProvider(provider: LLMProvider | null): void {
   activeProvider = provider
 }
 
+/**
+ * Sets an explicit model configuration override from runtime options.
+ * @param model Model identifier string, or undefined to clear.
+ */
 export function setConfiguredModel(model?: string): void {
   configuredModel = model
 }

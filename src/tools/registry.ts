@@ -1,7 +1,7 @@
 import type { Tool } from './Tool'
 
-// v1.0 invariant: one active query per process. Concurrent agents run in child processes and use
-// child-side hardcoded tool tables; in-process concurrent query registries are deferred to v1.1+.
+// One active query owns this process-global registry. Concurrent agents run in child processes
+// and use child-side hardcoded tool tables; in-process concurrent queries are unsupported.
 const registry = new Map<string, Tool>()
 
 /**
@@ -12,7 +12,12 @@ export function registerTool(tool: Tool): void {
   registry.set(tool.name, tool)
 }
 
-/** Removes a tool, optionally only when the registered instance matches. */
+/**
+ * Removes a tool from the global registry, optionally only when the registered instance matches.
+ *
+ * @param name - The name of the tool to unregister.
+ * @param expected - Optional Tool instance that must match the registered tool for removal to occur.
+ */
 export function unregisterTool(name: string, expected?: Tool): void {
   if (expected !== undefined && registry.get(name) !== expected) return
   registry.delete(name)

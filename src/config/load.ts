@@ -13,10 +13,21 @@ interface ConfigCacheEntry {
 
 const cache = new Map<string, ConfigCacheEntry>()
 
+/**
+ * Computes the absolute filesystem path to .octonoesis/config.json for a repository root.
+ * @param repoRoot Absolute path to the repository root.
+ * @returns Path to the config file.
+ */
 function configPathFor(repoRoot: string): string {
   return path.join(repoRoot, '.octonoesis', 'config.json')
 }
 
+/**
+ * Reads and parses the repository's configuration file, returning DEFAULT_CONFIG if the file is missing.
+ * @param repoRoot Absolute path to the repository root.
+ * @returns A promise resolving to the validated OctonoesisConfig.
+ * @throws {ConfigValidationError} If the JSON syntax is malformed or schema validation fails.
+ */
 async function readConfig(repoRoot: string): Promise<OctonoesisConfig> {
   const configPath = configPathFor(repoRoot)
   let raw: string
@@ -40,6 +51,12 @@ async function readConfig(repoRoot: string): Promise<OctonoesisConfig> {
   return parseConfig(parsed)
 }
 
+/**
+ * Checks whether .octonoesis/config.json is tracked by Git in the repository.
+ * Tracked configs in public or untrusted repos require explicit user trust.
+ * @param repoRoot Absolute path to the repository root.
+ * @returns True if git tracks the config file, false otherwise.
+ */
 async function checkTracked(repoRoot: string): Promise<boolean> {
   try {
     await execFileAsync('git', [
@@ -56,6 +73,11 @@ async function checkTracked(repoRoot: string): Promise<boolean> {
   }
 }
 
+/**
+ * Retrieves or initializes the memoized configuration and tracking status cache entry for a repository.
+ * @param repoRoot Absolute path to the repository root.
+ * @returns The cached ConfigCacheEntry promises.
+ */
 function entryFor(repoRoot: string): ConfigCacheEntry {
   const key = path.resolve(repoRoot)
   let entry = cache.get(key)
@@ -69,14 +91,32 @@ function entryFor(repoRoot: string): ConfigCacheEntry {
   return entry
 }
 
+/**
+ * Loads and returns the validated configuration for a repository root (memoized per repoRoot).
+ * @param repoRoot Absolute path to the repository root.
+ * @returns The loaded OctonoesisConfig.
+ */
 export async function loadConfig(repoRoot: string): Promise<OctonoesisConfig> {
   return entryFor(repoRoot).config
 }
 
+/**
+ * Determines whether the repository's configuration file is tracked in Git (memoized per repoRoot).
+ * @param repoRoot Absolute path to the repository root.
+ * @returns True if tracked by Git, false otherwise.
+ */
 export async function isConfigTracked(repoRoot: string): Promise<boolean> {
   return entryFor(repoRoot).tracked
 }
 
+/**
+ * Evaluates whether the loaded configuration is trusted for privileged features
+ * (such as shell hooks, MCP servers, and auto-allow permission patterns).
+ * An untracked config is trusted by default; a git-tracked config requires trustTrackedConfig: true.
+ * @param repoRoot Absolute path to the repository root.
+ * @param config The active configuration object.
+ * @returns True if the config is trusted, false if untrusted.
+ */
 export async function isActiveConfigTrusted(
   repoRoot: string,
   config: OctonoesisConfig,
@@ -84,6 +124,12 @@ export async function isActiveConfigTrusted(
   return !(await isConfigTracked(repoRoot)) || config.trustTrackedConfig
 }
 
+/**
+ * Returns a human-readable security warning message if the active configuration is untrusted.
+ * @param repoRoot Absolute path to the repository root.
+ * @param config The active configuration object.
+ * @returns A warning string if untrusted, or undefined if trusted.
+ */
 export async function getConfigTrustWarning(
   repoRoot: string,
   config: OctonoesisConfig,
@@ -92,6 +138,9 @@ export async function getConfigTrustWarning(
   return 'Warning: tracked .octonoesis/config.json is untrusted; shell hooks, MCP servers, and permission allowPatterns are disabled. Set trustTrackedConfig: true to override.'
 }
 
+/**
+ * Clears the in-memory configuration cache for test isolation.
+ */
 export function clearConfigCacheForTests(): void {
   cache.clear()
 }

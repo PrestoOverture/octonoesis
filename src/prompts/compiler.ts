@@ -38,7 +38,13 @@ export const DEFAULT_CONTEXT_BUDGET: ContextBudget = {
   },
 }
 
+/**
+ * Error thrown when critical context sources exceed the allocated system prompt token budget.
+ */
 export class ContextBudgetError extends Error {
+  /**
+   * @param sourceIds IDs of the critical context sources that caused the budget overflow.
+   */
   constructor(sourceIds: string[]) {
     super(`Critical context sources exceed totalSystemPromptCap: ${sourceIds.join(', ')}`)
     this.name = 'ContextBudgetError'
@@ -51,6 +57,14 @@ interface PreparedSource extends ContextSource {
   usesTokenOverride: boolean
 }
 
+/**
+ * Compiles and partitions multiple context sources into cache-stable system prompt and dynamic preamble channels.
+ * Enforces per-source caps and prioritizes dropping/truncating non-critical sources if total token budget is exceeded.
+ * @param sources List of candidate context sources to compile.
+ * @param budget Context token limits and per-source caps.
+ * @returns A CompiledContext object containing systemStable, preamble, total token count, and dropped source IDs.
+ * @throws {ContextBudgetError} If critical-priority sources alone exceed totalSystemPromptCap.
+ */
 export function compileContext(sources: ContextSource[], budget: ContextBudget): CompiledContext {
   const droppedIds = new Set<string>()
   const preparedSources = sources

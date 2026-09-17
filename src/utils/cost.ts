@@ -19,6 +19,13 @@ const PRICING_PREFIXES = Object.keys(MODEL_PRICING).sort(
   (left, right) => right.length - left.length,
 )
 
+/**
+ * Estimates monetary cost in USD for a given token usage and model ID based on configured pricing tiers.
+ * Supports input, output, cache read, and cache write tokens.
+ * @param usage Token usage counters from the LLM provider.
+ * @param model Model identifier string.
+ * @returns An object containing the estimated cost in USD and whether the model was recognized in pricing tables.
+ */
 export function estimateCost(usage: Usage, model: string): { costUsd: number; priced: boolean } {
   const normalizedModel = model.toLowerCase()
   const prefix = PRICING_PREFIXES.find((candidate) => normalizedModel.startsWith(candidate))

@@ -49,10 +49,10 @@ try {
 }
 
 /**
- * Validates that the necessary API key environment variables are set.
- * Exits the process if the required key for the configured provider is missing.
+ * Validates that required API key environment variables are configured for the active LLM provider.
+ *
+ * Prints an error message and terminates the process with exit code 1 if the required key is missing.
  */
-
 function checkApiKey(): void {
   const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
   if (provider === 'anthropic' && !hasAnthropicKey()) {
@@ -76,11 +76,24 @@ function checkApiKey(): void {
   }
 }
 
+/**
+ * Truncates text by Unicode character length, appending an ellipsis marker if cut.
+ *
+ * @param text - String to truncate
+ * @param limit - Maximum allowed character length
+ * @returns Truncated string with ellipsis or original text
+ */
 function truncate(text: string, limit: number): string {
   const characters = Array.from(text)
   return characters.length > limit ? `${characters.slice(0, limit).join('')}…` : text
 }
 
+/**
+ * Formats a list of experiment registry records into an aligned plain text table.
+ *
+ * @param experiments - List of experiment records to format
+ * @returns Formatted table string, or placeholder text if list is empty
+ */
 function formatExperimentList(experiments: ExperimentRecord[]): string {
   if (experiments.length === 0) return 'No registered experiments.'
   const headers = ['ID', 'Status', 'Arms', 'Registered', 'Hypothesis']

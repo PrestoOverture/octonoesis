@@ -25,6 +25,12 @@ const STATUS_ORDER: Record<ExperimentRecord['status'], number> = {
   concluded: 2,
 }
 
+/**
+ * Recursively compares two values for deep structural equality.
+ * @param a First value to compare.
+ * @param b Second value to compare.
+ * @returns True if both values are deeply equal, false otherwise.
+ */
 function deepEqual(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (typeof a !== typeof b || a === null || b === null) return false
@@ -48,6 +54,12 @@ function deepEqual(a: unknown, b: unknown): boolean {
   return false
 }
 
+/**
+ * Checks whether immutable preregistered fields match between existing and incoming records.
+ * @param existing The existing record read from disk.
+ * @param incoming The incoming update record.
+ * @returns True if all preregistered fields match deeply, false otherwise.
+ */
 function preregisteredFieldsEqual(existing: ExperimentRecord, incoming: ExperimentRecord): boolean {
   return PREREGISTERED_FIELDS.every((field) => deepEqual(existing[field], incoming[field]))
 }
@@ -56,7 +68,7 @@ function preregisteredFieldsEqual(existing: ExperimentRecord, incoming: Experime
  * Reads and validates the append-only experiment registry, deduplicating by id with the
  * last line for a given id winning (ADR-004 episodes pattern). Malformed JSON lines and
  * schema-invalid records are skipped rather than failing the read. Pure: never creates the
- * memory dir or the registry file, and a missing file resolves to an empty array.
+ * memory dir or registry file; an unreadable or missing registry resolves to an empty array.
  * @param memoryDir Optional override for the persistent-data root.
  * @returns The deduplicated, validated experiment records.
  */
@@ -89,7 +101,7 @@ export async function readExperiments(
 /**
  * Validates and appends an experiment record to the registry. A same-id record already on
  * disk must keep its preregistered fields (registered_at/hypothesis/endpoints/test/arms)
- * byte-for-byte and may only move status forward (registered -> running -> concluded, with
+ * structurally identical and may only move status forward (registered -> running -> concluded, with
  * equal-status amendments allowed for result/decision/concluded_at on a concluded record) —
  * any violation throws ExperimentRegistryError before anything is written. Creates the
  * memory dir and registry file on first append.

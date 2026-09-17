@@ -1,14 +1,20 @@
 import type { RuleFile } from './types.ts'
 
-/** Returns whether a rule consumes one of the 150 active-pool slots. */
+/**
+ * Returns whether a rule status consumes one of the active-pool slots (active or candidate).
+ *
+ * @param status - The rule status to check
+ * @returns True if the status is 'active' or 'candidate', false otherwise
+ */
 export function isPoolCapRelevantStatus(status: RuleFile['status']): boolean {
   return status === 'active' || status === 'candidate'
 }
 
 /**
  * Calculates the specificity of a rule based on its error signature.
- * @param rule The RuleFile object to check.
- * @returns The specificity score.
+ *
+ * @param rule - The RuleFile object to check
+ * @returns The specificity score (1 for coarse, 2 for medium, 3 for fine)
  */
 export function getRuleSpecificity(rule: RuleFile): number {
   if (!rule.triggers.error_signatures || rule.triggers.error_signatures.length === 0) {
@@ -24,9 +30,12 @@ export function getRuleSpecificity(rule: RuleFile): number {
 }
 
 /**
- * Enforces the active pool cap of 150 rules.
- * @param rules The full array of rules.
- * @returns The updated array of rules with pool cap enforced.
+ * Enforces the active pool cap of 150 rules, retiring lowest-scoring rules if exceeded.
+ *
+ * @param rules - The full array of rules
+ * @returns The array of rules with pool cap enforced
+ *
+ * Mutates overflowing active/candidate rules by setting their `status` to `'retired'`.
  */
 export function enforcePoolCap(rules: RuleFile[]): RuleFile[] {
   const activeAndCandidates = rules.filter((r) => isPoolCapRelevantStatus(r.status))

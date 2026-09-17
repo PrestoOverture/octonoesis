@@ -26,7 +26,7 @@ export async function readEpisodes(
     }
     return Array.from(episodesMap.values())
   } catch (err) {
-    // If file does not exist, return empty array
+    // Preserve the store's fail-soft behavior for missing, unreadable, or malformed logs.
     return []
   }
 }

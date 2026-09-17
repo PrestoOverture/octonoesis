@@ -80,21 +80,44 @@ export class SessionStoreError extends Error {
   override name = 'SessionStoreError'
 }
 
+/**
+ * Returns the directory path where session snapshots are stored (<memoryDir>/sessions).
+ * @param memoryDir The memory directory root.
+ * @returns Path to the sessions storage directory.
+ */
 function sessionDirectory(memoryDir: string): string {
   return path.join(memoryDir, 'sessions')
 }
 
+/**
+ * Validates that a session identifier contains only safe alphanumeric and hyphen/underscore characters.
+ * @param sessionId The session ID to validate.
+ * @throws {SessionStoreError} If sessionId contains illegal characters.
+ */
 function validateSessionId(sessionId: string): void {
   if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) {
     throw new SessionStoreError(`Invalid saved session id: ${sessionId}`)
   }
 }
 
+/**
+ * Computes the target JSON file path for a session ID within the sessions directory.
+ * @param memoryDir The memory directory root.
+ * @param sessionId The validated session ID.
+ * @returns Path to the session JSON file.
+ * @throws {SessionStoreError} If sessionId fails validation.
+ */
 function sessionPath(memoryDir: string, sessionId: string): string {
   validateSessionId(sessionId)
   return path.join(sessionDirectory(memoryDir), `${sessionId}.json`)
 }
 
+/**
+ * Validates tool-use/result ordering and rejects unpaired or dangling tool calls.
+ * @param messages Array of canonical conversation messages.
+ * @param sessionId The session ID for error reporting.
+ * @throws {SessionStoreError} If a pending ID is duplicated or a tool call is unpaired or dangling.
+ */
 function validateToolPairing(messages: CanonicalMessage[], sessionId: string): void {
   const pending = new Set<string>()
   for (const message of messages) {
@@ -127,6 +150,13 @@ function validateToolPairing(messages: CanonicalMessage[], sessionId: string): v
   }
 }
 
+/**
+ * Parses and validates an unverified JSON object against storedSessionSchema.
+ * @param raw The raw unverified object.
+ * @param source Identifier or filename for error reporting.
+ * @returns The validated StoredSession.
+ * @throws {SessionStoreError} If schema validation or tool pairing checks fail.
+ */
 function parseStoredSession(raw: unknown, source: string): StoredSession {
   const parsed = storedSessionSchema.safeParse(raw)
   if (!parsed.success) {
@@ -137,6 +167,11 @@ function parseStoredSession(raw: unknown, source: string): StoredSession {
   return session
 }
 
+/**
+ * Sorts sessions by updated_at timestamp descending, breaking ties by session_id ascending.
+ * @param sessions Array of stored sessions to sort.
+ * @returns Sorted array of stored sessions.
+ */
 function sortMostRecent(sessions: StoredSession[]): StoredSession[] {
   return sessions.sort(
     (left, right) =>
@@ -145,6 +180,13 @@ function sortMostRecent(sessions: StoredSession[]): StoredSession[] {
   )
 }
 
+/**
+ * Reads all stored session files from disk, optionally skipping or throwing on invalid files.
+ * @param memoryDir The memory directory root.
+ * @param invalid Mode: 'throw' on first error, or 'skip' corrupted files.
+ * @returns A promise resolving to an array of valid StoredSessions sorted most recent first.
+ * @throws {Error} If reading a file fails and invalid mode is 'throw'.
+ */
 async function readSessionFiles(
   memoryDir: string,
   invalid: 'throw' | 'skip',
@@ -170,6 +212,10 @@ async function readSessionFiles(
   return sortMostRecent(sessions)
 }
 
+/**
+ * Enforces the SESSION_RETENTION_LIMIT (50 sessions) by removing the oldest session files on disk.
+ * @param memoryDir The memory directory root.
+ */
 async function enforceRetention(memoryDir: string): Promise<void> {
   const sessions = await readSessionFiles(memoryDir, 'skip')
   await Promise.all(
@@ -179,6 +225,14 @@ async function enforceRetention(memoryDir: string): Promise<void> {
   )
 }
 
+/**
+ * Atomically saves a session snapshot to disk using a temporary file and rename (mode 0o600).
+ * Enforces retention limits after saving.
+ * @param input Session attributes to persist (sessionId, model, repoRoot, messages).
+ * @param options Optional memory directory override and clock timestamp.
+ * @returns A promise resolving to the validated StoredSession.
+ * @throws {SessionStoreError} If session data fails validation or tool pairing checks.
+ */
 export async function saveSession(
   input: SaveSessionInput,
   options: SessionStoreOptions = {},
@@ -209,6 +263,13 @@ export async function saveSession(
   return session
 }
 
+/**
+ * Loads and validates a stored session snapshot from disk by its session ID.
+ * @param sessionId The unique session ID.
+ * @param options Optional memory directory override.
+ * @returns The validated StoredSession.
+ * @throws {SessionStoreError} If the session file is not found, unreadable, or invalid.
+ */
 export async function loadSession(
   sessionId: string,
   options: SessionStoreOptions = {},
@@ -236,6 +297,12 @@ export async function loadSession(
   }
 }
 
+/**
+ * Lists all stored sessions from disk, sorted most recent first.
+ * Optionally filters by repository root path.
+ * @param options Optional memory directory and repoRoot filter.
+ * @returns An array of StoredSession records.
+ */
 export async function listSessions(options: ListSessionsOptions = {}): Promise<StoredSession[]> {
   const memoryDir = options.memoryDir ?? getMemoryDir()
   const sessions = await readSessionFiles(memoryDir, 'throw')
@@ -244,6 +311,12 @@ export async function listSessions(options: ListSessionsOptions = {}): Promise<S
     : sessions
 }
 
+/**
+ * Loads the most recently updated session matching the specified repository root.
+ * @param repoRoot Absolute path to the repository root.
+ * @param options Optional memory directory override.
+ * @returns The most recent StoredSession or null if none found.
+ */
 export async function loadMostRecentSession(
   repoRoot: string,
   options: SessionStoreOptions = {},
@@ -251,6 +324,12 @@ export async function loadMostRecentSession(
   return (await listSessions({ ...options, repoRoot }))[0] ?? null
 }
 
+/**
+ * Extracts a truncated preview of the first user message for CLI display.
+ * @param messages Array of canonical conversation messages.
+ * @param limit Maximum character length of the preview string (default: 60).
+ * @returns Truncated preview text.
+ */
 function firstUserPreview(messages: CanonicalMessage[], limit = 60): string {
   const firstUser = messages.find((message) => message.role === 'user')
   if (!firstUser || firstUser.role !== 'user') return '(no user message)'
@@ -268,6 +347,11 @@ function firstUserPreview(messages: CanonicalMessage[], limit = 60): string {
   return characters.length > limit ? `${characters.slice(0, limit).join('')}…` : text
 }
 
+/**
+ * Formats a list of stored sessions as an aligned ASCII table for terminal display.
+ * @param sessions Array of stored sessions to format.
+ * @returns A formatted multi-line table string.
+ */
 export function formatSessionList(sessions: StoredSession[]): string {
   if (sessions.length === 0) return 'No saved sessions.'
   const headers = ['ID', 'Updated', 'Messages', 'Model', 'First user message']

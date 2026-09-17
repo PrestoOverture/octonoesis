@@ -53,7 +53,12 @@ export class CompactAbortError extends Error {
   }
 }
 
-/** Builds the exact synthetic summary message installed into compacted history. */
+/**
+ * Builds the exact synthetic summary message installed into compacted history.
+ *
+ * @param summary - Compacted summary text
+ * @returns Canonical user message wrapping the summary in `<octo-compact-summary>` tags
+ */
 export function createCompactSummaryMessage(summary: string): CanonicalMessage {
   return {
     role: 'user',
@@ -66,12 +71,25 @@ export function createCompactSummaryMessage(summary: string): CanonicalMessage {
   }
 }
 
+/**
+ * Evaluates whether an environment variable string represents a truthy boolean value.
+ *
+ * @param value - Environment variable value
+ * @returns True if value is '1', 'true', 'yes', or 'on' (case-insensitive), false otherwise
+ */
 function isTruthyEnv(value: string | undefined): boolean {
   if (!value) return false
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
-/** Returns whether the current context has crossed the model's compact threshold. */
+/**
+ * Evaluates whether the current conversation history has crossed the model's compact threshold.
+ *
+ * @param messages - Canonical message history
+ * @param model - Model identifier
+ * @param snapshot - Optional context usage snapshot from the latest provider response
+ * @returns True if compaction is enabled, prefix is compactable, and token count exceeds threshold
+ */
 export function shouldCompact(
   messages: CanonicalMessage[],
   model: string,
@@ -83,7 +101,10 @@ export function shouldCompact(
 }
 
 /**
- * Selects the boundary for the recent tail while preserving assistant/tool ownership.
+ * Computes the starting index for the preserved recent message tail while preserving tool/response pairs.
+ *
+ * @param messages - Canonical message history
+ * @returns Index where the preserved recent tail begins
  */
 export function selectKeepTail(messages: CanonicalMessage[]): number {
   let boundary = Math.max(0, messages.length - 3)
@@ -93,7 +114,12 @@ export function selectKeepTail(messages: CanonicalMessage[]): number {
   return boundary
 }
 
-/** Returns the message's plain text when it is entirely textual user content, else undefined. */
+/**
+ * Extracts plain text from a user message if all content blocks are text.
+ *
+ * @param message - The canonical message to inspect
+ * @returns Combined text content if message is a user message with only text blocks, or undefined
+ */
 function extractUserText(message: CanonicalMessage): string | undefined {
   if (message.role !== 'user') return undefined
   if (typeof message.content === 'string') return message.content
@@ -106,10 +132,11 @@ function extractUserText(message: CanonicalMessage): string | undefined {
 }
 
 /**
- * Finds the index of the most recent user task message within [1, boundary) — a plain textual
- * user message that is not a synthetic <task-notification> injected by tasks/framework.ts.
- * Returns -1 when none exists. Index 0 (the head pin) is never in this range, so it is never
- * re-selected here.
+ * Finds the index of the most recent user task message within [1, boundary) that is not a synthetic notification.
+ *
+ * @param messages - Canonical message history
+ * @param boundary - Index marking the start of the kept tail
+ * @returns Index of the latest user task message, or -1 if not found
  */
 function findLatestTaskMessageIndex(messages: CanonicalMessage[], boundary: number): number {
   for (let index = boundary - 1; index >= 1; index--) {
@@ -124,7 +151,15 @@ function findLatestTaskMessageIndex(messages: CanonicalMessage[], boundary: numb
 }
 
 /**
- * Summarizes the compactable prefix while preserving the recent valid message tail.
+ * Summarizes the compactable prefix while preserving the first message, latest task message, and recent tail.
+ *
+ * Spawns an LLM fork agent to produce the summary and logs a compaction event to the memory journal.
+ *
+ * @param messages - Full canonical message history
+ * @param opts - Compaction options including system prompt, abort signal, and fork function
+ * @returns Result containing summary, pinned head, kept tail messages, and token metrics
+ * @throws {CompactError} If prefix is too short, fork fails, or token reduction is insufficient
+ * @throws {CompactAbortError} If compaction is cancelled via abort signal
  */
 export async function compact(
   messages: CanonicalMessage[],

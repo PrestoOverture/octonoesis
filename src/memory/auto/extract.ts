@@ -17,11 +17,24 @@ export interface ExtractMemoryOptions {
   forkFn?: ForkFunction
 }
 
+/**
+ * Checks whether an environment variable string represents a truthy boolean flag.
+ *
+ * @param value - Raw environment variable string.
+ * @returns True if value is '1', 'true', 'yes', or 'on'; otherwise false.
+ */
 function isTruthyEnv(value: string | undefined): boolean {
   if (!value) return false
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
+/**
+ * Builds the prompt instruction directing the sub-agent LLM to extract durable facts, user preferences,
+ * and project conventions from the conversation while ignoring transient details.
+ *
+ * @param memoryIndex - Current index of existing memories from MEMORY.md.
+ * @returns Formatted prompt instruction string.
+ */
 function buildExtractionInstruction(memoryIndex: string): string {
   return `Extract durable memories from this completed conversation.
 Return only a strict JSON array with at most five objects. Each object must have exactly:
@@ -43,6 +56,15 @@ Existing MEMORY.md index:
 ${memoryIndex || '(empty)'}`
 }
 
+/**
+ * Automatically extracts durable memories from a completed conversation turn via an isolated LLM sub-agent fork,
+ * applying discovered creations, updates, or deletions to the memory store.
+ * Skips extraction when memory is disabled, inside nested forks, or on short (<4 messages) interactions.
+ *
+ * @param state - Conversation system prompt and message history.
+ * @param ctx - Query loop context.
+ * @param opts - Options including optional fork function override for testing.
+ */
 export async function extractMemories(
   state: MemoryExtractionState,
   ctx: QueryLoopContext,

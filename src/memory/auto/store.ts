@@ -9,14 +9,32 @@ const MEMORY_NAME_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 const MEMORY_INDEX_MAX_LINES = 200
 const MEMORY_INDEX_MAX_BYTES = 25 * 1024
 
+/**
+ * Returns the filesystem directory path where individual memory files and the MEMORY.md index reside.
+ *
+ * @returns Path to the auto-memory directory.
+ */
 export function getAutoMemoryDir(): string {
   return path.join(getMemoryDir(), 'memory')
 }
 
+/**
+ * Serializes a string as a JSON-escaped string for YAML frontmatter compatibility.
+ *
+ * @param value - Raw string.
+ * @returns JSON-quoted escaped string.
+ */
 function serializeScalar(value: string): string {
   return JSON.stringify(value)
 }
 
+/**
+ * Parses a YAML scalar value, unquoting JSON strings if double-quoted.
+ *
+ * @param value - Scalar string.
+ * @returns Unquoted string value.
+ * @throws TypeError If parsed JSON value is not a string.
+ */
 function parseScalar(value: string): string {
   const trimmed = value.trim()
   if (trimmed.startsWith('"')) {
@@ -27,6 +45,12 @@ function parseScalar(value: string): string {
   return trimmed
 }
 
+/**
+ * Serializes a MemoryFile into a Markdown document with YAML frontmatter.
+ *
+ * @param memory - MemoryFile to serialize.
+ * @returns Serialized Markdown string with frontmatter.
+ */
 export function serializeMemory(memory: MemoryFile): string {
   return [
     '---',
@@ -38,6 +62,15 @@ export function serializeMemory(memory: MemoryFile): string {
   ].join('\n')
 }
 
+/**
+ * Parses a Markdown document with YAML frontmatter into a validated MemoryFile record.
+ *
+ * @param content - File content string.
+ * @param filePath - Path to the file.
+ * @param mtime - File modification timestamp in milliseconds.
+ * @returns Validated MemoryFile object.
+ * @throws TypeError If frontmatter is missing or invalid.
+ */
 export function parseMemory(content: string, filePath: string, mtime: number): MemoryFile {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n)?([\s\S]*)$/)
   if (!match?.[1] || match[2] === undefined) {
@@ -61,10 +94,23 @@ export function parseMemory(content: string, filePath: string, mtime: number): M
   })
 }
 
+/**
+ * Checks whether an error is a filesystem file-not-found (ENOENT) error.
+ *
+ * @param error - The caught error.
+ * @returns True if error has ENOENT code; otherwise false.
+ */
 function isMissingFile(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
 }
 
+/**
+ * Truncates content to at most `maxBytes` from the tail, preserving valid UTF-8 character boundaries.
+ *
+ * @param content - Raw text content.
+ * @param maxBytes - Maximum byte length.
+ * @returns Sliced tail string.
+ */
 function tailByBytes(content: string, maxBytes: number): string {
   const buffer = Buffer.from(content)
   if (buffer.length <= maxBytes) return content
@@ -74,12 +120,24 @@ function tailByBytes(content: string, maxBytes: number): string {
   return buffer.subarray(start).toString('utf8')
 }
 
+/**
+ * Caps memory index content to at most 200 lines and 25KB bytes from the tail.
+ *
+ * @param content - Raw index file text.
+ * @returns Capped index text.
+ */
 function capMemoryIndex(content: string): string {
   const lines = content.split(/\r?\n/)
   const lineCapped = lines.slice(-MEMORY_INDEX_MAX_LINES).join('\n')
   return tailByBytes(lineCapped, MEMORY_INDEX_MAX_BYTES)
 }
 
+/**
+ * Loads and caps the `MEMORY.md` index file, returning an empty string if it does not exist.
+ *
+ * @returns Promise resolving to the index string.
+ * @throws Error If file read fails for a reason other than ENOENT.
+ */
 export async function loadMemoryIndex(): Promise<string> {
   try {
     const content = await fs.readFile(path.join(getAutoMemoryDir(), 'MEMORY.md'), 'utf8')
@@ -90,6 +148,12 @@ export async function loadMemoryIndex(): Promise<string> {
   }
 }
 
+/**
+ * Reads and parses all valid `.md` memory files from the auto-memory directory.
+ *
+ * @returns Promise resolving to an array of parsed MemoryFile objects.
+ * @throws Error If reading directory fails with an error other than ENOENT.
+ */
 export async function loadMemories(): Promise<MemoryFile[]> {
   const memoryDir = getAutoMemoryDir()
   let entries: Dirent<string>[]
@@ -122,12 +186,21 @@ export async function loadMemories(): Promise<MemoryFile[]> {
   )
 }
 
+/**
+ * Validates that a memory file name matches the allowed kebab-case slug pattern (`^[a-z0-9][a-z0-9-]*$`).
+ *
+ * @param name - Memory file name to check.
+ * @throws TypeError If the name format is invalid.
+ */
 function assertSafeMemoryName(name: string): void {
   if (!MEMORY_NAME_PATTERN.test(name)) {
     throw new TypeError(`Invalid memory name: ${name}`)
   }
 }
 
+/**
+ * Re-reads all memory files from disk and rewrites `MEMORY.md` with an updated Markdown link index.
+ */
 async function regenerateMemoryIndex(): Promise<void> {
   const memories = await loadMemories()
   const index = memories
@@ -136,6 +209,12 @@ async function regenerateMemoryIndex(): Promise<void> {
   await fs.writeFile(path.join(getAutoMemoryDir(), 'MEMORY.md'), index, 'utf8')
 }
 
+/**
+ * Applies a list of memory operations ('create', 'update', 'delete') to disk, logs journal events,
+ * and regenerates `MEMORY.md`.
+ *
+ * @param writes - Array of memory writes to validate and persist.
+ */
 export async function applyMemoryWrites(writes: MemoryWrite[]): Promise<void> {
   const validatedWrites = memoryWritesSchema.parse(writes)
   for (const write of validatedWrites) assertSafeMemoryName(write.name)

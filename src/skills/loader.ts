@@ -12,12 +12,24 @@ export interface LoadSkillsOptions {
   homeDir?: string
 }
 
+/**
+ * Strips matching surrounding single or double quotes and leading/trailing whitespace from a YAML scalar value.
+ *
+ * @param value - Raw YAML scalar string.
+ * @returns Clean unquoted string.
+ */
 function scalar(value: string): string {
   const trimmed = value.trim()
   const quoted = trimmed.match(/^(['"])(.*)\1$/)
   return quoted?.[2] ?? trimmed
 }
 
+/**
+ * Parses a simple bracketed comma-separated list of strings from frontmatter YAML (e.g. `[Read, Grep]`).
+ *
+ * @param value - Raw YAML string.
+ * @returns Array of parsed string items, or undefined if parsing failed or invalid format.
+ */
 function stringList(value: string): string[] | undefined {
   const match = value.trim().match(/^\[(.*)\]$/)
   if (!match) return undefined
@@ -27,6 +39,15 @@ function stringList(value: string): string[] | undefined {
   return values.every(Boolean) ? values : undefined
 }
 
+/**
+ * Parses a skill Markdown file containing YAML frontmatter into a validated SkillDefinition.
+ *
+ * @param name - Derived skill name slug.
+ * @param filePath - Filesystem path to the skill file.
+ * @param source - Provenance category (`'bundled'`, `'user'`, or `'project'`).
+ * @param raw - Raw file text containing frontmatter and body.
+ * @returns Validated SkillDefinition or undefined if frontmatter is missing or invalid.
+ */
 function parseSkill(
   name: string,
   filePath: string,
@@ -69,6 +90,13 @@ function parseSkill(
   }
 }
 
+/**
+ * Scans a directory for valid `.md` skill files and parses them into SkillDefinition records.
+ *
+ * @param dir - Target directory path to scan.
+ * @param source - Provenance category for skills discovered in this directory.
+ * @returns Array of loaded SkillDefinition objects.
+ */
 async function scanDirectory(dir: string, source: SkillSource): Promise<SkillDefinition[]> {
   let entries: import('node:fs').Dirent[]
   try {
@@ -99,6 +127,14 @@ async function scanDirectory(dir: string, source: SkillSource): Promise<SkillDef
   return skills
 }
 
+/**
+ * Scans bundled, user-level, and project-level skill directories and merges them in priority order.
+ * Project skills override user skills, which override bundled skills with the same name.
+ *
+ * @param repoRoot - Repository root directory path.
+ * @param homeDir - User home directory path.
+ * @returns Alphabetically sorted array of deduplicated skill definitions.
+ */
 async function scanSkills(repoRoot: string, homeDir: string): Promise<SkillDefinition[]> {
   const [user, project] = await Promise.all([
     scanDirectory(path.join(homeDir, '.octonoesis', 'skills'), 'user'),
@@ -111,7 +147,13 @@ async function scanSkills(repoRoot: string, homeDir: string): Promise<SkillDefin
   return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name))
 }
 
-/** Loads the immutable skill catalog once per repository root for this process. */
+/**
+ * Loads the immutable skill catalog once per repository root for this process, caching the result.
+ *
+ * @param repoRoot - Repository root path.
+ * @param options - Optional loader configuration such as custom home directory.
+ * @returns Promise resolving to the list of available skill definitions.
+ */
 export function loadSkills(
   repoRoot: string,
   options: LoadSkillsOptions = {},
@@ -125,6 +167,9 @@ export function loadSkills(
   return pending
 }
 
+/**
+ * Clears the internal skill catalog cache for testing purposes.
+ */
 export function clearSkillCacheForTesting(): void {
   cache.clear()
 }

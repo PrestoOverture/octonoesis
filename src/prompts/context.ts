@@ -17,13 +17,22 @@ import {
 import { buildDynamicSuffix } from './dynamic'
 import { buildStaticPrompt } from './static'
 
-// Mirrors the truthy-env convention in memory/auto/recall.ts's isTruthyEnv.
+/**
+ * Checks whether the memory subsystem is disabled via OCTONOESIS_DISABLE_MEMORY.
+ * @returns True if memory is disabled, false otherwise.
+ */
 function isMemoryDisabled(): boolean {
   const value = process.env.OCTONOESIS_DISABLE_MEMORY
   if (!value) return false
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
+/**
+ * Reads the content of an optional file, returning undefined if it does not exist.
+ * @param filePath Path to the file.
+ * @returns The file content string or undefined if ENOENT.
+ * @throws {Error} If reading fails for reasons other than ENOENT.
+ */
 async function readOptionalFile(filePath: string): Promise<string | undefined> {
   try {
     return await fs.readFile(filePath, 'utf8')
@@ -33,12 +42,22 @@ async function readOptionalFile(filePath: string): Promise<string | undefined> {
   }
 }
 
+/**
+ * Formats recalled long-term memory files into markdown sections for inclusion in the prompt.
+ * @param memories Array of recalled MemoryFile objects.
+ * @returns Formatted markdown string.
+ */
 function formatRelevantMemories(memories: MemoryFile[]): string {
   return memories
     .map((memory) => `## Relevant Memory: ${memory.name} (${memory.type})\n${memory.content}`)
     .join('\n\n')
 }
 
+/**
+ * Formats available skills into a catalog section for the system prompt.
+ * @param skills Array of loaded skill definitions.
+ * @returns Markdown text listing available skills and invocation guidance.
+ */
 export function formatSkillCatalog(skills: readonly SkillDefinition[]): string {
   const lines = [...skills]
     .sort((a, b) => a.name.localeCompare(b.name))
@@ -54,6 +73,17 @@ export function formatSkillCatalog(skills: readonly SkillDefinition[]): string {
   ].join('\n')
 }
 
+/**
+ * Gathers and builds raw context sources (static prompt, CLAUDE.md / OCTONOESIS.md, memory index,
+ * skills catalog, session start rules, recalled memories, and dynamic runtime suffix).
+ * @param ctx Tool and query loop context.
+ * @param model Active model identifier.
+ * @param usage Current session token usage.
+ * @param recalledMemories Array of auto-recalled memories.
+ * @param skills Optional loaded skills list.
+ * @param rules Optional active rule pool.
+ * @returns An array of ContextSource objects tagged with priority and channel.
+ */
 export async function buildSessionContextSources(
   ctx: QueryLoopContext,
   model: string,
@@ -133,6 +163,16 @@ export async function buildSessionContextSources(
   return sources
 }
 
+/**
+ * Assembles and compiles session context into cache-stable system prompt and dynamic preamble strings.
+ * @param ctx Tool and query loop context.
+ * @param model Active model identifier.
+ * @param usage Current session token usage.
+ * @param recalledMemories Array of auto-recalled memories.
+ * @param skills Optional loaded skills list.
+ * @param rules Optional active rule pool.
+ * @returns Compiled context ready for model dispatch.
+ */
 export async function assembleSessionContext(
   ctx: QueryLoopContext,
   model: string,
