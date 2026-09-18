@@ -7,6 +7,9 @@ export type RuleStatus =
   | 'banned'
   | 'superseded'
 
+/**
+ * Represents a persistent distilled rule file and its metadata.
+ */
 export interface RuleFile {
   id: string // rule-<slug>
   triggers: {

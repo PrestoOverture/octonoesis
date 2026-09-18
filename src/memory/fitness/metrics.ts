@@ -18,6 +18,7 @@ export const RULE_STATUSES: RuleStatus[] = [
 
 export type RuleStatusCounts = Record<RuleStatus, number>
 
+/** Rule hit rate and posterior statistics grouped by prompt template hash. */
 export interface PromptHashHitRate {
   prompt_hash: string
   rule_count: number
@@ -30,6 +31,7 @@ export interface PromptHashHitRate {
   credible_interval: [number, number]
 }
 
+/** Calibration reliability metrics and Brier score for a single ISO week. */
 export interface WeeklyCalibrationTrend {
   week: string
   records: number
@@ -38,12 +40,14 @@ export interface WeeklyCalibrationTrend {
   first_attempt_success_rate: number
 }
 
+/** Historical calibration trend containing overall Brier score and weekly series. */
 export interface CalibrationTrend {
   group_count: number
   overall_brier: number | null
   weekly: WeeklyCalibrationTrend[]
 }
 
+/** Repeat failure rate and repeat count metrics for a single ISO week. */
 export interface WeeklyRepeatFailureTrend {
   week: string
   occurrences: number
@@ -51,6 +55,7 @@ export interface WeeklyRepeatFailureTrend {
   repeat_failure_rate: number
 }
 
+/** Health, capacity utilization, staleness, and confidence distribution of the rule pool. */
 export interface RulePoolHealth {
   rule_count: number
   status_counts: RuleStatusCounts
@@ -64,6 +69,7 @@ export interface RulePoolHealth {
   oldest_active_staleness_days: number | null
 }
 
+/** Average cost metrics per resolved troubleshooting episode for a single ISO week. */
 export interface WeeklyCostPerResolvedTask {
   week: string
   resolved_episode_count: number
@@ -73,11 +79,13 @@ export interface WeeklyCostPerResolvedTask {
   unpriced_session_count: number
 }
 
+/** Summary of cost per resolved task over time with weekly granularity. */
 export interface CostPerResolvedTask {
   unpriced_session_count: number
   weekly: WeeklyCostPerResolvedTask[]
 }
 
+/** Summary of record counts and time span covered across local ledger files. */
 export interface LedgerCoverage {
   journal_first_ts: string | null
   journal_last_ts: string | null

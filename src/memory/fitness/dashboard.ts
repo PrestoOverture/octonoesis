@@ -12,6 +12,7 @@ import {
 } from './metrics.ts'
 import type { FitnessDashboard } from './schema.ts'
 
+/** Aggregated ledger data loaded from disk and provided to dashboard compilation. */
 export interface FitnessInput {
   journal: JournalReadResult
   episodes: Episode[]
@@ -20,6 +21,7 @@ export interface FitnessInput {
   stats: StatsReadResult
 }
 
+/** Filtering and temporal options for compiling the learning-loop fitness dashboard. */
 export interface FitnessDashboardOptions {
   now: Date
   weeks?: number

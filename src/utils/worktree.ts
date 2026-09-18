@@ -7,6 +7,7 @@ import { promisify } from 'node:util'
 const execFileAsync = promisify(execFile)
 const WORKTREE_PARENT = path.join(os.tmpdir(), 'octonoesis-worktrees')
 
+/** Metadata describing an isolated Git worktree created for subagent execution. */
 export interface AgentWorktree {
   repoRoot: string
   path: string

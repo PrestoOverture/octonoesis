@@ -49,6 +49,7 @@ const storedSessionSchema = z
   })
   .strict()
 
+/** Persistent JSON snapshot of a saved interactive session and its message history. */
 export interface StoredSession {
   schema_version: 1
   session_id: string
@@ -58,6 +59,7 @@ export interface StoredSession {
   messages: CanonicalMessage[]
 }
 
+/** Parameters required to save or update a session snapshot in the session store. */
 export interface SaveSessionInput {
   sessionId: string
   model: string
@@ -65,11 +67,13 @@ export interface SaveSessionInput {
   messages: CanonicalMessage[]
 }
 
+/** Common options for session storage operations, allowing directory or time overrides. */
 export interface SessionStoreOptions {
   memoryDir?: string
   now?: Date
 }
 
+/** Options for querying saved sessions, optionally filtering by repository root. */
 export interface ListSessionsOptions extends SessionStoreOptions {
   repoRoot?: string
 }

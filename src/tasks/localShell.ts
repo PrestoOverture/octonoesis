@@ -12,6 +12,7 @@ import { recordTaskTransition, registerTask, taskLogPath } from './framework'
 
 export const MAX_BACKGROUND_SHELL_TASKS = 4
 
+/** Tracking record for a background shell subprocess and its output stream. */
 export interface LocalShellTaskRecord {
   task: TaskState
   ctx: QueryLoopContext
@@ -21,6 +22,7 @@ export interface LocalShellTaskRecord {
   kill: () => Promise<void>
 }
 
+/** Configuration parameters for launching an asynchronous background shell command. */
 export interface StartLocalShellTaskOptions {
   ctx: QueryLoopContext
   command: string

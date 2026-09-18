@@ -1,6 +1,7 @@
 export type SkillContext = 'inline' | 'fork'
 export type SkillSource = 'bundled' | 'project' | 'user'
 
+/** Metadata and instructions defining an on-demand agent skill loaded from disk. */
 export interface SkillDefinition {
   name: string
   description: string

@@ -21,6 +21,7 @@ export const calibrationRecordSchema = z.object({
 
 export type CalibrationRecord = z.infer<typeof calibrationRecordSchema>
 
+/** Aggregated statistical metrics and Beta distribution parameters for an error signature bucket. */
 export interface BucketStats {
   bucket_key: string
   model_id: string

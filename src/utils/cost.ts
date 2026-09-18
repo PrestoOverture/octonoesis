@@ -1,5 +1,6 @@
 import type { Usage } from '../providers/types'
 
+/** Pricing rates in USD per one million tokens for a specific model tier. */
 export interface ModelPricing {
   input: number
   output: number

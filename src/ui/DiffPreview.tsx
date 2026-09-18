@@ -3,6 +3,9 @@ import { createPatch } from 'diff'
 import { Box, Text } from 'ink'
 import React from 'react'
 
+/**
+ * Props for the DiffPreview component rendering visual file diffs.
+ */
 export interface DiffPreviewProps {
   oldText: string
   newText: string

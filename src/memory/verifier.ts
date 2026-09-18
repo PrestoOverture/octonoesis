@@ -8,6 +8,9 @@ import { appendJournal } from './journal.ts'
 
 export type VerifyVerdict = 'PASS' | 'FAIL' | 'PARTIAL'
 
+/**
+ * Result of executing a verification command and analyzing its output.
+ */
 export interface VerifyResult {
   verdict: VerifyVerdict
   fingerprints: Fingerprint[]

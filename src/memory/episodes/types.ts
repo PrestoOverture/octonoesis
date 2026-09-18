@@ -11,6 +11,7 @@ export type AttributionStatus =
   | 'indirect_only' // no direct candidate, but resolved
   | 'unattributable' // cannot determine
 
+/** Structured record of a troubleshooting episode capturing failure, fix candidates, and resolution outcome. */
 export interface Episode {
   id: string // e.g. ep_0001
   timestamp: string // ISO string

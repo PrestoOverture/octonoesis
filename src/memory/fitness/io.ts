@@ -26,11 +26,13 @@ export const sessionStatsRecordSchema = z.object({
 
 export type SessionStatsRecord = z.infer<typeof sessionStatsRecordSchema>
 
+/** Parsed session stats records and total row count read from stats.jsonl. */
 export interface StatsReadResult {
   row_count: number
   records: SessionStatsRecord[]
 }
 
+/** Parsed journal events and total line count read from journal.jsonl. */
 export interface JournalReadResult {
   line_count: number
   events: JournalEvent[]

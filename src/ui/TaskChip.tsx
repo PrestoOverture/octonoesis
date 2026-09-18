@@ -2,6 +2,9 @@ import { Box, Text } from 'ink'
 import React, { useEffect, useState } from 'react'
 import type { QueryLoopContext } from '../query/types'
 
+/**
+ * Props for the TaskChip component rendering active background task indicators.
+ */
 export interface TaskChipProps {
   ctx: QueryLoopContext
   pollIntervalMs?: number

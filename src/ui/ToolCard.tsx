@@ -1,6 +1,9 @@
 import { Box, Text } from 'ink'
 import React from 'react'
 
+/**
+ * Props for the ToolCard component displaying execution status of a tool.
+ */
 export interface ToolCardProps {
   tool: string
   args: string

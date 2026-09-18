@@ -1,3 +1,4 @@
+/** Shape parameters alpha and beta defining a Beta probability distribution. */
 export interface BetaParams {
   alpha: number
   beta: number

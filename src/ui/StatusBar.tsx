@@ -1,6 +1,9 @@
 import { Box, Text } from 'ink'
 import React from 'react'
 
+/**
+ * Props for the StatusBar component displaying model info, token metrics, and cost.
+ */
 export interface StatusBarProps {
   modelName: string
   inputTokens: number

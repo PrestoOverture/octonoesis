@@ -8,11 +8,13 @@ import { memoryWritesSchema } from './types'
 
 type ForkFunction = (opts: ForkOptions) => Promise<ForkResult>
 
+/** Context messages and system instructions supplied to memory extraction. */
 export interface MemoryExtractionState {
   system: string
   messages: CanonicalMessage[]
 }
 
+/** Options configuring memory extraction execution. */
 export interface ExtractMemoryOptions {
   forkFn?: ForkFunction
 }

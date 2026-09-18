@@ -31,10 +31,12 @@ const FORK_PURPOSES = new Set([
 
 export const MAX_FORK_PENDING_MESSAGES = 16
 
+/** Channel interface for draining pending inter-agent messages received by a fork child. */
 export interface ForkMessageChannel {
   drain(): string[]
 }
 
+/** Mock configuration options for deterministic fork child testing. */
 interface ForkMockConfig {
   text?: string
   delayMs?: number

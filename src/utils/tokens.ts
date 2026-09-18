@@ -5,6 +5,7 @@ const DEFAULT_CONTEXT_WINDOW = 128_000
 const COMPACT_OUTPUT_RESERVE = 20_000
 const COMPACT_SAFETY_MARGIN = 13_000
 
+/** Snapshot of known provider token count covering a specific prefix of messages. */
 export interface ContextSnapshot {
   tokens: number
   coveredCount: number

@@ -121,6 +121,7 @@ export class OpenAIProvider implements LLMProvider {
       )
 
       // Keep track of streaming tool call parts
+      /** Accumulator for streaming tool call chunks received from the OpenAI API. */
       interface AccumulatedToolCall {
         id?: string
         name?: string

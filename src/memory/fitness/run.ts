@@ -3,6 +3,9 @@ import { buildFitnessDashboard, formatFitnessJson } from './dashboard.ts'
 import { formatFitnessDashboard } from './format.ts'
 import { loadFitnessInput } from './io.ts'
 
+/**
+ * Options for rendering the memory fitness dashboard.
+ */
 export interface RenderFitnessDashboardOptions {
   memoryDir?: string
   now?: Date

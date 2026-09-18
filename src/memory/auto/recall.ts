@@ -6,6 +6,7 @@ import type { MemoryFile } from './types'
 
 type ForkFunction = (opts: ForkOptions) => Promise<ForkResult>
 
+/** Options configuring memory recall filtering and LLM fork invocation. */
 export interface RecallOptions {
   systemPrompt?: string
   signal?: AbortSignal

@@ -1,6 +1,7 @@
 import { dbg } from './debug'
 import { isRetriableError } from './errors'
 
+/** Configuration options for exponential backoff retry strategies. */
 export interface RetryOptions {
   maxAttempts?: number
   baseDelayMs?: number

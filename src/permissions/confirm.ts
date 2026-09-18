@@ -37,6 +37,7 @@ type PromptHandler = (
 let activePromptHandler: PromptHandler | null = null
 const PERMISSION_ABORTED = Symbol('permission-aborted')
 
+/** Internal state tracking non-interactive/fallback terminal prompt line buffering and answer callbacks. */
 interface FallbackPromptState {
   input: NodeJS.ReadableStream
   interface: readline.Interface

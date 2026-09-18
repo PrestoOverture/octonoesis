@@ -10,6 +10,7 @@ import type { SkillDefinition } from './types'
 
 export const READ_ONLY_FORK_SKILL_TOOLS = ['Read', 'Grep', 'Glob'] as const
 
+/** Options passed when invoking an inline or forked skill definition. */
 export interface ExecuteSkillOptions {
   args?: string
   ctx: ToolContext

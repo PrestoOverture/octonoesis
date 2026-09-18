@@ -15,6 +15,7 @@ import type {
 export const HOOK_TIMEOUT_MS = 5_000
 const HOOK_TERM_GRACE_MS = 250
 
+/** Timing and timeout configuration options for hook execution. */
 export interface ExecuteHooksOptions {
   timeoutMs?: number
   termGraceMs?: number

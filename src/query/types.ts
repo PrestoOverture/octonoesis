@@ -16,15 +16,24 @@ export type ExitReason =
   | 'budget_exceeded'
   | 'prompt_too_long'
 
+/**
+ * Associates an injected rule with the error fingerprint that triggered it.
+ */
 export interface InjectedRule {
   rule: RuleFile
   fingerprint: Fingerprint
 }
 
+/**
+ * Verification result augmented with whether an execution actually ran.
+ */
 export interface VerifyResultWithRun extends VerifyResult {
   isVerificationRun: boolean
 }
 
+/**
+ * Internal state maintained across turns and queries within a session.
+ */
 export interface QueryInternalState {
   _lastVerifyResult?: VerifyResultWithRun
   _lastVerifyResultForQuery?: VerifyResultWithRun
@@ -40,6 +49,9 @@ export interface QueryInternalState {
   experimentArm?: { experimentId: string; arm: string } | null
 }
 
+/**
+ * Public metadata and metrics describing an ongoing or completed query session.
+ */
 export interface SessionState {
   sessionId: string
   startTime: number
@@ -53,6 +65,9 @@ export interface SessionState {
 
 export type { HookRegistry } from '../hooks/registry'
 
+/**
+ * State tracking for background shell or agent tasks.
+ */
 export interface TaskState {
   id: string
   type: 'shell' | 'agent'
@@ -68,6 +83,9 @@ export interface TaskState {
   logPath?: string
 }
 
+/**
+ * Configuration options for execution sandboxing and security restrictions.
+ */
 export interface SandboxConfig {
   enabled: boolean
   filesystem?: {
@@ -79,6 +97,9 @@ export interface SandboxConfig {
   }
 }
 
+/**
+ * Context fields passed to tools during query execution.
+ */
 export interface QueryToolContextFields {
   repoRoot: string
   /** Resolved persistent-data root injected by the CLI/UI boundary. */
@@ -101,6 +122,9 @@ export interface QueryToolContextFields {
   verificationCommand?: string
 }
 
+/**
+ * Core mutable state tracked during a query execution loop.
+ */
 export interface QueryState {
   turn: number
   messages: CanonicalMessage[]
@@ -120,6 +144,9 @@ export interface QueryState {
   hooks: HookRegistry
 }
 
+/**
+ * Final execution result returned after a query run finishes.
+ */
 export interface QueryResultV1 {
   exit_reason: ExitReason
   usage: Usage

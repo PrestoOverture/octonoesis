@@ -4,6 +4,7 @@ export { estimateTokens }
 
 export type ContextPriority = 'critical' | 'high' | 'medium' | 'low'
 
+/** A single content block contributed to the prompt compilation pipeline. */
 export interface ContextSource {
   id: string
   channel: 'systemStable' | 'preamble'
@@ -12,11 +13,13 @@ export interface ContextSource {
   tokens?: number
 }
 
+/** Token budget limits and per-source caps for prompt compilation. */
 export interface ContextBudget {
   totalSystemPromptCap: number
   perSourceCaps: Record<string, number>
 }
 
+/** Compiled prompt channels partitioned into cache-stable and dynamic preamble text. */
 export interface CompiledContext {
   systemStable: string
   preamble: string
@@ -51,6 +54,7 @@ export class ContextBudgetError extends Error {
   }
 }
 
+/** Internal wrapper attaching token accounting and inclusion status to a context source. */
 interface PreparedSource extends ContextSource {
   included: boolean
   budgetTokens: number

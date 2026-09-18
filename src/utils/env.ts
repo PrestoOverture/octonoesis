@@ -1,3 +1,4 @@
+/** Holds optional API keys for supported LLM providers (Anthropic, OpenAI). */
 export interface ProviderCredentials {
   ANTHROPIC_API_KEY?: string
   OPENAI_API_KEY?: string

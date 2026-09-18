@@ -60,6 +60,7 @@ export function filterRulesForArm(
   )
 }
 
+/** Input fields for recording an experiment arm assignment in the persistent ledger. */
 export interface AssignmentRecordInput {
   session_id: string
   experiment_id: string

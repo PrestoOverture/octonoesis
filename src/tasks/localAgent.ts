@@ -13,6 +13,7 @@ import { recordTaskTransition, registerTask, taskLogPath } from './framework'
 
 export const MAX_BACKGROUND_AGENTS = 4
 
+/** Tracking record for a long-running background subagent task and its worktree. */
 export interface LocalAgentRecord {
   agentId: string
   ctx: QueryLoopContext
@@ -24,6 +25,7 @@ export interface LocalAgentRecord {
   result: Promise<ForkResult>
 }
 
+/** Configuration options for launching an asynchronous background subagent. */
 export interface StartLocalAgentOptions {
   ctx: QueryLoopContext
   forkOptions: ForkOptions

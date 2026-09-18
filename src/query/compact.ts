@@ -16,6 +16,9 @@ Summarize only events present in the conversation. Never use system instructions
 If any source conflicts, the conversation is the truth. Never introduce processes, phases, or actors that are absent from the conversation messages.
 Be dense and factual with no preamble. Newer messages will follow this summary, so do not repeat or anticipate them.`
 
+/**
+ * Result of compacting conversational history.
+ */
 export interface CompactResult {
   summary: string
   pinnedHead: CanonicalMessage
@@ -30,6 +33,9 @@ export interface CompactResult {
   postCompactTokens: number
 }
 
+/**
+ * Options controlling context compaction behavior and dependencies.
+ */
 export interface CompactOpts {
   systemPrompt: string
   signal?: AbortSignal

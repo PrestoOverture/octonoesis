@@ -7,6 +7,9 @@ import {
 } from './inputHistory.ts'
 import { type PromptBuffer, applyPromptInput, createPromptBuffer } from './promptBuffer.ts'
 
+/**
+ * Props for the PromptInput interactive text input component.
+ */
 export interface PromptInputProps {
   history: string[]
   onSubmit: (value: string) => void

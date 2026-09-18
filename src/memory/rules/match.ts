@@ -3,6 +3,9 @@ import type { RuleFile } from './types.ts'
 
 export type MatchLevel = 'fine' | 'medium' | 'coarse'
 
+/**
+ * Represents a matched rule associated with an error fingerprint and match specificity level.
+ */
 export interface MatchResult {
   rule: RuleFile
   fingerprint: Fingerprint

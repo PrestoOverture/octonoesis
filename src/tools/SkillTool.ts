@@ -11,6 +11,7 @@ const SkillInputSchema = z.object({
 
 type SkillInput = z.infer<typeof SkillInputSchema>
 
+/** Configuration options for initializing a SkillTool instance. */
 export interface SkillToolOptions {
   systemPrompt: string
   onForkUsage?: (usage: Usage) => void

@@ -15,6 +15,7 @@ export type ForkPurpose =
   | 'tool_summary'
   | 'agent'
 
+/** Execution options for spawning a child fork agent process. */
 export interface ForkOptions {
   systemPrompt: string
   messages: CanonicalMessage[]
@@ -28,6 +29,7 @@ export interface ForkOptions {
   repoRoot?: string
 }
 
+/** Result returned upon completion of an isolated fork agent execution. */
 export interface ForkResult {
   text: string
   usage: Usage
@@ -37,6 +39,7 @@ export interface ForkResult {
   systemPromptSha256?: string
 }
 
+/** Prepared configuration payload and environment passed to a child fork agent process. */
 export interface PreparedFork {
   repoRoot: string
   systemPrompt: string
@@ -64,6 +67,7 @@ export const DEFAULT_FORK_TIMEOUT_MS = 60_000
 
 const FORK_ABORT_GRACE_MS = 2000
 
+/** Low-level handle to an active fork child subprocess. */
 interface ForkSubprocess {
   pid: number
   stdin: {
@@ -76,6 +80,7 @@ interface ForkSubprocess {
   kill(signal?: NodeJS.Signals): void
 }
 
+/** Controlling handle for an active background fork agent allowing messaging and termination. */
 export interface ForkHandle {
   pid: number
   result: Promise<ForkResult>

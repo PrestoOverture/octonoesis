@@ -7,6 +7,7 @@ const FILE_STATE_CACHE_KEY = Symbol('fileStateCache')
 
 type FileStateCache = Map<string, string> // Map<absolutePath, contentHash>
 
+/** ToolContext extended with an internal cache of file paths to content hashes. */
 interface ExtendedToolContext extends ToolContext {
   [FILE_STATE_CACHE_KEY]?: FileStateCache
 }

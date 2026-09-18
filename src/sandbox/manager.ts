@@ -4,11 +4,13 @@ import path from 'node:path'
 import type { SandboxConfig } from '../query/types'
 import { DEFAULT_ALLOW_WRITE, DEFAULT_DENY_READ, type ResolvedSandboxConfig } from './types'
 
+/** Host environment paths used when resolving sandbox configuration. */
 export interface SandboxConfigEnvironment {
   homeDir?: string
   tmpDir?: string
 }
 
+/** Inputs and configuration sources used to construct a resolved sandbox configuration. */
 export interface SandboxConfigSources {
   repoRoot: string
   cliEnabled?: boolean
@@ -17,6 +19,7 @@ export interface SandboxConfigSources {
   environment?: SandboxConfigEnvironment
 }
 
+/** System environment capabilities checked to determine sandbox runtime availability. */
 export interface SandboxAvailabilityEnvironment {
   platform?: NodeJS.Platform
   findExecutable?: (name: string) => string | null

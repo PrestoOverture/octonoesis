@@ -5,6 +5,7 @@ export const MEMORY_TYPES = ['user', 'feedback', 'project', 'reference'] as cons
 export const memoryTypeSchema = z.enum(MEMORY_TYPES)
 export type MemoryType = z.infer<typeof memoryTypeSchema>
 
+/** Stored auto-memory file containing markdown content and frontmatter metadata. */
 export interface MemoryFile {
   name: string
   description: string
@@ -14,6 +15,7 @@ export interface MemoryFile {
   mtime: number
 }
 
+/** Proposed file creation, update, or deletion operation emitted during memory extraction. */
 export interface MemoryWrite {
   action: 'create' | 'update' | 'delete'
   name: string

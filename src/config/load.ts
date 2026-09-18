@@ -6,6 +6,7 @@ import { ConfigValidationError, DEFAULT_CONFIG, type OctonoesisConfig, parseConf
 
 const execFileAsync = promisify(execFile)
 
+/** In-memory cache entry holding pending config loading and git-tracking promises. */
 interface ConfigCacheEntry {
   config: Promise<OctonoesisConfig>
   tracked: Promise<boolean>

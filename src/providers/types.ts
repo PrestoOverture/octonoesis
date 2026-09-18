@@ -20,12 +20,14 @@ export type StreamEvent =
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'message_end'; usage: Usage }
 
+/** Canonical representation of a tool definition passed to an LLM provider. */
 export interface CanonicalTool {
   name: string
   description: string
   inputSchema: Record<string, unknown>
 }
 
+/** Adapter interface for an LLM provider that streams canonical events. */
 export interface LLMProvider {
   name: 'anthropic' | 'openai-compatible'
   createMessageStream(

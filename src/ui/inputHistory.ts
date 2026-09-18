@@ -1,20 +1,32 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
+/**
+ * Represents a timestamped entry in the persisted input history log.
+ */
 export interface InputHistoryEntry {
   ts: string
   text: string
 }
 
+/**
+ * Options controlling how an entry is appended to input history.
+ */
 export interface AppendInputHistoryOptions {
   now?: Date
 }
 
+/**
+ * Cursor tracking position and draft state during input history navigation.
+ */
 export interface InputHistoryCursor {
   index: number | null
   draft: string
 }
 
+/**
+ * Result of navigating forward or backward in input history.
+ */
 export interface InputHistoryNavigation {
   value: string
   cursor: InputHistoryCursor

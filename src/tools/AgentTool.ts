@@ -18,6 +18,7 @@ type AgentInput = z.infer<typeof AgentInputSchema>
 export const AGENT_MAX_TURNS = 12
 export const AGENT_TIMEOUT_MS = 300_000
 
+/** Configuration options for initializing an AgentTool instance. */
 export interface AgentToolOptions {
   systemPrompt: string
   model: string

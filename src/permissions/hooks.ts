@@ -1,6 +1,7 @@
 import { executeAttachedHooks } from '../hooks/execute'
 import type { ToolContext } from '../tools/Tool'
 
+/** Outcome decision returned by pre-tool-use permission hooks (allow, deny, or modify). */
 export interface PreToolUseDecision {
   action: 'allow' | 'deny' | 'modify'
   reason?: string

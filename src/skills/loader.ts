@@ -8,6 +8,7 @@ import type { SkillContext, SkillDefinition, SkillSource } from './types'
 const SKILL_SLUG = /^[a-z0-9][a-z0-9-]*$/
 const cache = new Map<string, Promise<SkillDefinition[]>>()
 
+/** Options for customizing skill discovery paths. */
 export interface LoadSkillsOptions {
   homeDir?: string
 }

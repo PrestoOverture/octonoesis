@@ -10,6 +10,7 @@ import { getMemoryDir } from '../utils/path'
 
 let writeQueue: Promise<void> = Promise.resolve()
 
+/** Additional metadata appended when recording session completion statistics to stats.jsonl. */
 export interface SessionStatsExtras {
   priced: boolean
   durationMs: number

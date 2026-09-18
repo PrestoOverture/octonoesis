@@ -20,6 +20,7 @@ export const DEFAULT_ALLOW_WRITE = [
   '/dev/stderr',
 ] as const
 
+/** Fully resolved macOS seatbelt sandbox configuration with absolute paths and permissions. */
 export interface ResolvedSandboxConfig extends SandboxConfig {
   repoRoot: string
   protectedWrite: string

@@ -17,6 +17,9 @@ export const AUTO_DISTILL_MAX_CALLS_PER_SESSION = AUTO_DISTILL_MAX_CALLS_PER_QUE
 export const AUTO_DISTILL_MIN_VALUE_SCORE = 0
 export const AUTO_DISTILL_EXTRACTOR_VERSION = '0.2.0'
 
+/**
+ * Options controlling automated rule distillation from episodes.
+ */
 export interface AutoDistillOptions {
   memoryDir?: string
   maxCalls?: number

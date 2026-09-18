@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 
+/** A task item tracked in the reactive todo list state. */
 export interface Todo {
   id: string
   content: string

@@ -2,6 +2,9 @@ import { Box, Text, useInput } from 'ink'
 import React from 'react'
 import { DiffPreview } from './DiffPreview'
 
+/**
+ * Props for the ConfirmDialog interactive tool authorization dialog.
+ */
 export interface ConfirmDialogProps {
   toolName: string
   input: unknown

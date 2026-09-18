@@ -27,6 +27,9 @@ import { ToolCard } from './ToolCard'
 import { appendInputHistory, loadInputHistory } from './inputHistory'
 export type { CanonicalMessage } from '../query'
 
+/**
+ * Props for the root TUI application component.
+ */
 export interface AppProps {
   messages?: CanonicalMessage[]
   streamingText?: string
@@ -274,6 +277,9 @@ export function App(props: AppProps) {
   })
 
   // Permission dialog state
+  /**
+   * Pending interactive confirmation request for tool execution permission.
+   */
   interface PendingConfirm {
     toolName: string
     input: unknown

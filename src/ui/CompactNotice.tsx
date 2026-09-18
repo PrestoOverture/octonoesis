@@ -1,6 +1,9 @@
 import { Box, Text } from 'ink'
 import React from 'react'
 
+/**
+ * Props for the CompactNotice component displaying context compaction results.
+ */
 export interface CompactNoticeProps {
   preTokens: number
   postTokens: number

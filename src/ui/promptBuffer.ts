@@ -1,8 +1,14 @@
+/**
+ * Represents the text content and cursor position of an input buffer.
+ */
 export interface PromptBuffer {
   text: string
   cursor: number
 }
 
+/**
+ * Keyboard input event descriptor for prompt handling.
+ */
 export interface PromptKey {
   upArrow?: boolean
   downArrow?: boolean

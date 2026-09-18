@@ -130,6 +130,9 @@ type ReadyEngineState = EngineState & {
   tools: CanonicalTool[]
 }
 
+/**
+ * Prompt, tool, and conversational context compiled for a query turn.
+ */
 export interface AssembledContext {
   system: string
   dynamicSystem: string
@@ -1067,6 +1070,9 @@ export async function* query(
   }
 }
 
+/**
+ * Options for executing a query via the CLI engine.
+ */
 export interface RunQueryOptions {
   messages?: CanonicalMessage[]
   persistSession?: boolean

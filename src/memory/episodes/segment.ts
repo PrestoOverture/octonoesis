@@ -8,6 +8,7 @@ export type StoredJournalEvent = JournalEvent & {
   session_id: string
 }
 
+/** Stored journal event augmented with its originating line number in the journal file. */
 export interface JournalEventWithLine {
   event: StoredJournalEvent
   line: number
@@ -93,6 +94,7 @@ export function segmentJournal(
   let nextIdIndex = startEpisodeIndex
 
   // Open episodes being tracked: signature -> partial Episode + active state
+  /** Intermediate tracking state for an open episode undergoing troubleshooting segmentation. */
   interface ActiveEpisodeState {
     state: 'FAILING' | 'FIXING'
     session_id: string
