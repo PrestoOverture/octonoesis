@@ -25,7 +25,17 @@ import { TaskChip } from './TaskChip'
 import { TodoPanel } from './TodoPanel'
 import { ToolCard } from './ToolCard'
 import { appendInputHistory, loadInputHistory } from './inputHistory'
+import { renderMarkdown } from './markdown'
 export type { CanonicalMessage } from '../query'
+
+// Identity metadata lives only in the UI, never on canonical messages.
+const verbatimMessages = new WeakSet<CanonicalMessage>()
+
+export function verbatimAssistantMessage(text: string): CanonicalMessage {
+  const message: CanonicalMessage = { role: 'assistant', content: [{ type: 'text', text }] }
+  verbatimMessages.add(message)
+  return message
+}
 
 /**
  * Props for the root TUI application component.
@@ -152,7 +162,7 @@ export function MessageList(props: { messages?: CanonicalMessage[] }) {
                   return (
                     // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
                     <Text key={bIdx} color="white">
-                      {block.text}
+                      {verbatimMessages.has(msg) ? block.text : renderMarkdown(block.text)}
                     </Text>
                   )
                 }
@@ -204,7 +214,7 @@ export function StreamingResponse(props: {
           <Text bold color="green">
             Agent ›
           </Text>
-          <Text color="white">{text}</Text>
+          <Text color="white">{renderMarkdown(text)}</Text>
         </Box>
       ) : null}
       {toolUses.map((tool, idx) => {
@@ -386,17 +396,11 @@ export function App(props: AppProps) {
           const statsList = aggregateCalibrationStats(records)
           const table = formatStatsTable(statsList)
 
-          const assistantMsg: CanonicalMessage = {
-            role: 'assistant',
-            content: [{ type: 'text', text: table }],
-          }
+          const assistantMsg = verbatimAssistantMessage(table)
           setMessages((prev) => [...prev, assistantMsg])
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err)
-          const assistantMsg: CanonicalMessage = {
-            role: 'assistant',
-            content: [{ type: 'text', text: `Failed to load stats: ${errMsg}` }],
-          }
+          const assistantMsg = verbatimAssistantMessage(`Failed to load stats: ${errMsg}`)
           setMessages((prev) => [...prev, assistantMsg])
         }
       })()
@@ -479,24 +483,18 @@ export function App(props: AppProps) {
           }
           const resumedTurn = promptIndex >= 0 ? history.slice(promptIndex + 1) : []
           if (failure) {
-            resumedTurn.push({
-              role: 'assistant',
-              content: [{ type: 'text', text: failure }],
-            })
+            resumedTurn.push(verbatimAssistantMessage(failure))
           }
           setMessages((previous) => [...previous, ...resumedTurn])
         } else {
           if (failure) {
-            history.push({ role: 'assistant', content: [{ type: 'text', text: failure }] })
+            history.push(verbatimAssistantMessage(failure))
           }
           setMessages(history)
         }
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err)
-        const failureMessage: CanonicalMessage = {
-          role: 'assistant',
-          content: [{ type: 'text', text: `Query failed: ${detail}` }],
-        }
+        const failureMessage = verbatimAssistantMessage(`Query failed: ${detail}`)
         setMessages((previous) =>
           resumeInfo ? [...previous, failureMessage] : [...(ctx.messages ?? []), failureMessage],
         )

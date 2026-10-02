@@ -36,6 +36,7 @@
     "fast-glob": "^3.3.0",
     "ink": "^7.0.0",
     "ink-text-input": "^6.0.0",
+    "marked": "18.0.14",
     "openai": "^6.38.0",
     "react": "19",
     "zod": "^4.0.0"
