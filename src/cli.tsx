@@ -32,6 +32,7 @@ import {
 } from './state/sessionStore.ts'
 import { cleanupTasks } from './tasks/framework.ts'
 import { App } from './ui/App'
+import { prepareScreenSequence } from './ui/screen'
 import { dbg } from './utils/debug.ts'
 import { hasAnthropicKey, hasOpenAIKey } from './utils/env.ts'
 import { getMemoryDir, getRepoRoot } from './utils/path.ts'
@@ -335,6 +336,9 @@ program
         sandbox,
         config: startupConfig,
         tasks: new Map(),
+      }
+      if (process.stdout.isTTY === true) {
+        process.stdout.write(prepareScreenSequence(process.stdout.rows))
       }
       const { waitUntilExit } = render(
         <App
