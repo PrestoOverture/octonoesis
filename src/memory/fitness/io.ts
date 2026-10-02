@@ -5,6 +5,7 @@ import { getMemoryDir } from '../../utils/path.ts'
 import { readCalibrationRecords } from '../calibration/stats.ts'
 import { readEpisodes } from '../episodes/store.ts'
 import { type JournalEvent, isKnownJournalEvent, parseJournalEvent } from '../events.ts'
+import { readJournalTextBatches } from '../journalReader'
 import { loadAllRulesIncludingArchived } from '../rules/store.ts'
 import type { FitnessInput } from './dashboard.ts'
 
@@ -47,24 +48,23 @@ export interface JournalReadResult {
 export async function readJournalEvents(
   filePath: string = path.join(getMemoryDir(), 'journal.jsonl'),
 ): Promise<JournalReadResult> {
-  let content: string
-  try {
-    content = await fs.readFile(filePath, 'utf8')
-  } catch {
-    return { line_count: 0, events: [] }
-  }
-
   let lineCount = 0
   const events: JournalEvent[] = []
-  for (const line of content.split('\n')) {
-    if (!line.trim()) continue
-    lineCount += 1
-    try {
-      const event = parseJournalEvent(JSON.parse(line))
-      if (event && isKnownJournalEvent(event)) events.push(event)
-    } catch {
-      // Raw coverage includes malformed lines, but metrics only consume known events.
+  try {
+    for await (const lines of readJournalTextBatches(filePath)) {
+      for (const line of lines) {
+        if (!line.trim()) continue
+        lineCount += 1
+        try {
+          const event = parseJournalEvent(JSON.parse(line))
+          if (event && isKnownJournalEvent(event)) events.push(event)
+        } catch {
+          // Raw coverage includes malformed lines, but metrics only consume known events.
+        }
+      }
     }
+  } catch {
+    return { line_count: 0, events: [] }
   }
   return { line_count: lineCount, events }
 }

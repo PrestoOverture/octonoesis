@@ -3,6 +3,8 @@ import path from 'node:path'
 import { appendJsonl } from '../../utils/appendJsonl'
 import { getMemoryDir, getRepoRoot } from '../../utils/path'
 import { isKnownJournalEvent, parseJournalEvent } from '../events'
+import { getJournalPosition } from '../journal'
+import { readJournalLines } from '../journalReader'
 import { type JournalEventWithLine, type StoredJournalEvent, segmentJournal } from './segment'
 import { readEpisodes } from './store'
 import type { Episode } from './types'
@@ -75,31 +77,22 @@ export async function runSessionEndEpisodes(
       const journalPath = path.join(resolvedMemoryDir, 'journal.jsonl')
       const episodesPath = path.join(resolvedMemoryDir, 'episodes.jsonl')
 
-      let fileContent = ''
-      try {
-        fileContent = await fs.readFile(journalPath, 'utf8')
-      } catch {
-        // Journal file doesn't exist, no episodes to process
-        return
-      }
-
-      const lines = fileContent.split('\n')
       const eventsWithLines: JournalEventWithLine[] = []
-
-      for (let i = 0; i < lines.length; i++) {
-        const lineStr = lines[i]?.trim()
-        if (!lineStr) continue
-
-        try {
-          const parsed = parseJournalEvent(JSON.parse(lineStr))
-          if (!parsed || !isKnownJournalEvent(parsed)) continue
-          eventsWithLines.push({
-            event: parsed as StoredJournalEvent,
-            line: i + 1,
-          })
-        } catch {
-          // Skip malformed lines
+      try {
+        for await (const { line, text } of readJournalLines(
+          journalPath,
+          getJournalPosition(journalPath, sessionId),
+        )) {
+          try {
+            const parsed = parseJournalEvent(JSON.parse(text))
+            if (!parsed || !isKnownJournalEvent(parsed) || parsed.session_id !== sessionId) continue
+            eventsWithLines.push({ event: parsed as StoredJournalEvent, line })
+          } catch {
+            // Skip malformed lines.
+          }
         }
+      } catch {
+        return
       }
 
       // Read existing unique episodes from disk

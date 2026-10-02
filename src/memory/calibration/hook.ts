@@ -1,9 +1,10 @@
-import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getResolvedModel } from '../../providers/index.ts'
 import { getMemoryDir } from '../../utils/path.ts'
 import { isKnownJournalEvent, parseJournalEvent } from '../events.ts'
 import type { Fingerprint } from '../fingerprint/extract.ts'
+import { getJournalPosition } from '../journal'
+import { readJournalLines } from '../journalReader'
 import { bucketKey } from './bucket.ts'
 import {
   type CalibrationRecord,
@@ -37,31 +38,23 @@ export async function runSessionEndCalibration(
       const journalPath = path.join(resolvedMemoryDir, 'journal.jsonl')
       const calibrationPath = path.join(resolvedMemoryDir, 'calibration.jsonl')
 
-      let fileContent = ''
-      try {
-        fileContent = await fs.readFile(journalPath, 'utf8')
-      } catch {
-        // Journal file doesn't exist, nothing to calibrate
-        return
-      }
-
-      const lines = fileContent.split('\n')
       // biome-ignore lint/suspicious/noExplicitAny: parsed events mapping
       const events: any[] = []
-
-      for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed) continue
-
-        try {
-          const parsed = parseJournalEvent(JSON.parse(trimmed))
-          if (!parsed || !isKnownJournalEvent(parsed)) continue
-          if (parsed.session_id === sessionId) {
-            events.push(parsed)
+      try {
+        for await (const { text } of readJournalLines(
+          journalPath,
+          getJournalPosition(journalPath, sessionId),
+        )) {
+          try {
+            const parsed = parseJournalEvent(JSON.parse(text))
+            if (parsed && isKnownJournalEvent(parsed) && parsed.session_id === sessionId)
+              events.push(parsed)
+          } catch {
+            // Skip malformed lines.
           }
-        } catch {
-          // Skip malformed lines
         }
+      } catch {
+        return
       }
 
       if (events.length === 0) {
