@@ -1,10 +1,63 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { appendJsonl } from '../utils/appendJsonl'
+import { dbg } from '../utils/debug'
 import { getMemoryDir } from '../utils/path'
 import { EVENT_SCHEMA_VERSIONS, type JournalEvent } from './events'
+import { type JournalPosition, captureJournalPosition } from './journalReader'
+
+const captureAttempts = new Map<string, Set<string>>()
+const sessionPositions = new Map<string, Map<string, JournalPosition>>()
+
+/**
+ * Returns a copy of the recorded boundary before a session's first queued append.
+ * @param journalPath Journal path, resolved to the same key used by queued writes.
+ * @param sessionId Session whose starting position is requested.
+ * @returns The recorded position, or undefined when capture was skipped or failed.
+ */
+export function getJournalPosition(
+  journalPath: string,
+  sessionId: string,
+): JournalPosition | undefined {
+  const position = sessionPositions.get(path.resolve(journalPath))?.get(sessionId)
+  return position ? { ...position } : undefined
+}
+
+/** Clears recorded positions and capture attempts for test isolation. */
+export function resetJournalPositions(): void {
+  sessionPositions.clear()
+  captureAttempts.clear()
+}
 
 let activeSessionId: string | null = null
 let writeQueue: Promise<void> = Promise.resolve()
+let journalWriteFailureCount = 0
+let lastJournalWriteFailureCode: string | undefined
+
+/**
+ * Returns the number of journal writes that failed in this process.
+ * @returns The process-level journal write failure count.
+ */
+export function getJournalWriteFailureCount(): number {
+  return journalWriteFailureCount
+}
+
+/**
+ * Resets the journal failure count and last error code for tests.
+ */
+export function resetJournalWriteFailures(): void {
+  journalWriteFailureCount = 0
+  lastJournalWriteFailureCode = undefined
+}
+
+/**
+ * Formats a one-line notice of journal writes lost in this process.
+ * @returns The failure notice, or undefined when no writes failed.
+ */
+export function formatJournalFailureNotice(): string | undefined {
+  if (journalWriteFailureCount === 0) return undefined
+  return `⚠ Ledger incomplete: ${journalWriteFailureCount} journal write(s) failed this session (last: ${lastJournalWriteFailureCode})`
+}
 
 /**
  * Binds the active session ID to attach to upcoming journal events.
@@ -45,11 +98,35 @@ export function appendJournal(
 
   // Queue to preserve chronological append order on disk
   writeQueue = writeQueue.then(async () => {
+    const resolvedPath = path.resolve(journalPath)
+    let positions = sessionPositions.get(resolvedPath)
+    if (!positions) {
+      positions = new Map()
+      sessionPositions.set(resolvedPath, positions)
+    }
+    let attempts = captureAttempts.get(resolvedPath)
+    if (!attempts) {
+      attempts = new Set()
+      captureAttempts.set(resolvedPath, attempts)
+    }
+    if (session_id !== 'no-session' && !attempts.has(session_id)) {
+      attempts.add(session_id)
+      try {
+        positions.set(session_id, await captureJournalPosition(journalPath))
+      } catch {
+        // Capture failure must not prevent or count as a failed journal write.
+      }
+    }
     try {
       await fs.mkdir(memoryDir, { recursive: true })
-      await fs.appendFile(journalPath, line, 'utf8')
+      await appendJsonl(journalPath, line)
     } catch (err) {
-      // Fail silently in production, but report to stderr in debug modes
+      journalWriteFailureCount++
+      lastJournalWriteFailureCode =
+        typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : 'UNKNOWN'
+      const warning = `⚠ Journal write failed: ${journalPath} (${lastJournalWriteFailureCode})`
+      if (journalWriteFailureCount === 1) console.error(warning)
+      else dbg('journal', warning)
     }
   })
 }

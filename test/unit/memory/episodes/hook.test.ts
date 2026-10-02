@@ -78,8 +78,14 @@ describe('Episode Session-End Hook', () => {
 
     await writeFile(journalPath, mockJournalLines, 'utf8')
 
+    // A crash left a partial episode at the end of the existing log.
+    await writeFile(join(tempDir, 'episodes.jsonl'), '{"id":', 'utf8')
+
     // Run the hook
     await runSessionEndEpisodes(sessionId)
+    const rawLines = (await readFile(join(tempDir, 'episodes.jsonl'), 'utf8')).split('\n')
+    expect(rawLines[0]).toBe('{"id":')
+    expect(JSON.parse(rawLines[1] ?? '').id).toBe('ep_0001')
 
     // Verify written episodes
     let episodes = await readEpisodes()

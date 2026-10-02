@@ -1,9 +1,11 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
+import { writeFileAtomic } from '../../utils/atomicWrite.ts'
 import { getMemoryDir } from '../../utils/path.ts'
 import { isKnownJournalEvent, parseJournalEvent } from '../events.ts'
 import type { Fingerprint } from '../fingerprint/extract.ts'
+import { readJournalTextBatches } from '../journalReader'
 import { createPrior, credibleInterval, posteriorMean, update } from './beta.ts'
 import { bucketKey } from './bucket.ts'
 
@@ -148,102 +150,88 @@ export async function rebuildCalibration(
   journalPath: string,
   calibrationPath: string,
 ): Promise<void> {
-  let fileContent = ''
+  const sessions = new Map<
+    string,
+    {
+      record: CalibrationRecord
+      firstTool?: string
+      firstFingerprint?: Fingerprint
+      hasSession: boolean
+      hasCancel: boolean
+    }
+  >()
   try {
-    fileContent = await fs.readFile(journalPath, 'utf8')
+    for await (const lines of readJournalTextBatches(journalPath)) {
+      for (const text of lines) {
+        if (!text.trim()) continue
+        try {
+          const event = parseJournalEvent(JSON.parse(text))
+          if (!event || !isKnownJournalEvent(event)) continue
+          const sessionId = event.session_id || 'no-session'
+          let data = sessions.get(sessionId)
+          if (!data) {
+            data = {
+              record: {
+                session_id: sessionId,
+                ts: event.ts || new Date().toISOString(),
+                bucket_key: '',
+                model_id: 'unknown-model',
+                attempt_count: 0,
+                first_attempt_success: false,
+                user_modifications: 0,
+                user_reverts: 0,
+                resolved: false,
+              },
+              hasSession: false,
+              hasCancel: false,
+            }
+            sessions.set(sessionId, data)
+          }
+          if (event.kind === 'tool' && data.firstTool === undefined) data.firstTool = event.tool
+          if (
+            (event.kind === 'tool' || event.kind === 'verify') &&
+            !data.firstFingerprint &&
+            event.fingerprints?.length
+          ) {
+            data.firstFingerprint = event.fingerprints[0]
+          }
+          if (event.kind === 'verify') {
+            if (data.record.attempt_count === 0)
+              data.record.first_attempt_success = event.verdict === 'PASS'
+            data.record.attempt_count++
+          }
+          if (event.kind === 'permission' && event.decision === 'deny')
+            data.record.user_modifications++
+          if (event.kind === 'user' && event.cancel) data.record.user_reverts++
+          if (event.kind === 'session') {
+            if (!data.hasSession) {
+              data.record.model_id = event.model || 'unknown-model'
+              data.hasSession = true
+            }
+            if (event.exit_reason === 'user_cancel') data.hasCancel = true
+            if (event.exit_reason === 'completed') data.record.resolved = true
+          }
+        } catch {
+          // Skip malformed lines.
+        }
+      }
+    }
   } catch {
-    // Journal file doesn't exist, clear calibration if it exists
+    // Preserve the existing missing/unreadable journal behavior.
     try {
       await fs.unlink(calibrationPath)
     } catch {}
     return
   }
-
-  const lines = fileContent.split('\n')
-  // biome-ignore lint/suspicious/noExplicitAny: parsed events mapping
-  const sessionEventsMap = new Map<string, { events: any[]; firstTs: string }>()
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-
-    try {
-      const event = parseJournalEvent(JSON.parse(trimmed))
-      if (!event || !isKnownJournalEvent(event)) continue
-      const sessionId = event.session_id || 'no-session'
-      let sessionData = sessionEventsMap.get(sessionId)
-      if (!sessionData) {
-        sessionData = { events: [], firstTs: event.ts || new Date().toISOString() }
-        sessionEventsMap.set(sessionId, sessionData)
-      }
-      sessionData.events.push(event)
-    } catch {
-      // Skip malformed lines
-    }
-  }
-
   const newRecords: CalibrationRecord[] = []
-
-  for (const [sessionId, sessionData] of sessionEventsMap.entries()) {
-    const events = sessionData.events
-    if (events.length === 0) continue
-
-    // 1. Gather fingerprints
-    const fingerprints: Fingerprint[] = []
-    for (const e of events) {
-      if (e.kind === 'tool' && e.fingerprints) {
-        fingerprints.push(...e.fingerprints)
-      } else if (e.kind === 'verify' && e.fingerprints) {
-        fingerprints.push(...e.fingerprints)
-      }
-    }
-
-    // 2. Find fallback tool name
-    const firstTool = events.find((e) => e.kind === 'tool')?.tool || 'unknown-tool'
-
-    // 3. Compute bucket key
-    const bKey = bucketKey(fingerprints, firstTool)
-
-    // 4. Count verify attempts
-    const verifyEvents = events.filter((e) => e.kind === 'verify')
-    if (verifyEvents.length === 0) continue
-    const attempt_count = verifyEvents.length
-
-    // 5. Determine first-attempt success
-    const first_attempt_success = verifyEvents[0]?.verdict === 'PASS'
-
-    // 6. User modifications (permission denials)
-    const user_modifications = events.filter(
-      (e) => e.kind === 'permission' && e.decision === 'deny',
-    ).length
-
-    // 7. User reverts
-    let user_reverts = events.filter((e) => e.kind === 'user' && e.cancel).length
-    const hasUserCancelSession = events.some(
-      (e) => e.kind === 'session' && e.exit_reason === 'user_cancel',
+  for (const data of sessions.values()) {
+    if (!data.record.attempt_count) continue
+    data.record.bucket_key = bucketKey(
+      data.firstFingerprint ? [data.firstFingerprint] : [],
+      data.firstTool || 'unknown-tool',
     )
-    if (hasUserCancelSession) {
-      user_reverts += 1
-    }
-
-    // 8. Resolved
-    const resolved = events.some((e) => e.kind === 'session' && e.exit_reason === 'completed')
-
-    // 9. Model ID
-    const sessionEvent = events.find((e) => e.kind === 'session')
-    const model_id = sessionEvent?.model || 'unknown-model'
-
-    newRecords.push({
-      session_id: sessionId,
-      ts: sessionData.firstTs,
-      bucket_key: bKey,
-      model_id,
-      attempt_count,
-      first_attempt_success,
-      user_modifications,
-      user_reverts,
-      resolved,
-    })
+    if (data.hasCancel) data.record.user_reverts++
+    newRecords.push(data.record)
   }
 
   // Write new records to calibration.jsonl (overwrite)
@@ -256,6 +244,6 @@ export async function rebuildCalibration(
     } catch {}
   } else {
     const lines = `${newRecords.map((r) => JSON.stringify(r)).join('\n')}\n`
-    await fs.writeFile(calibrationPath, lines, 'utf8')
+    await writeFileAtomic(calibrationPath, lines)
   }
 }

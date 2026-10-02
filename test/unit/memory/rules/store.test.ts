@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import { join } from 'node:path'
 import {
@@ -107,6 +107,17 @@ describe('Rule Storage Store Module', () => {
     const allRules = await loadAllRules()
     expect(allRules.length).toBe(1)
     expect(allRules[0]?.id).toBe(mockRule.id)
+  })
+
+  it('replaces a saved rule inode and leaves no temporary files', async () => {
+    const rulesDir = join(tempDir, 'atomic')
+    await saveRule(mockRule, rulesDir)
+    const target = join(rulesDir, `${mockRule.id}.md`)
+    const before = await stat(target)
+    await saveRule({ ...mockRule, advice: 'Updated advice' }, rulesDir)
+    expect((await stat(target)).ino).not.toBe(before.ino)
+    expect((await loadRule(mockRule.id, rulesDir))?.advice).toBe('Updated advice')
+    expect((await readdir(rulesDir)).filter((file) => file.endsWith('.tmp'))).toEqual([])
   })
 
   it('should throw clear error on missing frontmatter keys', () => {
@@ -222,10 +233,15 @@ describe('Rule Archive Directory', () => {
     const rule = makeArchivableRule('rule-archive-overwrite', { misses: 3 })
     await archiveRule(rule, rulesDir)
 
+    const archivePath = join(getRulesArchiveDir(rulesDir), `${rule.id}.md`)
+    const before = await stat(archivePath)
     const updated = { ...rule, misses: 4 }
     await expect(archiveRule(updated, rulesDir)).resolves.toBeUndefined()
+    expect((await stat(archivePath)).ino).not.toBe(before.ino)
+    expect((await readdir(getRulesArchiveDir(rulesDir))).some((f) => f.endsWith('.tmp'))).toBe(
+      false,
+    )
 
-    const archivePath = join(getRulesArchiveDir(rulesDir), `${rule.id}.md`)
     expect(parseRule(await readFile(archivePath, 'utf-8')).misses).toBe(4)
   })
 

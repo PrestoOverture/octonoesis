@@ -1,6 +1,12 @@
 import path from 'node:path'
 import { getCheapestModel } from '../../providers/index.ts'
 import { dbg } from '../../utils/debug.ts'
+import {
+  LockTimeoutError,
+  RULES_LOCK_OPTIONS,
+  warnLockTimeout,
+  withFileLock,
+} from '../../utils/fileLock'
 import { getMemoryDir } from '../../utils/path.ts'
 import { readEpisodes } from '../episodes/store.ts'
 import type { Episode } from '../episodes/types.ts'
@@ -124,99 +130,115 @@ export async function runSessionEndAutoDistill(
   if (episodes.length === 0) return
 
   const rulesDir = path.join(memoryDir, 'rules')
-  const rules = await loadAllRulesIncludingArchived(rulesDir)
-  const evidencedEpisodeIds = new Set(rules.flatMap((rule) => rule.evidence))
-  const initiallyCoveredSignatures = new Set(
-    episodes
-      .filter((episode) =>
-        rules.some(
-          (rule) =>
-            (rule.status === 'active' || rule.status === 'pinned' || rule.status === 'banned') &&
-            ruleCoversSignature(rule, episode.failure.signature),
-        ),
-      )
-      .map((episode) => episode.failure.signature),
-  )
-  const maxCalls = Math.max(0, Math.floor(options.maxCalls ?? AUTO_DISTILL_MAX_CALLS_PER_QUERY_END))
-  const attemptedEpisodeIds = options.attemptedEpisodeIds ?? new Set<string>()
-  let distillCalls = 0
-  const changedRuleIds = new Set<string>()
+  try {
+    await withFileLock(
+      `${rulesDir}.lock`,
+      async () => {
+        const rules = await loadAllRulesIncludingArchived(rulesDir)
+        const evidencedEpisodeIds = new Set(rules.flatMap((rule) => rule.evidence))
+        const initiallyCoveredSignatures = new Set(
+          episodes
+            .filter((episode) =>
+              rules.some(
+                (rule) =>
+                  (rule.status === 'active' ||
+                    rule.status === 'pinned' ||
+                    rule.status === 'banned') &&
+                  ruleCoversSignature(rule, episode.failure.signature),
+              ),
+            )
+            .map((episode) => episode.failure.signature),
+        )
+        const maxCalls = Math.max(
+          0,
+          Math.floor(options.maxCalls ?? AUTO_DISTILL_MAX_CALLS_PER_QUERY_END),
+        )
+        const attemptedEpisodeIds = options.attemptedEpisodeIds ?? new Set<string>()
+        let distillCalls = 0
+        const changedRuleIds = new Set<string>()
 
-  for (const episode of episodes) {
-    if (
-      attemptedEpisodeIds.has(episode.id) ||
-      evidencedEpisodeIds.has(episode.id) ||
-      initiallyCoveredSignatures.has(episode.failure.signature)
-    ) {
-      continue
-    }
+        for (const episode of episodes) {
+          if (
+            attemptedEpisodeIds.has(episode.id) ||
+            evidencedEpisodeIds.has(episode.id) ||
+            initiallyCoveredSignatures.has(episode.failure.signature)
+          ) {
+            continue
+          }
 
-    const existingCandidate = rules.find(
-      (rule) =>
-        rule.status === 'candidate' &&
-        rule.triggers.error_signatures.includes(episode.failure.signature),
+          const existingCandidate = rules.find(
+            (rule) =>
+              rule.status === 'candidate' &&
+              rule.triggers.error_signatures.includes(episode.failure.signature),
+          )
+          if (existingCandidate) {
+            attemptedEpisodeIds.add(episode.id)
+            existingCandidate.evidence.push(episode.id)
+            existingCandidate.alpha = 2 + existingCandidate.hits + existingCandidate.evidence.length
+            existingCandidate.beta = 2 + existingCandidate.misses
+            await updateLifecycle(existingCandidate, repoRoot)
+            evidencedEpisodeIds.add(episode.id)
+            changedRuleIds.add(existingCandidate.id)
+            continue
+          }
+
+          if (
+            rules.some(
+              (rule) =>
+                isTerminalRule(rule) &&
+                rule.triggers.error_signatures.includes(episode.failure.signature),
+            )
+          ) {
+            attemptedEpisodeIds.add(episode.id)
+            continue
+          }
+
+          if (distillCalls >= maxCalls) continue
+          distillCalls++
+          attemptedEpisodeIds.add(episode.id)
+
+          try {
+            const rule = disambiguateRuleId(
+              await distillEpisode(episode, {
+                model: options.model ?? getCheapestModel(),
+                extractorVersion: options.extractorVersion ?? AUTO_DISTILL_EXTRACTOR_VERSION,
+              }),
+              episode.failure.signature,
+              rules,
+            )
+            await updateLifecycle(rule, repoRoot)
+            rules.push(rule)
+            evidencedEpisodeIds.add(episode.id)
+            changedRuleIds.add(rule.id)
+          } catch (error) {
+            dbg('memory', `Failed to auto-distill episode ${episode.id}`, error)
+          }
+        }
+
+        if (changedRuleIds.size === 0) return
+
+        const statusesBeforeCap = new Map(rules.map((rule) => [rule.id, rule.status]))
+        const finalRules = enforcePoolCap(rules)
+        // Self-heal sweep: a terminal-status rule that still has a hot-dir file (e.g. left
+        // over from before this feature, or from FR-INJ-1's accounting save) gets archived
+        // here too, even if this run's distillation/cap pass left it otherwise untouched.
+        const hotRuleIds = new Set((await loadAllRules(rulesDir)).map((rule) => rule.id))
+        for (const rule of finalRules) {
+          if (statusesBeforeCap.get(rule.id) !== rule.status) changedRuleIds.add(rule.id)
+          const terminal = isTerminalRule(rule)
+          const staleHotCopy = terminal && hotRuleIds.has(rule.id)
+          if (!changedRuleIds.has(rule.id) && !staleHotCopy) continue
+          if (terminal) {
+            await archiveRule(rule, rulesDir)
+          } else {
+            await saveRule(rule, rulesDir)
+          }
+        }
+      },
+      RULES_LOCK_OPTIONS,
     )
-    if (existingCandidate) {
-      attemptedEpisodeIds.add(episode.id)
-      existingCandidate.evidence.push(episode.id)
-      existingCandidate.alpha = 2 + existingCandidate.hits + existingCandidate.evidence.length
-      existingCandidate.beta = 2 + existingCandidate.misses
-      await updateLifecycle(existingCandidate, repoRoot)
-      evidencedEpisodeIds.add(episode.id)
-      changedRuleIds.add(existingCandidate.id)
-      continue
-    }
-
-    if (
-      rules.some(
-        (rule) =>
-          isTerminalRule(rule) &&
-          rule.triggers.error_signatures.includes(episode.failure.signature),
-      )
-    ) {
-      attemptedEpisodeIds.add(episode.id)
-      continue
-    }
-
-    if (distillCalls >= maxCalls) continue
-    distillCalls++
-    attemptedEpisodeIds.add(episode.id)
-
-    try {
-      const rule = disambiguateRuleId(
-        await distillEpisode(episode, {
-          model: options.model ?? getCheapestModel(),
-          extractorVersion: options.extractorVersion ?? AUTO_DISTILL_EXTRACTOR_VERSION,
-        }),
-        episode.failure.signature,
-        rules,
-      )
-      await updateLifecycle(rule, repoRoot)
-      rules.push(rule)
-      evidencedEpisodeIds.add(episode.id)
-      changedRuleIds.add(rule.id)
-    } catch (error) {
-      dbg('memory', `Failed to auto-distill episode ${episode.id}`, error)
-    }
-  }
-
-  if (changedRuleIds.size === 0) return
-
-  const statusesBeforeCap = new Map(rules.map((rule) => [rule.id, rule.status]))
-  const finalRules = enforcePoolCap(rules)
-  // Self-heal sweep: a terminal-status rule that still has a hot-dir file (e.g. left
-  // over from before this feature, or from FR-INJ-1's accounting save) gets archived
-  // here too, even if this run's distillation/cap pass left it otherwise untouched.
-  const hotRuleIds = new Set((await loadAllRules(rulesDir)).map((rule) => rule.id))
-  for (const rule of finalRules) {
-    if (statusesBeforeCap.get(rule.id) !== rule.status) changedRuleIds.add(rule.id)
-    const terminal = isTerminalRule(rule)
-    const staleHotCopy = terminal && hotRuleIds.has(rule.id)
-    if (!changedRuleIds.has(rule.id) && !staleHotCopy) continue
-    if (terminal) {
-      await archiveRule(rule, rulesDir)
-    } else {
-      await saveRule(rule, rulesDir)
-    }
+  } catch (error) {
+    if (!(error instanceof LockTimeoutError)) throw error
+    warnLockTimeout(error)
   }
 }

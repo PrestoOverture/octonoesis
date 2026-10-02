@@ -40,9 +40,13 @@ describe('Rebuild rules capability', () => {
     setProvider(null)
   })
 
+  // Relative to now: distill uses the episode timestamp as created_at, and lifecycle
+  // demotes active rules untouched for 90 days, so fixed dates expire the test.
+  const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString()
+
   const mockEpisode1: Episode = {
     id: 'ep_0001',
-    timestamp: '2026-06-20T10:00:00Z',
+    timestamp: minutesAgo(50),
     session_id: 'sess-123',
     task_digest: 'task 1',
     failure: {
@@ -74,25 +78,25 @@ describe('Rebuild rules capability', () => {
   const mockEpisode2: Episode = {
     ...mockEpisode1,
     id: 'ep_0002',
-    timestamp: '2026-06-20T10:10:00Z',
+    timestamp: minutesAgo(40),
   }
 
   const mockEpisode3: Episode = {
     ...mockEpisode1,
     id: 'ep_0003',
-    timestamp: '2026-06-20T10:20:00Z',
+    timestamp: minutesAgo(30),
   }
 
   const mockEpisode4: Episode = {
     ...mockEpisode1,
     id: 'ep_0004',
-    timestamp: '2026-06-20T10:30:00Z',
+    timestamp: minutesAgo(20),
   }
 
   const mockEpisode5: Episode = {
     ...mockEpisode1,
     id: 'ep_0005',
-    timestamp: '2026-06-20T10:40:00Z',
+    timestamp: minutesAgo(10),
   }
 
   it('should distill and rebuild rules from multiple episodes cleanly', async () => {

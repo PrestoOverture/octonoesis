@@ -9,6 +9,7 @@ import { getConfigTrustWarning, loadConfig } from './config/load.ts'
 import type { OctonoesisConfig } from './config/schema.ts'
 import { appendExperimentRecord, readExperiments } from './experiments/registry.ts'
 import type { ExperimentRecord } from './experiments/schema.ts'
+import { flushJournal, formatJournalFailureNotice } from './memory/journal.ts'
 import { rebuildRules } from './memory/rules/rebuild.ts'
 import { getRulesDir } from './memory/rules/store.ts'
 import { getResolvedModel, setConfiguredModel } from './providers/index.ts'
@@ -358,6 +359,9 @@ program
       if (latestSession) {
         console.log(formatSessionSummary(latestSession.sessionState, latestSession.priced))
       }
+      await flushJournal()
+      const journalNotice = formatJournalFailureNotice()
+      if (journalNotice) console.error(journalNotice)
       return
     }
 

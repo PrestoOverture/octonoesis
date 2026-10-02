@@ -11,11 +11,16 @@ import { findRelevantMemories } from '../memory/auto/recall'
 import { loadMemories } from '../memory/auto/store'
 import { runSessionEndCalibration } from '../memory/calibration/hook'
 import { runSessionEndEpisodes } from '../memory/episodes/hook'
-import { appendJournal, flushJournal, setSessionId } from '../memory/journal'
+import {
+  appendJournal,
+  flushJournal,
+  formatJournalFailureNotice,
+  setSessionId,
+} from '../memory/journal'
 import { runSessionEndAutoDistill } from '../memory/rules/autoDistill'
 import { updateLifecycle } from '../memory/rules/lifecycle'
 import { findMatchingRules, formatMatchAdvice } from '../memory/rules/match'
-import { loadAllRules, saveRule } from '../memory/rules/store'
+import { getRulesDir, loadAllRules, loadRule, saveRule } from '../memory/rules/store'
 import type { RuleFile } from '../memory/rules/types'
 import { assembleSessionContext } from '../prompts/context'
 import { buildStaticPrompt } from '../prompts/static'
@@ -49,6 +54,12 @@ import { runTool } from '../tools/execute'
 import { getAllTools, registerTool, unregisterTool } from '../tools/registry'
 import { estimateCost } from '../utils/cost'
 import { dbg } from '../utils/debug'
+import {
+  LockTimeoutError,
+  RULES_LOCK_OPTIONS,
+  warnLockTimeout,
+  withFileLock,
+} from '../utils/fileLock'
 import { getRepoRoot } from '../utils/path'
 import { zodToJsonSchema } from '../utils/schema'
 import type { ContextSnapshot } from '../utils/tokens'
@@ -788,22 +799,8 @@ export async function* executeTools(
         for (const { rule, fingerprint } of injectedRulesList) {
           if (recordedOutcomes.has(rule.id)) continue
 
-          const stillFailing = postSigs.includes(fingerprint.fine)
-          if (!stillFailing) {
-            rule.hits++
-            rule.alpha++
-            rule.last_matched_at = new Date().toISOString()
-            recordedOutcomes.add(rule.id)
-            dbg('query', `Hit recorded for rule ${rule.id}. New hits count: ${rule.hits}`)
-          } else {
-            rule.misses++
-            rule.beta++
-            recordedOutcomes.add(rule.id)
-            dbg('query', `Miss recorded for rule ${rule.id}. New misses count: ${rule.misses}`)
-          }
-
-          await updateLifecycle(rule, ctx.repoRoot)
-          await saveRule(rule)
+          recordedOutcomes.add(rule.id)
+          await recordRuleOutcome(rule.id, postSigs.includes(fingerprint.fine), ctx.repoRoot)
         }
       }
     }
@@ -1147,6 +1144,9 @@ export async function runQuery(
   if (queryResult && ONE_SHOT_FAILURE_REASONS.has(queryResult.exit_reason)) {
     process.stderr.write(`${formatQueryFailure(queryResult)}\n`)
     process.exitCode = 1
+    await flushJournal()
+    const journalNotice = formatJournalFailureNotice()
+    if (journalNotice) console.error(journalNotice)
     return
   }
 
@@ -1156,4 +1156,47 @@ export async function runQuery(
   process.stdout.write(
     ctx.sessionState ? `\n${formatSessionSummary(ctx.sessionState, priced)}\n` : '\n',
   )
+  await flushJournal()
+  const journalNotice = formatJournalFailureNotice()
+  if (journalNotice) console.error(journalNotice)
+}
+
+/** Persist only this verification outcome against the current hot-dir rule. */
+export async function recordRuleOutcome(
+  ruleId: string,
+  stillFailing: boolean,
+  repoRoot: string,
+  rulesDir: string = getRulesDir(),
+): Promise<void> {
+  try {
+    await withFileLock(
+      `${rulesDir}.lock`,
+      async () => {
+        const rule = await loadRule(ruleId, rulesDir)
+        if (!rule) {
+          dbg(
+            'query',
+            `Outcome skipped for rule ${ruleId}: no longer exists in hot dir ${rulesDir}`,
+          )
+          return
+        }
+        if (stillFailing) {
+          rule.misses++
+          rule.beta++
+          dbg('query', `Miss recorded for rule ${rule.id}. New misses count: ${rule.misses}`)
+        } else {
+          rule.hits++
+          rule.alpha++
+          rule.last_matched_at = new Date().toISOString()
+          dbg('query', `Hit recorded for rule ${rule.id}. New hits count: ${rule.hits}`)
+        }
+        await updateLifecycle(rule, repoRoot)
+        await saveRule(rule, rulesDir)
+      },
+      RULES_LOCK_OPTIONS,
+    )
+  } catch (error) {
+    if (!(error instanceof LockTimeoutError)) throw error
+    warnLockTimeout(error)
+  }
 }

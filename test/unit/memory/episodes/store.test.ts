@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import { join } from 'node:path'
 import {
@@ -8,6 +8,7 @@ import {
   readEpisodes,
 } from '../../../../src/memory/episodes/store'
 import type { Episode } from '../../../../src/memory/episodes/types'
+import { restoreEnv } from '../../../helpers/env'
 
 describe('Episode Storage Store Module', () => {
   const tempDir = join(os.tmpdir(), `octonoesis-store-test-${Date.now()}`)
@@ -87,6 +88,22 @@ describe('Episode Storage Store Module', () => {
 
     const updatedNextIndex = await getNextEpisodeIndex()
     expect(updatedNextIndex).toBe(3)
+  })
+
+  it('separates a torn tail and preserves valid episodes and their next index', async () => {
+    const dir = await mkdtemp(join(os.tmpdir(), 'episodes-torn-'))
+    const previous = process.env.OCTONOESIS_MEMORY_DIR
+    try {
+      process.env.OCTONOESIS_MEMORY_DIR = dir
+      await writeFile(join(dir, 'episodes.jsonl'), `${JSON.stringify(mockEpisode)}\n{"id":`)
+      expect(await getNextEpisodeIndex()).toBe(2)
+      await appendEpisodes([{ ...mockEpisode, id: 'ep_0002' }])
+      expect((await readEpisodes()).map((ep) => ep.id)).toEqual(['ep_0001', 'ep_0002'])
+      expect(await getNextEpisodeIndex()).toBe(3)
+    } finally {
+      restoreEnv('OCTONOESIS_MEMORY_DIR', previous)
+      await rm(dir, { recursive: true, force: true })
+    }
   })
 
   it('should deduplicate episodes by ID when reading, returning the latest one', async () => {

@@ -1,5 +1,6 @@
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
+import { writeFileAtomic } from '../../utils/atomicWrite.ts'
 import { getMemoryDir } from '../../utils/path.ts'
 import type { RuleFile } from './types.ts'
 import { calculateConfidence } from './types.ts'
@@ -273,7 +274,7 @@ export async function saveRule(rule: RuleFile, rulesDir: string = getRulesDir())
   await mkdir(rulesDir, { recursive: true })
   const filePath = path.join(rulesDir, `${rule.id}.md`)
   const content = serializeRule(rule)
-  await writeFile(filePath, content, 'utf-8')
+  await writeFileAtomic(filePath, content)
 }
 
 /**
@@ -342,7 +343,7 @@ export async function archiveRule(rule: RuleFile, rulesDir: string = getRulesDir
   const archiveDir = getRulesArchiveDir(rulesDir)
   await mkdir(archiveDir, { recursive: true })
   const archivePath = path.join(archiveDir, `${rule.id}.md`)
-  await writeFile(archivePath, serializeRule(rule), 'utf-8')
+  await writeFileAtomic(archivePath, serializeRule(rule))
 
   const hotPath = path.join(rulesDir, `${rule.id}.md`)
   await rm(hotPath, { force: true })
