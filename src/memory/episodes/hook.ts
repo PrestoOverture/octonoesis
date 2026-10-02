@@ -1,6 +1,12 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { appendJsonl } from '../../utils/appendJsonl'
+import {
+  EPISODES_LOCK_OPTIONS,
+  LockTimeoutError,
+  warnLockTimeout,
+  withFileLock,
+} from '../../utils/fileLock'
 import { getMemoryDir, getRepoRoot } from '../../utils/path'
 import { isKnownJournalEvent, parseJournalEvent } from '../events'
 import { getJournalPosition } from '../journal'
@@ -95,64 +101,69 @@ export async function runSessionEndEpisodes(
         return
       }
 
-      // Read existing unique episodes from disk
-      const allEpisodes = await readEpisodes(episodesPath)
+      await withFileLock(
+        path.join(resolvedMemoryDir, 'episodes.lock'),
+        async () => {
+          // Read existing unique episodes from disk
+          const allEpisodes = await readEpisodes(episodesPath)
 
-      // Filter events belonging to the current session
-      const sessionEvents = eventsWithLines.filter((item) => item.event.session_id === sessionId)
-      if (sessionEvents.length === 0) {
-        return
-      }
-
-      // Determine the next sequential index based on the highest existing index in allEpisodes.
-      let nextIdx = 1
-      if (allEpisodes.length > 0) {
-        const lastEpisode = allEpisodes[allEpisodes.length - 1]
-        if (lastEpisode?.id) {
-          const match = lastEpisode.id.match(/^ep_(\d+)$/)
-          if (match?.[1]) {
-            nextIdx = Number.parseInt(match[1], 10) + 1
-          } else {
-            nextIdx = allEpisodes.length + 1
+          // Filter events belonging to the current session
+          const sessionEvents = eventsWithLines.filter(
+            (item) => item.event.session_id === sessionId,
+          )
+          if (sessionEvents.length === 0) {
+            return
           }
-        }
-      }
 
-      // Run segmenter (passing a temporary starting index)
-      const segmentedEpisodes = segmentJournal(sessionEvents, 9999, repoRoot)
-
-      // Map segmented episodes to existing ones, or assign new sequential IDs.
-      const episodesToAppend: Episode[] = []
-      const identityToExisting = new Map<string, Episode>()
-      for (const ep of allEpisodes) {
-        const key = `${ep.session_id}|${ep.journal_line_range.start}`
-        identityToExisting.set(key, ep)
-      }
-
-      for (const newEp of segmentedEpisodes) {
-        const key = `${newEp.session_id}|${newEp.journal_line_range.start}`
-        const existing = identityToExisting.get(key)
-
-        if (existing) {
-          // Reuse original ID
-          newEp.id = existing.id
-          // Only append if it has changed (e.g. outcome transitioned from abandoned to resolved)
-          if (!isEpisodeEqual(existing, newEp)) {
-            episodesToAppend.push(newEp)
+          // Determine the next sequential index based on the highest existing index in allEpisodes.
+          let nextIdx = 1
+          for (const episode of allEpisodes) {
+            const match = episode.id.match(/^ep_(\d+)$/)
+            if (match?.[1]) nextIdx = Math.max(nextIdx, Number.parseInt(match[1], 10) + 1)
+            else nextIdx = Math.max(nextIdx, allEpisodes.length + 1)
           }
-        } else {
-          // Assign new sequential ID
-          newEp.id = `ep_${String(nextIdx++).padStart(4, '0')}`
-          episodesToAppend.push(newEp)
-        }
-      }
 
-      // Append new or updated episodes to the file
-      if (episodesToAppend.length > 0) {
-        await fs.mkdir(resolvedMemoryDir, { recursive: true })
-        const lines = episodesToAppend.map((ep) => `${JSON.stringify(ep)}\n`).join('')
-        await appendJsonl(episodesPath, lines)
-      }
+          // Run segmenter (passing a temporary starting index)
+          const segmentedEpisodes = segmentJournal(sessionEvents, 9999, repoRoot)
+
+          // Map segmented episodes to existing ones, or assign new sequential IDs.
+          const episodesToAppend: Episode[] = []
+          const identityToExisting = new Map<string, Episode>()
+          for (const ep of allEpisodes) {
+            const key = `${ep.session_id}|${ep.journal_line_range.start}`
+            identityToExisting.set(key, ep)
+          }
+
+          for (const newEp of segmentedEpisodes) {
+            const key = `${newEp.session_id}|${newEp.journal_line_range.start}`
+            const existing = identityToExisting.get(key)
+
+            if (existing) {
+              // Reuse original ID
+              newEp.id = existing.id
+              // Only append if it has changed (e.g. outcome transitioned from abandoned to resolved)
+              if (!isEpisodeEqual(existing, newEp)) {
+                episodesToAppend.push(newEp)
+              }
+            } else {
+              // Assign new sequential ID
+              newEp.id = `ep_${String(nextIdx++).padStart(4, '0')}`
+              episodesToAppend.push(newEp)
+            }
+          }
+
+          // Append new or updated episodes to the file
+          if (episodesToAppend.length > 0) {
+            await fs.mkdir(resolvedMemoryDir, { recursive: true })
+            const lines = episodesToAppend.map((ep) => `${JSON.stringify(ep)}\n`).join('')
+            await appendJsonl(episodesPath, lines)
+          }
+        },
+        EPISODES_LOCK_OPTIONS,
+      )
+    } catch (error) {
+      if (!(error instanceof LockTimeoutError)) throw error
+      warnLockTimeout(error)
     } finally {
       if (timeoutId) {
         clearTimeout(timeoutId)
