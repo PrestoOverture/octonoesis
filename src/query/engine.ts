@@ -11,7 +11,12 @@ import { findRelevantMemories } from '../memory/auto/recall'
 import { loadMemories } from '../memory/auto/store'
 import { runSessionEndCalibration } from '../memory/calibration/hook'
 import { runSessionEndEpisodes } from '../memory/episodes/hook'
-import { appendJournal, flushJournal, setSessionId } from '../memory/journal'
+import {
+  appendJournal,
+  flushJournal,
+  formatJournalFailureNotice,
+  setSessionId,
+} from '../memory/journal'
 import { runSessionEndAutoDistill } from '../memory/rules/autoDistill'
 import { updateLifecycle } from '../memory/rules/lifecycle'
 import { findMatchingRules, formatMatchAdvice } from '../memory/rules/match'
@@ -1147,6 +1152,9 @@ export async function runQuery(
   if (queryResult && ONE_SHOT_FAILURE_REASONS.has(queryResult.exit_reason)) {
     process.stderr.write(`${formatQueryFailure(queryResult)}\n`)
     process.exitCode = 1
+    await flushJournal()
+    const journalNotice = formatJournalFailureNotice()
+    if (journalNotice) console.error(journalNotice)
     return
   }
 
@@ -1156,4 +1164,7 @@ export async function runQuery(
   process.stdout.write(
     ctx.sessionState ? `\n${formatSessionSummary(ctx.sessionState, priced)}\n` : '\n',
   )
+  await flushJournal()
+  const journalNotice = formatJournalFailureNotice()
+  if (journalNotice) console.error(journalNotice)
 }

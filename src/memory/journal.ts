@@ -1,10 +1,38 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { dbg } from '../utils/debug'
 import { getMemoryDir } from '../utils/path'
 import { EVENT_SCHEMA_VERSIONS, type JournalEvent } from './events'
 
 let activeSessionId: string | null = null
 let writeQueue: Promise<void> = Promise.resolve()
+let journalWriteFailureCount = 0
+let lastJournalWriteFailureCode: string | undefined
+
+/**
+ * Returns the number of journal writes that failed in this process.
+ * @returns The process-level journal write failure count.
+ */
+export function getJournalWriteFailureCount(): number {
+  return journalWriteFailureCount
+}
+
+/**
+ * Resets the journal failure count and last error code for tests.
+ */
+export function resetJournalWriteFailures(): void {
+  journalWriteFailureCount = 0
+  lastJournalWriteFailureCode = undefined
+}
+
+/**
+ * Formats a one-line notice of journal writes lost in this process.
+ * @returns The failure notice, or undefined when no writes failed.
+ */
+export function formatJournalFailureNotice(): string | undefined {
+  if (journalWriteFailureCount === 0) return undefined
+  return `⚠ Ledger incomplete: ${journalWriteFailureCount} journal write(s) failed this session (last: ${lastJournalWriteFailureCode})`
+}
 
 /**
  * Binds the active session ID to attach to upcoming journal events.
@@ -49,7 +77,12 @@ export function appendJournal(
       await fs.mkdir(memoryDir, { recursive: true })
       await fs.appendFile(journalPath, line, 'utf8')
     } catch (err) {
-      // Fail silently in production, but report to stderr in debug modes
+      journalWriteFailureCount++
+      lastJournalWriteFailureCode =
+        typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : 'UNKNOWN'
+      const warning = `⚠ Journal write failed: ${journalPath} (${lastJournalWriteFailureCode})`
+      if (journalWriteFailureCount === 1) console.error(warning)
+      else dbg('journal', warning)
     }
   })
 }
