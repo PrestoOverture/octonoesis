@@ -113,6 +113,8 @@ npx octonoesis "Fix the failing test in src/user.ts"
 
 **Bun is a runtime dependency**, not just a build tool. The package is a Bun bundle (`#!/usr/bin/env bun`) that won't run under Node — `bun` needs to be on your `PATH` even when installed via npm. For a zero-dependency option, grab a standalone binary from [Releases](https://github.com/PrestoOverture/octonoesis/releases).
 
+For browser-downloaded macOS binaries, run `xattr -d com.apple.quarantine <file>` before the first run.
+
 ## Quickstart
 
 ```bash

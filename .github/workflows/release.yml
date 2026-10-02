@@ -1,6 +1,7 @@
 name: Release
 
 on:
+  workflow_dispatch:
   push:
     tags:
       - 'v*'
@@ -28,7 +29,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.4.0
 
       - name: Install Dependencies
         run: bun install --frozen-lockfile
@@ -37,6 +38,12 @@ jobs:
         run: |
           mkdir -p dist
           bun build src/cli.tsx --compile --target=${{ matrix.target }} --outfile dist/${{ matrix.binary }}
+
+      - name: Sign macOS Binary
+        if: runner.os == 'macOS'
+        run: |
+          codesign --force --sign - dist/${{ matrix.binary }}
+          codesign --verify --strict --verbose=2 dist/${{ matrix.binary }}
 
       - name: Check Binary Size
         run: |
@@ -54,8 +61,15 @@ jobs:
           dist/${{ matrix.binary }} --help
 
       - name: Upload Release Asset
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/${{ matrix.binary }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Binary Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.binary }}
+          path: dist/${{ matrix.binary }}

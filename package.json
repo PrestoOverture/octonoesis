@@ -17,7 +17,7 @@
     "cli": "bun src/cli.tsx",
     "dev": "bun src/cli.tsx",
     "build": "bun build src/cli.tsx --target=bun --outfile dist/cli.js",
-    "build:bin": "bun build src/cli.tsx --compile --outfile dist/agent",
+    "build:bin": "bun build src/cli.tsx --compile --outfile dist/agent && if [ \"$(uname)\" = Darwin ]; then codesign --force --sign - dist/agent; fi",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "format": "biome format --write .",
