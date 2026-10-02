@@ -83,3 +83,21 @@ test('the /stats command preserves bucket names containing markdown underscores'
     await fs.rm(directory, { recursive: true, force: true })
   }
 })
+
+test('assistant history and streaming frames have no trailing blank line', () => {
+  const messages: CanonicalMessage[] = [
+    { role: 'assistant', content: [{ type: 'text', text: '**hi**\n\n' }] },
+    { role: 'user', content: 'next' },
+  ]
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: terminal style sequences
+  const strip = (text: string) => text.replace(/\x1b\[[0-9;]*m/g, '')
+  const history = render(<MessageList messages={messages} />)
+  const streaming = render(<StreamingResponse text="**hi**" />)
+  try {
+    expect(strip(history.lastFrame() ?? '')).toBe('Agent ›\nhi\nUser › next')
+    expect(strip(streaming.lastFrame() ?? '')).toBe('Agent ›\nhi')
+  } finally {
+    history.unmount()
+    streaming.unmount()
+  }
+})

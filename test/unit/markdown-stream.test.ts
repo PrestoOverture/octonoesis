@@ -54,3 +54,19 @@ test('flushing ends a text run before a tool call or message boundary', () => {
   stream.flush()
   expect(output).toBe(`${renderMarkdown('**before**')}[Tool Call]\n${renderMarkdown('*after*')}`)
 })
+
+test('mixed-block spacing stays equivalent across streaming boundaries', () => {
+  const input =
+    '## 标题\n\n一段 **粗体** 话。\n\n- a\n- b\n\n| x | y |\n|---|---|\n| 1 | 2 |\n\n```bash\necho hi\n```\n\n结尾段落。'
+  for (const size of [1, 3, 10, input.length]) {
+    let output = ''
+    const stream = createMarkdownStream((text) => {
+      output += text
+    }, true)
+    for (let offset = 0; offset < input.length; offset += size) {
+      stream.write(input.slice(offset, offset + size))
+    }
+    stream.flush()
+    expect(output).toBe(renderMarkdown(input))
+  }
+})

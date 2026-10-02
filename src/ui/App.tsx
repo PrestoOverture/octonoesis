@@ -162,7 +162,9 @@ export function MessageList(props: { messages?: CanonicalMessage[] }) {
                   return (
                     // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
                     <Text key={bIdx} color="white">
-                      {verbatimMessages.has(msg) ? block.text : renderMarkdown(block.text)}
+                      {verbatimMessages.has(msg)
+                        ? block.text
+                        : renderMarkdown(block.text).replace(/\n+$/, '')}
                     </Text>
                   )
                 }
@@ -214,7 +216,7 @@ export function StreamingResponse(props: {
           <Text bold color="green">
             Agent ›
           </Text>
-          <Text color="white">{renderMarkdown(text)}</Text>
+          <Text color="white">{renderMarkdown(text).replace(/\n+$/, '')}</Text>
         </Box>
       ) : null}
       {toolUses.map((tool, idx) => {

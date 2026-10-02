@@ -25,7 +25,7 @@ function formatToken(token: Token, depth = 0): string {
       return chalk.cyan(token.text)
     case 'heading': {
       const text = chalk.bold(inline(token.tokens))
-      return `${token.depth === 1 ? chalk.cyan.underline(text) : text}\n\n`
+      return `${token.depth === 1 ? chalk.cyan.underline(text) : text}\n`
     }
     case 'paragraph':
       return `${inline(token.tokens)}\n`
@@ -35,7 +35,7 @@ function formatToken(token: Token, depth = 0): string {
     case 'html':
       return token.text
     case 'space':
-      return token.raw
+      return '\n'
     case 'br':
       return '\n'
     case 'code':

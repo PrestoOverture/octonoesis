@@ -22,9 +22,9 @@ test('inline emphasis and codespan remove markers and apply styles', () => {
   expect(output).toContain(chalk.cyan('code'))
 })
 
-test('headings are bold, h1 is colored and underlined, with blank lines', () => {
+test('headings are bold, h1 is colored and underlined, with one terminating newline', () => {
   const output = renderMarkdown('# Title\n## Subtitle')
-  expect(strip(output)).toBe('Title\n\nSubtitle\n\n')
+  expect(strip(output)).toBe('Title\nSubtitle\n')
   expect(output).toContain(chalk.cyan.underline(chalk.bold('Title')))
   expect(output).toContain(chalk.bold('Subtitle'))
 })
@@ -78,4 +78,14 @@ test('quotes, breaks, escapes, html and horizontal rules', () => {
   expect(strip(renderMarkdown('\\*literal\\*'))).toBe('*literal*\n')
   expect(strip(renderMarkdown('<b>html</b>'))).toContain('<b>html</b>')
   expect(strip(renderMarkdown('---'))).toBe(`${'─'.repeat(40)}\n`)
+})
+
+test('mixed blocks have exactly one blank line between source-separated blocks', () => {
+  const input =
+    '## 标题\n\n一段 **粗体** 话。\n\n- a\n- b\n\n| x | y |\n|---|---|\n| 1 | 2 |\n\n```bash\necho hi\n```\n\n结尾段落。'
+  expect(strip(renderMarkdown(input))).toBe(
+    '标题\n\n一段 粗体 话。\n\n• a\n• b\n\n| x   | y   |\n|─────|─────|\n| 1   | 2   |\n\n  echo hi\n\n结尾段落。\n',
+  )
+  expect(strip(renderMarkdown('## first\n## second'))).toBe('first\nsecond\n')
+  expect(strip(renderMarkdown('first\n\n\n\nsecond'))).toBe('first\n\nsecond\n')
 })
