@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { type ForkOptions, type ForkResult, forkAgent } from '../../providers/fork'
 import { dbg } from '../../utils/debug'
+import { isMemoryDisabled } from '../availability'
 import { parseForkJson } from './json'
 import type { MemoryFile } from './types'
 
@@ -14,17 +15,6 @@ export interface RecallOptions {
 }
 
 const recalledNamesSchema = z.array(z.string())
-
-/**
- * Checks whether an environment variable string represents a truthy boolean flag.
- *
- * @param value - Raw environment variable string.
- * @returns True if value is '1', 'true', 'yes', or 'on'; otherwise false.
- */
-function isTruthyEnv(value: string | undefined): boolean {
-  if (!value) return false
-  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
-}
 
 /**
  * Builds the prompt instruction for recalling relevant memories given a user query.
@@ -58,7 +48,7 @@ export async function findRelevantMemories(
   memories: MemoryFile[],
   opts: RecallOptions = {},
 ): Promise<MemoryFile[]> {
-  if (memories.length === 0 || isTruthyEnv(process.env.OCTONOESIS_DISABLE_MEMORY)) return []
+  if (memories.length === 0 || isMemoryDisabled()) return []
 
   try {
     const result = await (opts.forkFn ?? forkAgent)({

@@ -9,6 +9,10 @@ import { getConfigTrustWarning, loadConfig } from './config/load.ts'
 import type { OctonoesisConfig } from './config/schema.ts'
 import { appendExperimentRecord, readExperiments } from './experiments/registry.ts'
 import type { ExperimentRecord } from './experiments/schema.ts'
+import {
+  formatMemoryUnavailableNotice,
+  initializeMemoryAvailability,
+} from './memory/availability.ts'
 import { flushJournal, formatJournalFailureNotice } from './memory/journal.ts'
 import { rebuildRules } from './memory/rules/rebuild.ts'
 import { getRulesDir } from './memory/rules/store.ts'
@@ -260,6 +264,7 @@ program
   .action(async (prompt?: string) => {
     const options = program.opts()
     const memoryDir = getMemoryDir()
+    await initializeMemoryAvailability(memoryDir)
     let resumedSession: StoredSession | undefined
     try {
       if (options.continue && options.resume) {
@@ -360,6 +365,8 @@ program
         console.log(formatSessionSummary(latestSession.sessionState, latestSession.priced))
       }
       await flushJournal()
+      const memoryNotice = formatMemoryUnavailableNotice()
+      if (memoryNotice) console.error(memoryNotice)
       const journalNotice = formatJournalFailureNotice()
       if (journalNotice) console.error(journalNotice)
       return

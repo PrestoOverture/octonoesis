@@ -2,6 +2,7 @@ import fs from 'node:fs/promises'
 import path from 'node:path'
 import { loadMemoryIndex } from '../memory/auto/store'
 import type { MemoryFile } from '../memory/auto/types'
+import { getMemoryAvailability, isMemoryDisabled } from '../memory/availability'
 import { formatSessionStartRules, selectSessionStartRules } from '../memory/rules/sessionStart'
 import type { RuleFile } from '../memory/rules/types'
 import type { Usage } from '../providers/types'
@@ -16,16 +17,6 @@ import {
 } from './compiler'
 import { buildDynamicSuffix } from './dynamic'
 import { buildStaticPrompt } from './static'
-
-/**
- * Checks whether the memory subsystem is disabled via OCTONOESIS_DISABLE_MEMORY.
- * @returns True if memory is disabled, false otherwise.
- */
-function isMemoryDisabled(): boolean {
-  const value = process.env.OCTONOESIS_DISABLE_MEMORY
-  if (!value) return false
-  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
-}
 
 /**
  * Reads the content of an optional file, returning undefined if it does not exist.
@@ -95,7 +86,7 @@ export async function buildSessionContextSources(
   const [octonoesisMd, claudeMd, memoryIndex, dynamicSuffix] = await Promise.all([
     readOptionalFile(path.join(ctx.repoRoot, 'OCTONOESIS.md')),
     readOptionalFile(path.join(ctx.repoRoot, 'CLAUDE.md')),
-    loadMemoryIndex(),
+    getMemoryAvailability().usable ? loadMemoryIndex() : Promise.resolve(''),
     buildDynamicSuffix(ctx, model, usage),
   ])
 
@@ -145,7 +136,7 @@ export async function buildSessionContextSources(
       })
     }
   }
-  if (recalledMemories.length > 0) {
+  if (getMemoryAvailability().usable && recalledMemories.length > 0) {
     sources.push({
       id: 'relevant_memories',
       channel: 'preamble',

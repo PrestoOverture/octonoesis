@@ -9,6 +9,7 @@ import { HookRegistry } from '../hooks/registry'
 import { cleanupMcp, initializeMcp } from '../mcp/registry'
 import { findRelevantMemories } from '../memory/auto/recall'
 import { loadMemories } from '../memory/auto/store'
+import { formatMemoryUnavailableNotice, isMemoryDisabled } from '../memory/availability'
 import { runSessionEndCalibration } from '../memory/calibration/hook'
 import { runSessionEndEpisodes } from '../memory/episodes/hook'
 import {
@@ -283,14 +284,11 @@ export async function initQueryState(
   const emitSessionState = ctx.sessionState !== undefined
   ctx.sessionState ??= createSessionState(ctx.sessionId, model)
 
-  let rules = await loadAllRules()
+  let rules = isMemoryDisabled() ? [] : await loadAllRules()
   ctx.injectedRules = ctx.injectedRules || []
   ctx.recordedRuleOutcomes = ctx.recordedRuleOutcomes || new Set<string>()
 
-  // Mirrors the truthy-env convention in memory/auto/recall.ts's isTruthyEnv.
-  const disableMemoryEnv = process.env.OCTONOESIS_DISABLE_MEMORY?.trim().toLowerCase()
-  const memoryDisabled = !!disableMemoryEnv && ['1', 'true', 'yes', 'on'].includes(disableMemoryEnv)
-  if (!memoryDisabled) {
+  if (!isMemoryDisabled()) {
     const sessionId = ctx.sessionId
     try {
       if (ctx.experimentArm === undefined) {
@@ -1145,6 +1143,8 @@ export async function runQuery(
     process.stderr.write(`${formatQueryFailure(queryResult)}\n`)
     process.exitCode = 1
     await flushJournal()
+    const memoryNotice = formatMemoryUnavailableNotice()
+    if (memoryNotice) console.error(memoryNotice)
     const journalNotice = formatJournalFailureNotice()
     if (journalNotice) console.error(journalNotice)
     return
@@ -1157,6 +1157,8 @@ export async function runQuery(
     ctx.sessionState ? `\n${formatSessionSummary(ctx.sessionState, priced)}\n` : '\n',
   )
   await flushJournal()
+  const memoryNotice = formatMemoryUnavailableNotice()
+  if (memoryNotice) console.error(memoryNotice)
   const journalNotice = formatJournalFailureNotice()
   if (journalNotice) console.error(journalNotice)
 }

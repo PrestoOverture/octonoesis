@@ -2,6 +2,7 @@ import type { Dirent } from 'node:fs'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { getMemoryDir } from '../../utils/path'
+import { getMemoryAvailability } from '../availability'
 import { appendJournal } from '../journal'
 import { type MemoryFile, type MemoryWrite, memoryFileSchema, memoryWritesSchema } from './types'
 
@@ -139,6 +140,7 @@ function capMemoryIndex(content: string): string {
  * @throws Error If file read fails for a reason other than ENOENT.
  */
 export async function loadMemoryIndex(): Promise<string> {
+  if (!getMemoryAvailability().usable) return ''
   try {
     const content = await fs.readFile(path.join(getAutoMemoryDir(), 'MEMORY.md'), 'utf8')
     return capMemoryIndex(content)
@@ -155,6 +157,7 @@ export async function loadMemoryIndex(): Promise<string> {
  * @throws Error If reading directory fails with an error other than ENOENT.
  */
 export async function loadMemories(): Promise<MemoryFile[]> {
+  if (!getMemoryAvailability().usable) return []
   const memoryDir = getAutoMemoryDir()
   let entries: Dirent<string>[]
   try {

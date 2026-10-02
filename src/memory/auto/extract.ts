@@ -2,6 +2,7 @@ import { type ForkOptions, type ForkResult, forkAgent, getForkDepth } from '../.
 import type { CanonicalMessage } from '../../providers/types'
 import type { QueryLoopContext } from '../../query/types'
 import { dbg } from '../../utils/debug'
+import { isMemoryDisabled } from '../availability'
 import { parseForkJson } from './json'
 import { applyMemoryWrites, loadMemoryIndex } from './store'
 import { memoryWritesSchema } from './types'
@@ -17,17 +18,6 @@ export interface MemoryExtractionState {
 /** Options configuring memory extraction execution. */
 export interface ExtractMemoryOptions {
   forkFn?: ForkFunction
-}
-
-/**
- * Checks whether an environment variable string represents a truthy boolean flag.
- *
- * @param value - Raw environment variable string.
- * @returns True if value is '1', 'true', 'yes', or 'on'; otherwise false.
- */
-function isTruthyEnv(value: string | undefined): boolean {
-  if (!value) return false
-  return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
 /**
@@ -72,11 +62,7 @@ export async function extractMemories(
   ctx: QueryLoopContext,
   opts: ExtractMemoryOptions = {},
 ): Promise<void> {
-  if (
-    isTruthyEnv(process.env.OCTONOESIS_DISABLE_MEMORY) ||
-    getForkDepth() > 0 ||
-    state.messages.length < 4
-  ) {
+  if (isMemoryDisabled() || getForkDepth() > 0 || state.messages.length < 4) {
     return
   }
 

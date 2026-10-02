@@ -8,6 +8,7 @@ import {
   withFileLock,
 } from '../../utils/fileLock'
 import { getMemoryDir } from '../../utils/path.ts'
+import { isMemoryDisabled } from '../availability'
 import { readEpisodes } from '../episodes/store.ts'
 import type { Episode } from '../episodes/types.ts'
 import { distillEpisode } from './distill.ts'
@@ -111,10 +112,7 @@ export async function runSessionEndAutoDistill(
   repoRoot: string,
   options: AutoDistillOptions = {},
 ): Promise<void> {
-  if (
-    isTruthyEnv(process.env.OCTONOESIS_DISABLE_MEMORY) ||
-    isTruthyEnv(process.env.OCTONOESIS_DISABLE_AUTO_DISTILL)
-  ) {
+  if (isMemoryDisabled() || isTruthyEnv(process.env.OCTONOESIS_DISABLE_AUTO_DISTILL)) {
     return
   }
 
