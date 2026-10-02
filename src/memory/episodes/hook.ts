@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { appendJsonl } from '../../utils/appendJsonl'
 import { getMemoryDir, getRepoRoot } from '../../utils/path'
 import { isKnownJournalEvent, parseJournalEvent } from '../events'
 import { type JournalEventWithLine, type StoredJournalEvent, segmentJournal } from './segment'
@@ -157,7 +158,7 @@ export async function runSessionEndEpisodes(
       if (episodesToAppend.length > 0) {
         await fs.mkdir(resolvedMemoryDir, { recursive: true })
         const lines = episodesToAppend.map((ep) => `${JSON.stringify(ep)}\n`).join('')
-        await fs.appendFile(episodesPath, lines, 'utf8')
+        await appendJsonl(episodesPath, lines)
       }
     } finally {
       if (timeoutId) {

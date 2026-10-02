@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { appendJsonl } from '../utils/appendJsonl'
 import { dbg } from '../utils/debug'
 import { getMemoryDir } from '../utils/path'
 import { EVENT_SCHEMA_VERSIONS, type JournalEvent } from './events'
@@ -75,7 +76,7 @@ export function appendJournal(
   writeQueue = writeQueue.then(async () => {
     try {
       await fs.mkdir(memoryDir, { recursive: true })
-      await fs.appendFile(journalPath, line, 'utf8')
+      await appendJsonl(journalPath, line)
     } catch (err) {
       journalWriteFailureCount++
       lastJournalWriteFailureCode =

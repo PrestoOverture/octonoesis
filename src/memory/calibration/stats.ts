@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
+import { writeFileAtomic } from '../../utils/atomicWrite.ts'
 import { getMemoryDir } from '../../utils/path.ts'
 import { isKnownJournalEvent, parseJournalEvent } from '../events.ts'
 import type { Fingerprint } from '../fingerprint/extract.ts'
@@ -256,6 +257,6 @@ export async function rebuildCalibration(
     } catch {}
   } else {
     const lines = `${newRecords.map((r) => JSON.stringify(r)).join('\n')}\n`
-    await fs.writeFile(calibrationPath, lines, 'utf8')
+    await writeFileAtomic(calibrationPath, lines)
   }
 }

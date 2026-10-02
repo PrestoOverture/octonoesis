@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { restoreEnv } from '../../helpers/env'
 
 const tempDir = path.join(os.tmpdir(), `octonoesis-journal-test-${Date.now()}`)
 
@@ -74,6 +75,26 @@ describe('Journal Writer Storage', () => {
 
     expect(parsed2.kind).toBe('turn')
     expect(parsed2.turn).toBe(2)
+  })
+
+  test('separates a pre-existing tail before the first journal append', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'journal-torn-'))
+    const previous = process.env.OCTONOESIS_MEMORY_DIR
+    try {
+      process.env.OCTONOESIS_MEMORY_DIR = dir
+      const target = path.join(dir, 'journal.jsonl')
+      await fs.writeFile(target, '{"kind":"turn","turn":1}')
+      appendJournal({ kind: 'turn', turn: 2, session_id: 'torn-tail-test' })
+      await flushJournal()
+      const lines = (await fs.readFile(target, 'utf8')).trim().split('\n')
+      expect(lines.length).toBe(2)
+      expect(JSON.parse(lines[0] ?? '').turn).toBe(1)
+      expect(JSON.parse(lines[1] ?? '').turn).toBe(2)
+    } finally {
+      await flushJournal()
+      restoreEnv('OCTONOESIS_MEMORY_DIR', previous)
+      await fs.rm(dir, { recursive: true, force: true })
+    }
   })
 
   test('reports write failures once and recovers the queue for later writes', async () => {

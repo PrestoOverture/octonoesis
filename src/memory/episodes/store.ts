@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { appendJsonl } from '../../utils/appendJsonl'
 import { getMemoryDir } from '../../utils/path'
 import type { Episode } from './types'
 
@@ -19,14 +20,18 @@ export async function readEpisodes(
       .filter((line) => line.length > 0)
     const episodesMap = new Map<string, Episode>()
     for (const line of lines) {
-      const ep = JSON.parse(line) as Episode
-      if (ep?.id) {
-        episodesMap.set(ep.id, ep)
+      try {
+        const ep = JSON.parse(line) as Episode
+        if (ep?.id) {
+          episodesMap.set(ep.id, ep)
+        }
+      } catch {
+        // Skip malformed lines, including crash-torn tails.
       }
     }
     return Array.from(episodesMap.values())
   } catch (err) {
-    // Preserve the store's fail-soft behavior for missing, unreadable, or malformed logs.
+    // Preserve the store's fail-soft behavior for missing or unreadable logs.
     return []
   }
 }
@@ -67,5 +72,5 @@ export async function appendEpisodes(episodes: Episode[]): Promise<void> {
   const episodesPath = path.join(memoryDir, 'episodes.jsonl')
 
   const lines = episodes.map((ep) => `${JSON.stringify(ep)}\n`).join('')
-  await fs.appendFile(episodesPath, lines, 'utf8')
+  await appendJsonl(episodesPath, lines)
 }
