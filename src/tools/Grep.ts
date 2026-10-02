@@ -1,11 +1,10 @@
 // biome-ignore lint/suspicious/noExplicitAny: global environment type bypass
 declare const Bun: any
-import { spawnSync } from 'node:child_process'
-import { relative, resolve } from 'node:path'
-import { rgPath } from '@vscode/ripgrep'
+import { relative } from 'node:path'
 import z from 'zod'
 import { assertInsideRepo } from '../utils/path'
 import type { Tool, ToolContext, ToolResult } from './Tool'
+import { resolveRgPath } from './rgPath'
 
 // Input validation schema using Zod
 const GrepInputSchema = z.object({
@@ -14,26 +13,6 @@ const GrepInputSchema = z.object({
 })
 
 type GrepInput = z.infer<typeof GrepInputSchema>
-
-let resolvedRgPath = rgPath
-
-/**
- * Checks if ripgrep is available via the vscode-ripgrep path.
- * If not, falls back to using the system 'rg' command.
- */
-function checkRgAvailability(): void {
-  try {
-    const result = spawnSync(resolvedRgPath, ['--version'], { encoding: 'utf-8' })
-    if (result.status === 0 && result.stdout.startsWith('ripgrep ')) {
-      return
-    }
-  } catch {}
-
-  // Fallback to system rg
-  resolvedRgPath = 'rg'
-}
-
-checkRgAvailability()
 
 /**
  * GrepTool searches for regular expression patterns in file contents
@@ -116,6 +95,14 @@ class GrepTool implements Tool<GrepInput, string> {
     }
 
     try {
+      const resolvedRgPath = await resolveRgPath()
+      if (!resolvedRgPath) {
+        return {
+          ok: false,
+          error:
+            'ripgrep_not_found: Install ripgrep or install the @vscode/ripgrep npm package with optional dependencies.',
+        }
+      }
       if (ctx.abortSignal) {
         if (ctx.abortSignal.aborted) {
           return { ok: false, error: 'aborted: Grep operation cancelled prior to execution.' }
