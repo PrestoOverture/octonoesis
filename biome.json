@@ -8,6 +8,7 @@
       "book/**",
       ".claude/**",
       ".octonoesis/**",
+      "docs/**",
       "test/demo/seed-rules/**",
       "test/demo/seed-rules-selfloop/**"
     ]
