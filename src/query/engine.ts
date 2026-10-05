@@ -53,6 +53,7 @@ import type { ToolContext } from '../tools/Tool'
 import { writeTool } from '../tools/Write'
 import { runTool } from '../tools/execute'
 import { getAllTools, registerTool, unregisterTool } from '../tools/registry'
+import { createMarkdownStream } from '../ui/markdown'
 import { estimateCost } from '../utils/cost'
 import { dbg } from '../utils/debug'
 import {
@@ -1069,6 +1070,7 @@ export async function* query(
  * Options for executing a query via the CLI engine.
  */
 export interface RunQueryOptions {
+  stdoutIsTTY?: boolean
   messages?: CanonicalMessage[]
   persistSession?: boolean
   memoryDir?: string
@@ -1106,6 +1108,10 @@ export async function runQuery(
     config,
   }
   const generator = query(userPrompt, ctx)
+  const textOutput = createMarkdownStream(
+    (text) => process.stdout.write(text),
+    options.stdoutIsTTY ?? process.stdout.isTTY === true,
+  )
   let queryResult: QueryResult | undefined
 
   try {
@@ -1117,21 +1123,26 @@ export async function runQuery(
       }
       const event = step.value
       if (event.type === 'text_delta') {
-        process.stdout.write(event.text)
+        textOutput.write(event.text)
       } else if (event.type === 'tool_use') {
+        textOutput.flush()
         let inputStr = ''
         if (event.input && typeof event.input === 'object') {
           const values = Object.values(event.input)
           if (values.length > 0) inputStr = ` ${values[0]}`
         }
         process.stdout.write(`\n[Tool Call] ${event.name}${inputStr}...\n`)
+      } else if (event.type === 'message_end') {
+        textOutput.flush()
       } else if (event.type === 'compact') {
+        textOutput.flush()
         process.stdout.write(
           `\n✻ Context compacted: ${event.preTokens.toLocaleString('en-US')} → ${event.postTokens.toLocaleString('en-US')} tokens\n`,
         )
       }
     }
   } finally {
+    textOutput.flush()
     try {
       await cleanupTasks(ctx)
     } catch (error) {
