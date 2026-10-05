@@ -6,6 +6,7 @@ import { DiffPreview } from './DiffPreview'
  * Props for the ConfirmDialog interactive tool authorization dialog.
  */
 export interface ConfirmDialogProps {
+  maxHeight?: number
   toolName: string
   input: unknown
   onResolve: (decision: 'allow_once' | 'allow_always' | 'deny') => void
@@ -17,7 +18,7 @@ export interface ConfirmDialogProps {
  * @returns A JSX.Element rendering the warning dialog and keystroke instructions.
  */
 export function ConfirmDialog(props: ConfirmDialogProps) {
-  const { toolName, input, onResolve } = props
+  const { toolName, input, onResolve, maxHeight } = props
   // Listen for keyboard inputs
   useInput((inputStr) => {
     const key = inputStr.toLowerCase()
@@ -37,7 +38,14 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const paramsStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2)
 
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="yellow" padding={1} marginY={1}>
+    <Box
+      flexDirection="column"
+      borderStyle="round"
+      borderColor="yellow"
+      padding={maxHeight ? 0 : 1}
+      marginY={maxHeight ? 0 : 1}
+      maxHeight={maxHeight}
+    >
       <Box marginBottom={1}>
         <Text bold color="yellow">
           ⚠️ [Permission Required]
@@ -49,30 +57,36 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
         <Text> wants to execute.</Text>
       </Box>
 
-      {isEdit ? (
-        <Box flexDirection="column" marginBottom={1}>
-          <Box>
-            <Text bold color="gray">
-              File:{' '}
-            </Text>
-            <Text color="white">{editInput.path}</Text>
+      <Box
+        flexDirection="column"
+        maxHeight={maxHeight ? Math.max(0, maxHeight - 6) : undefined}
+        overflow="hidden"
+        flexShrink={0}
+      >
+        {isEdit ? (
+          <Box flexDirection="column" marginBottom={1}>
+            <Box>
+              <Text bold color="gray">
+                File:{' '}
+              </Text>
+              <Text color="white">{editInput.path}</Text>
+            </Box>
+            <DiffPreview
+              oldText={editInput.old_string}
+              newText={editInput.new_string}
+              filePath={editInput.path}
+            />
           </Box>
-          <DiffPreview
-            oldText={editInput.old_string}
-            newText={editInput.new_string}
-            filePath={editInput.path}
-          />
-        </Box>
-      ) : (
-        <Box flexDirection="column" marginBottom={1} paddingLeft={2}>
-          <Text bold color="gray">
-            Parameters:
-          </Text>
-          <Text color="white">{paramsStr}</Text>
-        </Box>
-      )}
-
-      <Box flexDirection="row">
+        ) : (
+          <Box flexDirection="column" marginBottom={1} paddingLeft={2}>
+            <Text bold color="gray">
+              Parameters:
+            </Text>
+            <Text color="white">{paramsStr}</Text>
+          </Box>
+        )}
+      </Box>
+      <Box flexDirection="row" flexShrink={0}>
         <Text>Press </Text>
         <Text bold color="green">
           [y]

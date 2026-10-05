@@ -92,6 +92,7 @@ const sessionAgentTools = new WeakMap<QueryLoopContext, [AgentTool, SendMessageT
 
 export type StreamEvent =
   | ProviderStreamEvent
+  | { type: 'task_notice'; text: string }
   | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error' }
   | { type: 'compact'; preTokens: number; postTokens: number; durationMs: number }
   | { type: 'session_state'; sessionState: SessionState; priced: boolean }
@@ -368,7 +369,6 @@ async function prepareQueryState(
   state: EngineState,
   ctx: QueryLoopContext,
 ): Promise<ReadyEngineState> {
-  await injectTaskNotifications(state, ctx)
   state.messages.push({
     role: 'user',
     content: [{ type: 'text', text: state.input }],
@@ -443,14 +443,15 @@ async function prepareQueryState(
  *
  * @param state - Target state containing message history
  * @param ctx - Query loop context managing active background tasks
- * @returns Promise resolving when notifications are drained and appended
+ * @yields A display notification for each synthetic message appended
  */
-async function injectTaskNotifications(
+async function* injectTaskNotifications(
   state: Pick<QueryState, 'messages'>,
   ctx: QueryLoopContext,
-): Promise<void> {
+): AsyncGenerator<StreamEvent> {
   for (const notification of await drainTaskNotifications(ctx)) {
     state.messages.push({ role: 'user', content: notification })
+    yield { type: 'task_notice', text: notification }
   }
 }
 
@@ -919,6 +920,7 @@ export async function* query(
       return cancellationResult(state)
     }
 
+    yield* injectTaskNotifications(state, ctx)
     const readyState = await prepareQueryState(state, ctx)
 
     while (readyState.turn < ctx.config.maxTurns) {
@@ -928,7 +930,7 @@ export async function* query(
         return cancellationResult(readyState)
       }
 
-      await injectTaskNotifications(readyState, ctx)
+      yield* injectTaskNotifications(readyState, ctx)
       const compactCountBefore = ctx.sessionState?.compactCount ?? 0
       const compactAction = yield* maybeCompact(readyState, ctx)
       if (
