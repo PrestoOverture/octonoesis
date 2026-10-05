@@ -384,7 +384,7 @@ export function App(props: AppProps) {
   }
   // Leave one terminal row free: Ink clears when leaving an exactly full frame too.
   const height = Math.max(0, rows - 1)
-  const controlHeight = pendingConfirm ? Math.min(10, Math.max(3, height - 8)) : 3
+  const controlHeight = pendingConfirm ? Math.max(0, height - 6) : 3
   const chromeHeight = controlHeight + 6
   const runningRows = Math.min(
     display.running.length,
@@ -401,34 +401,36 @@ export function App(props: AppProps) {
         {(item, index) => <DisplayEntry key={index} item={item} />}
       </Static>
       <Box flexDirection="column" maxHeight={height} overflow="hidden">
-        <Box
-          flexDirection="row"
-          maxHeight={Math.max(0, height - chromeHeight)}
-          overflow="hidden"
-          flexShrink={0}
-        >
-          <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-            {display.pending ? (
-              <Box flexDirection="column" flexShrink={0}>
-                {display.header ? (
-                  <Text bold color="green">
-                    Agent ›
-                  </Text>
-                ) : null}
-                {hidden ? <Text dimColor>… {hidden} lines above</Text> : null}
-                <Text wrap="truncate-end">{preview.slice(-tailLines).join('\n')}</Text>
-              </Box>
-            ) : null}
-            <Box flexDirection="column" maxHeight={runningRows} overflow="hidden" flexShrink={0}>
-              {display.running.map((tool) => (
-                <Box key={tool.id} height={1} flexShrink={0} overflow="hidden">
-                  <ToolCard tool={tool.name} args={tool.args} status="running" />
+        {!pendingConfirm ? (
+          <Box
+            flexDirection="row"
+            maxHeight={Math.max(0, height - chromeHeight)}
+            overflow="hidden"
+            flexShrink={0}
+          >
+            <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+              {display.pending ? (
+                <Box flexDirection="column" flexShrink={0}>
+                  {display.header ? (
+                    <Text bold color="green">
+                      Agent ›
+                    </Text>
+                  ) : null}
+                  {hidden ? <Text dimColor>… {hidden} lines above</Text> : null}
+                  <Text wrap="truncate-end">{preview.slice(-tailLines).join('\n')}</Text>
                 </Box>
-              ))}
+              ) : null}
+              <Box flexDirection="column" maxHeight={runningRows} overflow="hidden" flexShrink={0}>
+                {display.running.map((tool) => (
+                  <Box key={tool.id} height={1} flexShrink={0} overflow="hidden">
+                    <ToolCard tool={tool.name} args={tool.args} status="running" />
+                  </Box>
+                ))}
+              </Box>
             </Box>
+            <TodoPanel maxRows={Math.max(0, height - chromeHeight)} />
           </Box>
-          <TodoPanel maxRows={Math.max(0, height - chromeHeight)} />
-        </Box>
+        ) : null}
         <Box flexDirection="column" maxHeight={controlHeight} overflow="hidden" flexShrink={0}>
           {pendingConfirm ? (
             <ConfirmDialog

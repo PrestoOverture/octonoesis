@@ -28,6 +28,6 @@ describe('DiffPreview Component', () => {
 
     const frame = lastFrame()
     // It should have truncated the output and displayed the truncation indicator
-    expect(frame).toContain('lines truncated')
+    expect(frame).toContain('more diff lines not shown')
   })
 })

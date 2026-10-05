@@ -1,6 +1,7 @@
-import { Box, Text, useInput } from 'ink'
+import { Box, Text, useInput, useWindowSize } from 'ink'
 import React from 'react'
 import { DiffPreview } from './DiffPreview'
+import { wrapPreviewLines } from './previewLines'
 
 /**
  * Props for the ConfirmDialog interactive tool authorization dialog.
@@ -37,70 +38,48 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   // Format parameters cleanly for non-Edit tools
   const paramsStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2)
 
+  const { columns, rows } = useWindowSize()
+  const width = Math.max(1, columns - 2)
+  const heading = wrapPreviewLines(
+    `⚠️ [Permission Required] Tool ${toolName} wants to execute.`,
+    width,
+  )
+  const footer = wrapPreviewLines(
+    'Press [y] Yes once / [n] No / [a] Always allow for this input',
+    width,
+  )
+  const label = wrapPreviewLines(isEdit ? `File: ${editInput.path}` : 'Parameters:', width)
+  // Borders, heading, payload label and answer keys are accounted for before the body.
+  const bodyRows = Math.max(
+    1,
+    (maxHeight ?? rows - 7) - 2 - heading.length - footer.length - label.length,
+  )
+  const parameters = wrapPreviewLines(paramsStr ?? '', width)
+  const visible = parameters.slice(0, parameters.length > bodyRows ? bodyRows - 1 : bodyRows)
+  const hidden = parameters.length - visible.length
   return (
-    <Box
-      flexDirection="column"
-      borderStyle="round"
-      borderColor="yellow"
-      padding={maxHeight ? 0 : 1}
-      marginY={maxHeight ? 0 : 1}
-      maxHeight={maxHeight}
-    >
-      <Box marginBottom={1}>
-        <Text bold color="yellow">
-          ⚠️ [Permission Required]
-        </Text>
-        <Text> Tool </Text>
-        <Text bold color="cyan">
-          {toolName}
-        </Text>
-        <Text> wants to execute.</Text>
-      </Box>
-
-      <Box
-        flexDirection="column"
-        maxHeight={maxHeight ? Math.max(0, maxHeight - 6) : undefined}
-        overflow="hidden"
-        flexShrink={0}
-      >
-        {isEdit ? (
-          <Box flexDirection="column" marginBottom={1}>
-            <Box>
-              <Text bold color="gray">
-                File:{' '}
-              </Text>
-              <Text color="white">{editInput.path}</Text>
-            </Box>
-            <DiffPreview
-              oldText={editInput.old_string}
-              newText={editInput.new_string}
-              filePath={editInput.path}
-            />
-          </Box>
-        ) : (
-          <Box flexDirection="column" marginBottom={1} paddingLeft={2}>
-            <Text bold color="gray">
-              Parameters:
-            </Text>
-            <Text color="white">{paramsStr}</Text>
-          </Box>
-        )}
-      </Box>
-      <Box flexDirection="row" flexShrink={0}>
-        <Text>Press </Text>
-        <Text bold color="green">
-          [y]
-        </Text>
-        <Text> Yes once / </Text>
-        <Text bold color="red">
-          [n]
-        </Text>
-        <Text> No / </Text>
-        <Text bold color="blue">
-          [a]
-        </Text>
-        <Text> Always allow for this input</Text>
-      </Box>
+    <Box flexDirection="column" borderStyle="round" borderColor="yellow" flexShrink={0}>
+      <Text bold color="yellow">
+        {heading.join('\n')}
+      </Text>
+      <Text bold color="gray">
+        {label.join('\n')}
+      </Text>
+      {isEdit ? (
+        <DiffPreview
+          oldText={editInput.old_string}
+          newText={editInput.new_string}
+          filePath={editInput.path}
+          maxLines={bodyRows}
+          columns={width}
+        />
+      ) : (
+        <Box flexDirection="column" flexShrink={0}>
+          <Text color="white">{visible.join('\n')}</Text>
+          {hidden ? <Text color="yellow">… {hidden} more lines not shown</Text> : null}
+        </Box>
+      )}
+      <Text>{footer.join('\n')}</Text>
     </Box>
   )
 }
