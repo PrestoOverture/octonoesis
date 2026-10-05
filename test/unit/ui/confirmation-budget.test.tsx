@@ -48,6 +48,7 @@ async function confirmation(
       patchConsole: false,
       exitOnCtrlC: false,
       incrementalRendering: false,
+      interactive: true,
     },
   )
   let decision: Promise<string> | undefined

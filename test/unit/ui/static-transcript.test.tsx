@@ -76,6 +76,7 @@ test('long replies and ten tools never clear the fake TTY', async () => {
     exitOnCtrlC: false,
     patchConsole: false,
     incrementalRendering: false,
+    interactive: true,
   })
   try {
     await delay(30)
@@ -189,6 +190,7 @@ test('compaction shrinks model history while resumed history, task notices and t
       exitOnCtrlC: false,
       patchConsole: false,
       incrementalRendering: false,
+      interactive: true,
     },
   )
   try {
@@ -293,6 +295,7 @@ test('an unclosed 200-line fence and a tall todo panel stay bounded, then commit
     exitOnCtrlC: false,
     patchConsole: false,
     incrementalRendering: false,
+    interactive: true,
   })
   try {
     await delay(30)
