@@ -12,6 +12,8 @@ import { setProvider } from '../../../src/providers'
 import type { CanonicalMessage, ToolContext } from '../../../src/query'
 import { getTodos, setTodos } from '../../../src/state/todos'
 import { enqueueTaskNotification } from '../../../src/tasks/framework'
+import { readTool } from '../../../src/tools/Read'
+import { registerTool } from '../../../src/tools/registry'
 import { App } from '../../../src/ui/App'
 import { restoreEnv } from '../../helpers/env'
 
@@ -69,6 +71,8 @@ test('long replies and ten tools never clear the fake TTY', async () => {
     },
   })
   await fs.writeFile(path.join(directory, 'fixture.txt'), 'fixture')
+  // Built-ins register once at engine load; other test files clearRegistry() without restoring.
+  registerTool(readTool)
   const view = render(<App ctx={{ repoRoot: directory, memoryDir: directory }} />, {
     stdout: stdout as unknown as NodeJS.WriteStream,
     stdin: stdin as unknown as NodeJS.ReadStream,
@@ -178,6 +182,8 @@ test('compaction shrinks model history while resumed history, task notices and t
     },
   })
   await fs.writeFile(path.join(directory, 'fixture.txt'), 'fixture')
+  // Built-ins register once at engine load; other test files clearRegistry() without restoring.
+  registerTool(readTool)
   const view = render(
     <App
       ctx={ctx}
