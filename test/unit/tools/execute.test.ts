@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { HookRegistry } from '../../../src/hooks/registry'
 import { getRepoRoot } from '../../../src/query'
 import { bashTool } from '../../../src/tools/Bash'
 import { readTool } from '../../../src/tools/Read'
@@ -6,19 +7,6 @@ import type { Tool } from '../../../src/tools/Tool'
 import { runTool } from '../../../src/tools/execute'
 import { clearRegistry, registerTool } from '../../../src/tools/registry'
 import { restoreRegistry, snapshotRegistry } from '../../helpers/globalState'
-
-// Mock the permissions hook module dynamically
-mock.module('../../../src/permissions/hooks', () => {
-  return {
-    // biome-ignore lint/suspicious/noExplicitAny: mock input
-    preToolUseHook: async (toolName: string, input: any) => {
-      if (toolName === 'Read' && input.path === 'blocked-by-hook.txt') {
-        return { action: 'deny', reason: 'Blocked by mock hook' }
-      }
-      return { action: 'allow' }
-    },
-  }
-})
 
 describe('execute pipeline (runTool)', () => {
   const repoRoot = getRepoRoot()
@@ -61,8 +49,19 @@ describe('execute pipeline (runTool)', () => {
     clearRegistry()
     registerTool(readTool)
 
-    // The mock hook is programmed to deny Read on "blocked-by-hook.txt"
-    const result = await runTool('Read', { path: 'blocked-by-hook.txt' }, ctx)
+    // A real pre_tool_use hook on the context, rather than mock.module() of
+    // permissions/hooks: Bun module mocks stay active for the rest of the process,
+    // which broke test/integration/hooks.test.ts whenever this file ran first.
+    const hooks = new HookRegistry()
+    hooks.register({
+      event: 'pre_tool_use',
+      toolPattern: 'Read',
+      handler: {
+        type: 'function',
+        fn: async () => ({ action: 'deny', reason: 'Blocked by mock hook' }),
+      },
+    })
+    const result = await runTool('Read', { path: 'blocked-by-hook.txt' }, { ...ctx, hooks })
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.error).toContain('permission_denied')
