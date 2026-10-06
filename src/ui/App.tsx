@@ -1,6 +1,6 @@
 import crypto from 'node:crypto'
-import { Box, Text, useApp, useInput } from 'ink'
-import React, { useState, useEffect, useRef } from 'react'
+import { Box, Static, Text, useApp, useInput, useWindowSize } from 'ink'
+import React, { useState, useEffect, useRef, useReducer } from 'react'
 import { registerPromptHandler, unregisterPromptHandler } from '../permissions/confirm'
 import { getResolvedModel } from '../providers'
 import {
@@ -26,16 +26,8 @@ import { TodoPanel } from './TodoPanel'
 import { ToolCard } from './ToolCard'
 import { appendInputHistory, loadInputHistory } from './inputHistory'
 import { renderMarkdown } from './markdown'
+import { type DisplayItem, seedTranscript, transcriptReducer } from './transcript'
 export type { CanonicalMessage } from '../query'
-
-// Identity metadata lives only in the UI, never on canonical messages.
-const verbatimMessages = new WeakSet<CanonicalMessage>()
-
-export function verbatimAssistantMessage(text: string): CanonicalMessage {
-  const message: CanonicalMessage = { role: 'assistant', content: [{ type: 'text', text }] }
-  verbatimMessages.add(message)
-  return message
-}
 
 /**
  * Props for the root TUI application component.
@@ -53,19 +45,6 @@ export interface AppProps {
     messageCount: number
     updatedAt: string
   }
-}
-
-/**
- * Extracts plain text from a canonical user message.
- *
- * @param message - Canonical message to inspect
- * @returns Concatenated text content, or empty string if not a user message
- */
-function canonicalUserText(message: CanonicalMessage): string {
-  if (message.role !== 'user') return ''
-  return typeof message.content === 'string'
-    ? message.content
-    : message.content.map((block) => (block.type === 'text' ? block.text : '')).join('')
 }
 
 const TASK_NOTICE_PREFIX = '<task-notification>'
@@ -115,83 +94,47 @@ export function formatTaskNoticeLabel(text: string): string {
   return `Task › ${taskId} ${status}: ${truncateTaskNoticeSummary(summary)}`
 }
 
-/**
- * MessageList renders the chronological history of user messages and agent turns,
- * rendering tool usages as compact <ToolCard> components.
- * @param props The props containing the messages list.
- * @returns The rendered Box containing message logs.
- */
-export function MessageList(props: { messages?: CanonicalMessage[] }) {
-  const { messages = [] } = props
+export function DisplayEntry({ item }: { item: DisplayItem }) {
+  if (item.kind === 'tool')
+    return <ToolCard tool={item.name} args={item.args} status={item.status} />
+  if (item.kind === 'compact') return <CompactNotice {...item} />
+  if (item.kind === 'resume') return <Text color="yellow">{item.text}</Text>
+  if (item.kind === 'task_notice')
+    return (
+      <Text color="yellow" dimColor>
+        {formatTaskNoticeLabel(item.text)}
+      </Text>
+    )
+  if (item.kind === 'user')
+    return (
+      <Text bold color="cyan">
+        User › <Text color="white">{item.text}</Text>
+      </Text>
+    )
+  if ('verbatim' in item)
+    return (
+      <Box flexDirection="column">
+        {item.header ? (
+          <Text bold color="green">
+            Agent ›
+          </Text>
+        ) : null}
+        <Text color="white">
+          {item.verbatim ? item.text : renderMarkdown(item.text).replace(/\n+$/, '')}
+        </Text>
+      </Box>
+    )
+  return null
+}
+
+/** Stateless history renderer for display tests; App seeds its Static once instead. */
+export function MessageList({ messages = [] }: { messages?: CanonicalMessage[] }) {
   return (
     <Box flexDirection="column">
-      {messages.map((msg, index) => {
-        if (msg.role === 'user') {
-          const text =
-            typeof msg.content === 'string'
-              ? msg.content
-              : msg.content.map((c) => (c.type === 'text' ? c.text : '')).join('')
-          if (text.startsWith(TASK_NOTICE_PREFIX)) {
-            return (
-              // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
-              <Box key={index} flexDirection="column" marginY={0}>
-                <Text color="yellow" dimColor>
-                  {formatTaskNoticeLabel(text)}
-                </Text>
-              </Box>
-            )
-          }
-          return (
-            // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
-            <Box key={index} flexDirection="column" marginY={0}>
-              <Text bold color="cyan">
-                User › <Text color="white">{text}</Text>
-              </Text>
-            </Box>
-          )
-        }
-        if (msg.role === 'assistant') {
-          return (
-            // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
-            <Box key={index} flexDirection="column" marginY={0}>
-              <Text bold color="green">
-                Agent ›
-              </Text>
-              {msg.content.map((block, bIdx) => {
-                if (block.type === 'text') {
-                  return (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
-                    <Text key={bIdx} color="white">
-                      {verbatimMessages.has(msg)
-                        ? block.text
-                        : renderMarkdown(block.text).replace(/\n+$/, '')}
-                    </Text>
-                  )
-                }
-                if (block.type === 'tool_use') {
-                  // Find subsequent tool result to determine completion status
-                  const resultMsg = messages[index + 1]
-                  const isError =
-                    resultMsg &&
-                    resultMsg.role === 'tool' &&
-                    typeof resultMsg.content === 'string' &&
-                    resultMsg.content.includes('"error":')
-
-                  const status = isError ? 'error' : 'done'
-                  const argsStr = block.input ? JSON.stringify(block.input) : ''
-                  return (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
-                    <ToolCard key={bIdx} tool={block.name} args={argsStr} status={status} />
-                  )
-                }
-                return null
-              })}
-            </Box>
-          )
-        }
-        // Hide raw tool outputs to keep TUI scrollback clean
-        return null
-      })}
+      {seedTranscript(messages).transcript.map((item, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: immutable display order
+        <DisplayEntry key={index} item={item} />
+      ))}
     </Box>
   )
 }
@@ -266,14 +209,18 @@ export function App(props: AppProps) {
     }
   })
 
-  const [messages, setMessages] = useState<CanonicalMessage[]>(initialMessages)
+  const [display, dispatch] = useReducer(transcriptReducer, undefined, () => ({
+    ...seedTranscript(initialMessages.length ? initialMessages : ctx.messages, resumeInfo),
+    pending: initialStreamingText,
+    running: initialStreamingToolUses.map((tool, index) => ({
+      id: `initial-${index}`,
+      name: tool.name,
+      args: tool.input ? JSON.stringify(tool.input) : '',
+    })),
+  }))
+  const { rows, columns } = useWindowSize()
   const [inputHistory, setInputHistory] = useState<string[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
-  const [compactNotices, setCompactNotices] = useState<
-    { id: number; preTokens: number; postTokens: number; durationMs: number }[]
-  >([])
-  const compactNoticeIdRef = useRef(0)
-
   const { exit } = useApp()
   const abortControllerRef = useRef<AbortController | null>(null)
 
@@ -351,18 +298,6 @@ export function App(props: AppProps) {
     }
   }, [ctx])
 
-  // Streaming states (hooks default props cleanly for tests)
-  const [streamingText, setStreamingText] = useState(initialStreamingText)
-  const [streamingToolUses, setStreamingToolUses] = useState<
-    { name: string; status: 'running' | 'done' | 'error'; input?: unknown }[]
-  >(() =>
-    initialStreamingToolUses.map((t) => ({
-      name: t.name,
-      status: t.status || 'running',
-      input: t.input,
-    })),
-  )
-
   const modelName = getResolvedModel()
   const initialPricing = estimateCost({ input_tokens: 0, output_tokens: 0 }, modelName)
   const [sessionView, setSessionView] = useState<{
@@ -383,11 +318,7 @@ export function App(props: AppProps) {
     }
 
     if (value.trim() === '/stats') {
-      const userMsg: CanonicalMessage = {
-        role: 'user',
-        content: [{ type: 'text', text: value }],
-      }
-      setMessages((prev) => [...prev, userMsg])
+      dispatch({ type: 'user', text: value })
       ;(async () => {
         try {
           const { readCalibrationRecords, aggregateCalibrationStats } = await import(
@@ -398,12 +329,10 @@ export function App(props: AppProps) {
           const statsList = aggregateCalibrationStats(records)
           const table = formatStatsTable(statsList)
 
-          const assistantMsg = verbatimAssistantMessage(table)
-          setMessages((prev) => [...prev, assistantMsg])
+          dispatch({ type: 'stats', text: table })
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err)
-          const assistantMsg = verbatimAssistantMessage(`Failed to load stats: ${errMsg}`)
-          setMessages((prev) => [...prev, assistantMsg])
+          dispatch({ type: 'failure', text: `Failed to load stats: ${errMsg}` })
         }
       })()
       return
@@ -411,12 +340,7 @@ export function App(props: AppProps) {
 
     setIsGenerating(true)
 
-    // Immediately push User bubble to maintain high visual responsiveness
-    const newMsg: CanonicalMessage = {
-      role: 'user',
-      content: [{ type: 'text', text: value }],
-    }
-    setMessages((prev) => [...prev, newMsg])
+    dispatch({ type: 'user', text: value })
 
     const controller = new AbortController()
     abortControllerRef.current = controller
@@ -434,34 +358,8 @@ export function App(props: AppProps) {
             break
           }
           const event = step.value
-          if (event.type === 'text_delta') {
-            setStreamingText((prev) => prev + event.text)
-          } else if (event.type === 'tool_use') {
-            setStreamingToolUses((prev) => [
-              ...prev,
-              { name: event.name, status: 'running', input: event.input },
-            ])
-          } else if (event.type === 'tool_done') {
-            // Update ToolCard statuses to (done) or (error)
-            setStreamingToolUses((prev) =>
-              prev.map((t) =>
-                t.name === event.name && t.status === 'running'
-                  ? { ...t, status: event.status }
-                  : t,
-              ),
-            )
-          } else if (event.type === 'compact') {
-            compactNoticeIdRef.current++
-            setCompactNotices((prev) => [
-              ...prev,
-              {
-                id: compactNoticeIdRef.current,
-                preTokens: event.preTokens,
-                postTokens: event.postTokens,
-                durationMs: event.durationMs,
-              },
-            ])
-          } else if (event.type === 'session_state') {
+          dispatch(event)
+          if (event.type === 'session_state') {
             const sessionState = {
               ...event.sessionState,
               usage: { ...event.sessionState.usage },
@@ -471,68 +369,75 @@ export function App(props: AppProps) {
           }
         }
 
-        // Commit full engine history to history layout state upon loop return
-        const history = [...(ctx.messages ?? [])]
+        dispatch({ type: 'end' })
         const failure = formatQueryFailure(queryResult)
-        if (resumeInfo) {
-          let promptIndex = -1
-          for (let index = history.length - 1; index >= 0; index -= 1) {
-            const message = history[index]
-            if (message && canonicalUserText(message) === rewrittenValue) {
-              promptIndex = index
-              break
-            }
-          }
-          const resumedTurn = promptIndex >= 0 ? history.slice(promptIndex + 1) : []
-          if (failure) {
-            resumedTurn.push(verbatimAssistantMessage(failure))
-          }
-          setMessages((previous) => [...previous, ...resumedTurn])
-        } else {
-          if (failure) {
-            history.push(verbatimAssistantMessage(failure))
-          }
-          setMessages(history)
-        }
+        if (failure) dispatch({ type: 'failure', text: failure })
       } catch (err) {
         const detail = err instanceof Error ? err.message : String(err)
-        const failureMessage = verbatimAssistantMessage(`Query failed: ${detail}`)
-        setMessages((previous) =>
-          resumeInfo ? [...previous, failureMessage] : [...(ctx.messages ?? []), failureMessage],
-        )
+        dispatch({ type: 'end' })
+        dispatch({ type: 'failure', text: `Query failed: ${detail}` })
       } finally {
-        setStreamingText('')
-        setStreamingToolUses([])
         setIsGenerating(false)
         abortControllerRef.current = null
       }
     })()
   }
+  // Leave one terminal row free: Ink clears when leaving an exactly full frame too.
+  const height = Math.max(0, rows - 1)
+  const controlHeight = pendingConfirm ? Math.max(0, height - 6) : 3
+  const chromeHeight = controlHeight + 6
+  const runningRows = Math.min(
+    display.running.length,
+    Math.max(0, height - chromeHeight - (display.pending ? 5 : 0)),
+  )
+  const headerRows = display.pending && display.header ? 1 : 0
+  const dynamicChromeHeight = chromeHeight + runningRows + headerRows
+  const tailLines = Math.max(3, rows - dynamicChromeHeight - 2)
+  const preview = renderMarkdown(display.pending).replace(/\n+$/, '').split('\n')
+  const hidden = Math.max(0, preview.length - tailLines)
   return (
-    <Box flexDirection="column" padding={1}>
-      <Box flexDirection="row" flexGrow={1}>
-        <Box flexDirection="column" flexGrow={1}>
-          {resumeInfo ? (
-            <Text color="yellow">
-              Resumed {resumeInfo.sessionId.slice(0, 8)}: {resumeInfo.messageCount} messages, last
-              active {resumeInfo.updatedAt}
-            </Text>
-          ) : null}
-          <MessageList messages={messages} />
-          {compactNotices.map((notice) => (
-            <CompactNotice
-              key={notice.id}
-              preTokens={notice.preTokens}
-              postTokens={notice.postTokens}
-              durationMs={notice.durationMs}
-            />
-          ))}
-          <StreamingResponse text={streamingText} toolUses={streamingToolUses} />
+    <Box flexDirection="column" width={columns}>
+      <Static items={display.transcript}>
+        {(item, index) => <DisplayEntry key={index} item={item} />}
+      </Static>
+      <Box flexDirection="column" maxHeight={height} overflow="hidden">
+        {!pendingConfirm ? (
+          <Box
+            flexDirection="row"
+            maxHeight={Math.max(0, height - chromeHeight)}
+            overflow="hidden"
+            flexShrink={0}
+          >
+            <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+              {display.pending ? (
+                <Box flexDirection="column" flexShrink={0}>
+                  {display.header ? (
+                    <Text bold color="green">
+                      Agent ›
+                    </Text>
+                  ) : null}
+                  {hidden ? <Text dimColor>… {hidden} lines above</Text> : null}
+                  <Text wrap="truncate-end">{preview.slice(-tailLines).join('\n')}</Text>
+                </Box>
+              ) : null}
+              <Box flexDirection="column" maxHeight={runningRows} overflow="hidden" flexShrink={0}>
+                {display.running.map((tool) => (
+                  <Box key={tool.id} height={1} flexShrink={0} overflow="hidden">
+                    <ToolCard tool={tool.name} args={tool.args} status="running" />
+                  </Box>
+                ))}
+              </Box>
+            </Box>
+            <TodoPanel maxRows={Math.max(0, height - chromeHeight)} />
+          </Box>
+        ) : null}
+        <Box flexDirection="column" maxHeight={controlHeight} overflow="hidden" flexShrink={0}>
           {pendingConfirm ? (
             <ConfirmDialog
               toolName={pendingConfirm.toolName}
               input={pendingConfirm.input}
               onResolve={pendingConfirm.resolve}
+              maxHeight={controlHeight}
             />
           ) : (
             <PromptInput
@@ -543,17 +448,20 @@ export function App(props: AppProps) {
             />
           )}
         </Box>
-        <TodoPanel />
+        <Box flexDirection="column" maxHeight={5} overflow="hidden" flexShrink={0}>
+          <StatusBar
+            modelName={sessionView?.sessionState.model ?? modelName}
+            inputTokens={sessionView?.sessionState.usage.input_tokens ?? 0}
+            outputTokens={sessionView?.sessionState.usage.output_tokens ?? 0}
+            costUsd={sessionView?.sessionState.costUsd ?? 0}
+            priced={sessionView?.priced ?? initialPricing.priced}
+            contextUtilization={sessionView?.sessionState.contextUtilization ?? 0}
+          />
+        </Box>
+        <Box flexDirection="column" maxHeight={1} overflow="hidden" flexShrink={0}>
+          <TaskChip ctx={ctx} />
+        </Box>
       </Box>
-      <StatusBar
-        modelName={sessionView?.sessionState.model ?? modelName}
-        inputTokens={sessionView?.sessionState.usage.input_tokens ?? 0}
-        outputTokens={sessionView?.sessionState.usage.output_tokens ?? 0}
-        costUsd={sessionView?.sessionState.costUsd ?? 0}
-        priced={sessionView?.priced ?? initialPricing.priced}
-        contextUtilization={sessionView?.sessionState.contextUtilization ?? 0}
-      />
-      <TaskChip ctx={ctx} />
     </Box>
   )
 }

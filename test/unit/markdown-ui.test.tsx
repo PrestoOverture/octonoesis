@@ -6,7 +6,7 @@ import chalk from 'chalk'
 import { render } from 'ink-testing-library'
 import React from 'react'
 import type { CanonicalMessage } from '../../src/query'
-import { App, MessageList, StreamingResponse, verbatimAssistantMessage } from '../../src/ui/App'
+import { App, DisplayEntry, MessageList, StreamingResponse } from '../../src/ui/App'
 
 import { restoreEnv } from '../helpers/env'
 
@@ -22,12 +22,20 @@ afterEach(() => {
 test('assistant markdown renders, while user and UI harness text stay verbatim', () => {
   const messages: CanonicalMessage[] = [
     { role: 'assistant', content: [{ type: 'text', text: '**hi**' }] },
-    verbatimAssistantMessage('Query failed: __init__'),
-    verbatimAssistantMessage('stats: __init__'),
     { role: 'user', content: '**x**' },
   ]
   const source = JSON.stringify(messages)
-  const view = render(<MessageList messages={messages} />)
+  const view = render(
+    <>
+      <MessageList messages={messages} />
+      <DisplayEntry
+        item={{ kind: 'failure', text: 'Query failed: __init__', verbatim: true, header: true }}
+      />
+      <DisplayEntry
+        item={{ kind: 'stats', text: 'stats: __init__', verbatim: true, header: true }}
+      />
+    </>,
+  )
   try {
     expect(view.lastFrame()).toContain('hi')
     expect(view.lastFrame()).not.toContain('**hi**')
@@ -72,11 +80,11 @@ test('the /stats command preserves bucket names containing markdown underscores'
     view.stdin.write('/stats')
     await new Promise((resolve) => setTimeout(resolve, 50))
     view.stdin.write('\r')
-    for (let attempt = 0; attempt < 20 && !view.lastFrame()?.includes('__init__'); attempt++) {
+    for (let attempt = 0; attempt < 20 && !view.frames.join('').includes('__init__'); attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 25))
     }
-    expect(view.lastFrame()).toContain('__init__')
-    expect(view.lastFrame()).toContain('uncertain')
+    expect(view.frames.join('')).toContain('__init__')
+    expect(view.frames.join('')).toContain('uncertain')
   } finally {
     view?.unmount()
     restoreEnv('OCTONOESIS_MEMORY_DIR', originalMemoryDir)

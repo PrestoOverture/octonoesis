@@ -156,7 +156,7 @@ describe('daily-driver TUI input', () => {
     view.unmount()
   })
 
-  it('shows a resume banner without replaying the saved transcript', async () => {
+  it('seeds the resume banner and saved transcript once', async () => {
     const provider = new CapturingProvider()
     setProvider(provider)
     const view = render(
@@ -181,8 +181,8 @@ describe('daily-driver TUI input', () => {
 
     const initial = view.lastFrame() ?? ''
     expect(initial).toContain('Resumed 12345678: 2 messages, last active 2026-07-17T05:06:07.000Z')
-    expect(initial).not.toContain('old transcript secret')
-    expect(initial).not.toContain('old assistant reply')
+    expect(initial).toContain('old transcript secret')
+    expect(initial).toContain('old assistant reply')
 
     view.stdin.write('new visible prompt')
     await waitFor(() => promptLine(view.lastFrame()).includes('new visible prompt'))
@@ -195,8 +195,8 @@ describe('daily-driver TUI input', () => {
     const after = view.lastFrame() ?? ''
     expect(after).toContain('new visible prompt')
     expect(after).toContain('done')
-    expect(after).not.toContain('old transcript secret')
-    expect(after).not.toContain('old assistant reply')
+    expect(after.split('old transcript secret').length - 1).toBe(1)
+    expect(after.split('old assistant reply').length - 1).toBe(1)
     expect(
       provider.calls[0]?.some((message) => userText(message).includes('old transcript secret')),
     ).toBe(true)

@@ -120,6 +120,16 @@ export function renderMarkdown(text: string): string {
   }
 }
 
+/** Raw stable prefix shared by the one-shot writer and the pure display reducer. */
+export function stableMarkdownLength(text: string): number {
+  try {
+    const tokens = lexMarkdown(text)
+    return tokens.slice(0, -1).reduce((sum, token) => sum + token.raw.length, 0)
+  } catch {
+    return 0
+  }
+}
+
 /** Commit complete top-level tokens while retaining the mutable trailing token. */
 export function createMarkdownStream(write: (text: string) => void, isTTY: boolean) {
   let pending = ''
@@ -130,15 +140,10 @@ export function createMarkdownStream(write: (text: string) => void, isTTY: boole
         return
       }
       pending += delta
-      try {
-        const tokens = lexMarkdown(pending)
-        if (tokens.length > 1) {
-          const length = tokens.slice(0, -1).reduce((sum, token) => sum + token.raw.length, 0)
-          write(renderMarkdown(pending.slice(0, length)))
-          pending = pending.slice(length)
-        }
-      } catch {
-        // Keep the original tail until the run ends; renderMarkdown falls back safely.
+      const length = stableMarkdownLength(pending)
+      if (length) {
+        write(renderMarkdown(pending.slice(0, length)))
+        pending = pending.slice(length)
       }
     },
     flush() {
