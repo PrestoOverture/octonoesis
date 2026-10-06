@@ -49,7 +49,9 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
   switch (event.type) {
     case 'banner':
       if (state.transcript.some((item) => item.kind === 'banner')) return state
-      return { ...state, transcript: [{ kind: 'banner', ...event.snapshot }, ...state.transcript] }
+      // Append, never prepend: <Static> renders items.slice(renderedCount), so reordering
+      // committed items would duplicate one and drop another.
+      return append(state, { kind: 'banner', ...event.snapshot })
     case 'text_delta': {
       const pending = state.pending + event.text
       const length = stableMarkdownLength(pending)
