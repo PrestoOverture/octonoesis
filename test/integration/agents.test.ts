@@ -43,9 +43,11 @@ import { grepTool } from '../../src/tools/Grep'
 import { readTool } from '../../src/tools/Read'
 import { SendMessageTool } from '../../src/tools/SendMessageTool'
 import { todoWriteTool } from '../../src/tools/TodoWrite'
+import type { Tool } from '../../src/tools/Tool'
 import { writeTool } from '../../src/tools/Write'
 import { runTool } from '../../src/tools/execute'
 import { clearRegistry, registerTool } from '../../src/tools/registry'
+import { restoreRegistry, snapshotRegistry } from '../helpers/globalState'
 
 const execFileAsync = promisify(execFile)
 const cliPath = path.resolve('src/cli.tsx')
@@ -58,6 +60,7 @@ const originalDisableMemory = process.env.OCTONOESIS_DISABLE_MEMORY
 const roots: string[] = []
 const backgroundContexts: QueryLoopContext[] = []
 let memoryDir = ''
+let originalTools: Tool[] = []
 
 async function git(root: string, ...args: string[]): Promise<string> {
   return (await execFileAsync('git', ['-C', root, ...args])).stdout.trim()
@@ -136,6 +139,7 @@ beforeEach(async () => {
   Reflect.deleteProperty(process.env, 'OCTONOESIS_FORK_DEPTH')
   clearAllowlist()
   unregisterPromptHandler()
+  originalTools = snapshotRegistry()
   registerAgentDependencies()
   clearLocalAgentsForTests()
   memoryDir = await makeRoot()
@@ -149,8 +153,7 @@ afterEach(async () => {
   clearAllowlist()
   await Promise.allSettled(backgroundContexts.splice(0).map((ctx) => cleanupLocalAgents(ctx)))
   clearLocalAgentsForTests()
-  clearRegistry()
-  registerAgentDependencies()
+  restoreRegistry(originalTools)
   setProvider(null)
   await flushJournal()
   process.chdir(originalCwd)

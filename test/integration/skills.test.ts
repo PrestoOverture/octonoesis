@@ -1,7 +1,7 @@
 // biome-ignore lint/suspicious/noExplicitAny: Bun globals are provided by the test runtime.
 declare const Bun: any
 
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -12,30 +12,28 @@ import {
   unregisterPromptHandler,
 } from '../../src/permissions/confirm'
 import type { SkillDefinition } from '../../src/skills/types'
-import { bashTool } from '../../src/tools/Bash'
-import { editTool } from '../../src/tools/Edit'
-import { globTool } from '../../src/tools/Glob'
-import { grepTool } from '../../src/tools/Grep'
 import { readTool } from '../../src/tools/Read'
 import { SkillTool } from '../../src/tools/SkillTool'
-import { todoWriteTool } from '../../src/tools/TodoWrite'
-import { writeTool } from '../../src/tools/Write'
+import type { Tool } from '../../src/tools/Tool'
 import { runTool } from '../../src/tools/execute'
-import { clearRegistry, registerTool } from '../../src/tools/registry'
+import { registerTool } from '../../src/tools/registry'
+import { restoreRegistry, snapshotRegistry } from '../helpers/globalState'
 
 const originalMain = Bun.main
 const originalCwd = process.cwd()
 const originalMock = process.env.OCTONOESIS_FORK_MOCK
 const originalMemoryDir = process.env.OCTONOESIS_MEMORY_DIR
 const roots: string[] = []
+let originalTools: Tool[] = []
+
+beforeEach(() => {
+  originalTools = snapshotRegistry()
+})
 
 afterEach(async () => {
   unregisterPromptHandler()
   clearAllowlist()
-  clearRegistry()
-  for (const tool of [readTool, globTool, bashTool, writeTool, editTool, grepTool, todoWriteTool]) {
-    registerTool(tool)
-  }
+  restoreRegistry(originalTools)
   Bun.main = originalMain
   process.chdir(originalCwd)
   if (originalMock === undefined) Reflect.deleteProperty(process.env, 'OCTONOESIS_FORK_MOCK')

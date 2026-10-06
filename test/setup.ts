@@ -14,11 +14,12 @@
 // preload's env var assignment lands, racing the very isolation it exists to
 // guarantee. Synchronous calls finish before this module — and therefore
 // this preload — is considered loaded.
-import { afterAll } from 'bun:test'
+import { afterAll, afterEach, beforeEach } from 'bun:test'
 import { mkdtempSync, rmSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { getRepoRoot } from '../src/utils/path'
+import { assertGlobalStateIntact, captureGlobalStateBeforeTest } from './helpers/globalState'
 
 // getRepoRoot() caches its `git rev-parse --show-toplevel` result in a
 // process-global singleton the first time it's called with no
@@ -55,4 +56,18 @@ afterAll(() => {
   try {
     rmSync(createdMemoryDir, { recursive: true, force: true })
   } catch {}
+})
+
+// Global-state leak guard. Built-in tools register once, when engine.ts loads,
+// and the todo store is a module singleton; a test that clears either without
+// restoring it makes every later file's result depend on file order. Bun runs
+// preload-level afterEach hooks after a file's own afterEach hooks, so a test
+// that restores its state in its own teardown passes here, and one that leaks
+// fails right here, at the test that caused it.
+beforeEach(() => {
+  captureGlobalStateBeforeTest()
+})
+
+afterEach(() => {
+  assertGlobalStateIntact()
 })
