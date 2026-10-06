@@ -1,12 +1,22 @@
-import { beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { render } from 'ink-testing-library'
 import React from 'react'
-import { clearTodos, setTodos } from '../../../src/state/todos'
+import { type Todo, clearTodos, setTodos } from '../../../src/state/todos'
 import { TodoPanel } from '../../../src/ui/TodoPanel'
+import { restoreTodos, snapshotTodos } from '../../helpers/globalState'
 
 describe('TodoPanel Component', () => {
+  // The todo store is process-global; restore it so later files' TodoPanels
+  // don't render these tests' items.
+  let originalTodos: Todo[]
+
   beforeEach(() => {
+    originalTodos = snapshotTodos()
     clearTodos()
+  })
+
+  afterEach(() => {
+    restoreTodos(originalTodos)
   })
 
   it('renders nothing when there are no todos', () => {

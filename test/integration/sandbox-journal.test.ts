@@ -11,7 +11,8 @@ import {
 } from '../../src/permissions/confirm'
 import type { Tool } from '../../src/tools/Tool'
 import { runTool } from '../../src/tools/execute'
-import { clearRegistry, getAllTools, registerTool } from '../../src/tools/registry'
+import { clearRegistry, registerTool } from '../../src/tools/registry'
+import { restoreRegistry, snapshotRegistry } from '../helpers/globalState'
 
 describe('sandbox journal metadata', () => {
   let memoryDir: string
@@ -24,7 +25,7 @@ describe('sandbox journal metadata', () => {
     setSessionId('sandbox-journal-session')
     clearAllowlist()
     unregisterPromptHandler()
-    originalTools = getAllTools()
+    originalTools = snapshotRegistry()
     clearRegistry()
     registerTool({
       name: 'Bash',
@@ -44,8 +45,7 @@ describe('sandbox journal metadata', () => {
     await flushJournal()
     unregisterPromptHandler()
     clearAllowlist()
-    clearRegistry()
-    for (const tool of originalTools) registerTool(tool)
+    restoreRegistry(originalTools)
     setSessionId('')
     if (originalMemoryDir === undefined) {
       Reflect.deleteProperty(process.env, 'OCTONOESIS_MEMORY_DIR')

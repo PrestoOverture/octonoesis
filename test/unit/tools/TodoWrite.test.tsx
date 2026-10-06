@@ -1,15 +1,25 @@
-import { beforeEach, describe, expect, it } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import { Text } from 'ink'
 import { render } from 'ink-testing-library'
 import React from 'react'
-import { clearTodos, getTodos, useTodos } from '../../../src/state/todos'
+import { type Todo, clearTodos, getTodos, useTodos } from '../../../src/state/todos'
 import { todoWriteTool } from '../../../src/tools/TodoWrite'
+import { restoreTodos, snapshotTodos } from '../../helpers/globalState'
 
 describe('TodoWrite Tool & State', () => {
   const ctx = { repoRoot: '' }
 
+  // The todo store is process-global; restore it so later files' TodoPanels
+  // don't render these tests' items.
+  let originalTodos: Todo[]
+
   beforeEach(() => {
+    originalTodos = snapshotTodos()
     clearTodos()
+  })
+
+  afterEach(() => {
+    restoreTodos(originalTodos)
   })
 
   it('initially has empty todos', () => {

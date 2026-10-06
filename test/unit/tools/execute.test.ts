@@ -1,9 +1,11 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
 import { getRepoRoot } from '../../../src/query'
 import { bashTool } from '../../../src/tools/Bash'
 import { readTool } from '../../../src/tools/Read'
+import type { Tool } from '../../../src/tools/Tool'
 import { runTool } from '../../../src/tools/execute'
 import { clearRegistry, registerTool } from '../../../src/tools/registry'
+import { restoreRegistry, snapshotRegistry } from '../../helpers/globalState'
 
 // Mock the permissions hook module dynamically
 mock.module('../../../src/permissions/hooks', () => {
@@ -21,6 +23,17 @@ mock.module('../../../src/permissions/hooks', () => {
 describe('execute pipeline (runTool)', () => {
   const repoRoot = getRepoRoot()
   const ctx = { repoRoot }
+  // Every test below clears the registry; put back whatever was registered before
+  // (normally the engine's built-ins) so later files still see them.
+  let originalTools: Tool[]
+
+  beforeEach(() => {
+    originalTools = snapshotRegistry()
+  })
+
+  afterEach(() => {
+    restoreRegistry(originalTools)
+  })
 
   it('rejects an unregistered tool with unknown_tool error', async () => {
     clearRegistry()

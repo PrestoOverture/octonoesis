@@ -1,7 +1,7 @@
 // biome-ignore lint/suspicious/noExplicitAny: Bun globals are provided by the test runtime.
 declare const Bun: any
 
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -11,20 +11,16 @@ import { setProvider } from '../../src/providers'
 import type { CanonicalMessage, LLMProvider, StreamEvent } from '../../src/providers/types'
 import { query } from '../../src/query'
 import { clearSkillCacheForTesting } from '../../src/skills/loader'
-import { bashTool } from '../../src/tools/Bash'
-import { editTool } from '../../src/tools/Edit'
-import { globTool } from '../../src/tools/Glob'
-import { grepTool } from '../../src/tools/Grep'
-import { readTool } from '../../src/tools/Read'
-import { todoWriteTool } from '../../src/tools/TodoWrite'
-import { writeTool } from '../../src/tools/Write'
-import { clearRegistry, getTool, registerTool } from '../../src/tools/registry'
+import type { Tool } from '../../src/tools/Tool'
+import { getTool } from '../../src/tools/registry'
 import { App } from '../../src/ui/App'
+import { restoreRegistry, snapshotRegistry } from '../helpers/globalState'
 
 const originalRepoRoot = process.env.OCTONOESIS_REPO_ROOT
 const originalMemoryDir = process.env.OCTONOESIS_MEMORY_DIR
 const originalDisableMemory = process.env.OCTONOESIS_DISABLE_MEMORY
 const roots: string[] = []
+let originalTools: Tool[] = []
 
 async function repoFixture(): Promise<string> {
   const root = await mkdtemp(path.join(tmpdir(), 'slash-surface-'))
@@ -38,13 +34,14 @@ async function repoFixture(): Promise<string> {
   return root
 }
 
+beforeEach(() => {
+  originalTools = snapshotRegistry()
+})
+
 afterEach(async () => {
   setProvider(null)
   clearSkillCacheForTesting()
-  clearRegistry()
-  for (const tool of [readTool, globTool, bashTool, writeTool, editTool, grepTool, todoWriteTool]) {
-    registerTool(tool)
-  }
+  restoreRegistry(originalTools)
   for (const [key, value] of Object.entries({
     OCTONOESIS_REPO_ROOT: originalRepoRoot,
     OCTONOESIS_MEMORY_DIR: originalMemoryDir,
