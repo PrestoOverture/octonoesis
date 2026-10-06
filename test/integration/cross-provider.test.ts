@@ -1,11 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from 'bun:test'
-import type Anthropic from '@anthropic-ai/sdk'
+// biome-ignore lint/suspicious/noExplicitAny: Bun globals are provided by the test runtime.
+declare const Bun: any
+
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'bun:test'
 import { getProvider, getResolvedModel, setProvider } from '../../src/providers'
-import {
-  AnthropicProvider,
-  type AnthropicStreamEvent,
-  toAnthropicMessages,
-} from '../../src/providers/anthropic'
+import { AnthropicProvider } from '../../src/providers/anthropic'
 import { OpenAIProvider, toOpenAIMessages } from '../../src/providers/openai'
 import type { CanonicalMessage, CanonicalTool } from '../../src/providers/types'
 import {
@@ -14,46 +12,104 @@ import {
   setProviderCredentialsForTests,
 } from '../../src/utils/env'
 
-// Mock Anthropic's callAnthropicStream helper
-let mockAnthropicEvents: AnthropicStreamEvent[] = []
-let lastCallAnthropicStreamParams: {
-  messages: unknown[]
-  signal?: unknown
-  system?: unknown
-} | null = null
+// Both providers talk to a local fake API instead of mock.module() stubs: a
+// module mock in Bun replaces the module for every file that runs later in the
+// same process. Each SDK reads its base URL from the environment
+// (ANTHROPIC_BASE_URL, OPENAI_BASE_URL), so the real provider code runs end to
+// end against this server.
+let anthropicEvents: unknown[] = []
+let lastAnthropicBody: unknown = null
+let openAIChunks: unknown[] = []
+let lastOpenAIBody: unknown = null
 
-mock.module('../../src/providers/anthropic', () => {
-  return {
-    DEFAULT_ANTHROPIC_MODEL: 'claude-haiku-4-5-20251001',
-    toAnthropicMessages,
-    callAnthropicStream: async function* (messages: unknown[], signal?: unknown, system?: unknown) {
-      lastCallAnthropicStreamParams = { messages, signal, system }
-      for (const event of mockAnthropicEvents) {
-        yield event
+function sseResponse(body: string): Response {
+  return new Response(body, { headers: { 'content-type': 'text/event-stream' } })
+}
+
+let server: { port: number; stop(closeActiveConnections?: boolean): void }
+
+beforeAll(() => {
+  server = Bun.serve({
+    port: 0,
+    async fetch(request: Request) {
+      const { pathname } = new URL(request.url)
+      if (pathname === '/v1/messages') {
+        lastAnthropicBody = await request.json()
+        return sseResponse(
+          anthropicEvents
+            .map((event) => {
+              const type = (event as { type: string }).type
+              return `event: ${type}\ndata: ${JSON.stringify(event)}\n\n`
+            })
+            .join(''),
+        )
       }
+      if (pathname === '/v1/chat/completions') {
+        lastOpenAIBody = await request.json()
+        return sseResponse(
+          `${openAIChunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join('')}data: [DONE]\n\n`,
+        )
+      }
+      return new Response('not found', { status: 404 })
     },
-  }
+  })
 })
 
-// Mock the entire 'openai' module using Bun's mock.module
-let mockOpenAICallback: () => AsyncGenerator<unknown, void, undefined> = async function* () {}
-let lastOpenAICreateBody: unknown = null
-
-mock.module('openai', () => {
-  return {
-    default: class MockOpenAI {
-      chat = {
-        completions: {
-          // biome-ignore lint/suspicious/noExplicitAny: mock completions stream return type
-          create: async (body: unknown, opts?: unknown): Promise<any> => {
-            lastOpenAICreateBody = body
-            return mockOpenAICallback()
-          },
-        },
-      }
-    },
-  }
+afterAll(() => {
+  server.stop(true)
 })
+
+/** Anthropic stream for one assistant message; content blocks are streamed in full. */
+function anthropicMessageEvents(
+  blocks: Array<
+    | { type: 'text'; deltas: string[] }
+    | { type: 'tool_use'; id: string; name: string; input: unknown }
+  >,
+  usage: { input_tokens: number; output_tokens: number },
+): unknown[] {
+  const events: unknown[] = [
+    {
+      type: 'message_start',
+      message: {
+        id: 'msg_123',
+        type: 'message',
+        role: 'assistant',
+        model: 'claude-haiku-4-5-20251001',
+        content: [],
+        stop_reason: null,
+        stop_sequence: null,
+        usage: { input_tokens: usage.input_tokens, output_tokens: 0 },
+      },
+    },
+  ]
+  blocks.forEach((block, index) => {
+    if (block.type === 'text') {
+      events.push({ type: 'content_block_start', index, content_block: { type: 'text', text: '' } })
+      for (const text of block.deltas) {
+        events.push({ type: 'content_block_delta', index, delta: { type: 'text_delta', text } })
+      }
+    } else {
+      events.push({
+        type: 'content_block_start',
+        index,
+        content_block: { type: 'tool_use', id: block.id, name: block.name, input: {} },
+      })
+      events.push({
+        type: 'content_block_delta',
+        index,
+        delta: { type: 'input_json_delta', partial_json: JSON.stringify(block.input) },
+      })
+    }
+    events.push({ type: 'content_block_stop', index })
+  })
+  events.push({
+    type: 'message_delta',
+    delta: { stop_reason: 'end_turn', stop_sequence: null },
+    usage: { output_tokens: usage.output_tokens },
+  })
+  events.push({ type: 'message_stop' })
+  return events
+}
 
 describe('LLM Providers & Router Integration', () => {
   const originalCredentials = getProviderCredentialEnvironment()
@@ -64,12 +120,16 @@ describe('LLM Providers & Router Integration', () => {
     MODEL: process.env.MODEL,
     ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
     OPENAI_MODEL: process.env.OPENAI_MODEL,
+    ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
   }
 
   beforeEach(() => {
     setProvider(null)
     process.env.OPENAI_API_KEY = 'mock-key'
     process.env.ANTHROPIC_API_KEY = 'mock-key'
+    process.env.ANTHROPIC_BASE_URL = `http://127.0.0.1:${server.port}`
+    process.env.OPENAI_BASE_URL = `http://127.0.0.1:${server.port}/v1`
     captureProviderCredentials()
   })
 
@@ -131,29 +191,14 @@ describe('LLM Providers & Router Integration', () => {
   })
 
   describe('AnthropicProvider Message Stream Translation', () => {
-    it('correctly maps callAnthropicStream events to canonical StreamEvents', async () => {
-      const mockMsg = {
-        id: 'msg_123',
-        type: 'message',
-        role: 'assistant',
-        model: 'claude-haiku-4-5-20251001',
-        usage: { input_tokens: 100, output_tokens: 50 },
-        content: [
-          { type: 'text', text: 'Hello!' },
-          {
-            type: 'tool_use',
-            id: 'toolu_1',
-            name: 'Read',
-            input: { path: 'package.json' },
-          },
+    it('correctly maps the Anthropic message stream to canonical StreamEvents', async () => {
+      anthropicEvents = anthropicMessageEvents(
+        [
+          { type: 'text', deltas: ['Hello', '!'] },
+          { type: 'tool_use', id: 'toolu_1', name: 'Read', input: { path: 'package.json' } },
         ],
-      } as unknown as Anthropic.Message
-
-      mockAnthropicEvents = [
-        { type: 'text_delta', text: 'Hello' },
-        { type: 'text_delta', text: '!' },
-        { type: 'message_done', message: mockMsg },
-      ]
+        { input_tokens: 100, output_tokens: 50 },
+      )
 
       const provider = new AnthropicProvider()
       const events: unknown[] = []
@@ -183,10 +228,8 @@ describe('LLM Providers & Router Integration', () => {
       ])
     })
     it('passes static system prompt with cache_control and prepends dynamic suffix to the first user message', async () => {
-      lastCallAnthropicStreamParams = null
-      mockAnthropicEvents = [
-        { type: 'message_done', message: { content: [] } as unknown as Anthropic.Message },
-      ]
+      lastAnthropicBody = null
+      anthropicEvents = anthropicMessageEvents([], { input_tokens: 0, output_tokens: 0 })
 
       const provider = new AnthropicProvider()
       const canonicalMessages: CanonicalMessage[] = [{ role: 'user', content: 'hello' }]
@@ -203,7 +246,7 @@ describe('LLM Providers & Router Integration', () => {
       }
 
       // biome-ignore lint/suspicious/noExplicitAny: bypass type checks for mock assertions
-      const params = lastCallAnthropicStreamParams as any
+      const params = lastAnthropicBody as any
       expect(params).not.toBe(null)
       if (params) {
         expect(params.system).toEqual([
@@ -229,13 +272,13 @@ describe('LLM Providers & Router Integration', () => {
 
   describe('OpenAIProvider Message Stream Translation & Chunk Accumulation', () => {
     it('accumulates streaming tool calls and yields canonical events', async () => {
-      mockOpenAICallback = async function* () {
+      openAIChunks = [
         // Chunk 1: Text delta
-        yield {
+        {
           choices: [{ delta: { content: 'Reading file' } }],
-        }
+        },
         // Chunk 2: Tool call starts (index 0, id, function name)
-        yield {
+        {
           choices: [
             {
               delta: {
@@ -250,9 +293,9 @@ describe('LLM Providers & Router Integration', () => {
               },
             },
           ],
-        }
+        },
         // Chunk 3: Tool call arguments append
-        yield {
+        {
           choices: [
             {
               delta: {
@@ -265,13 +308,13 @@ describe('LLM Providers & Router Integration', () => {
               },
             },
           ],
-        }
+        },
         // Chunk 4: Final usage chunk
-        yield {
+        {
           usage: { prompt_tokens: 80, completion_tokens: 40 },
           choices: [],
-        }
-      }
+        },
+      ]
 
       const provider = new OpenAIProvider()
       const events: unknown[] = []
@@ -300,10 +343,8 @@ describe('LLM Providers & Router Integration', () => {
       ])
     })
     it('prepends combined system message if system or dynamicSystem is provided', async () => {
-      lastOpenAICreateBody = null
-      mockOpenAICallback = async function* () {
-        yield { usage: { prompt_tokens: 10, completion_tokens: 5 }, choices: [] }
-      }
+      lastOpenAIBody = null
+      openAIChunks = [{ usage: { prompt_tokens: 10, completion_tokens: 5 }, choices: [] }]
 
       const provider = new OpenAIProvider()
       const canonicalMessages: CanonicalMessage[] = [{ role: 'user', content: 'hello' }]
@@ -320,7 +361,7 @@ describe('LLM Providers & Router Integration', () => {
       }
 
       // biome-ignore lint/suspicious/noExplicitAny: bypass type checks for mock assertions
-      const body = lastOpenAICreateBody as any
+      const body = lastOpenAIBody as any
       expect(body).not.toBe(null)
       if (body) {
         expect(body.messages[0]).toEqual({

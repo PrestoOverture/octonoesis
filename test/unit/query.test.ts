@@ -1,46 +1,42 @@
-import { describe, expect, it, mock } from 'bun:test'
-import type Anthropic from '@anthropic-ai/sdk'
+import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { setProvider } from '../../src/providers'
+import type { LLMProvider } from '../../src/providers/types'
 import { type CanonicalMessage, type ToolContext, query } from '../../src/query'
 
 let mockBehavior: 'completed' | 'fatal_error' | 'max_turns' = 'completed'
 let mockCalls = 0
 
-mock.module('../../src/providers/anthropic', () => {
-  return {
-    DEFAULT_ANTHROPIC_MODEL: 'claude-haiku-4-5-20251001',
-    callAnthropicStream: async function* (_messages: Anthropic.MessageParam[]) {
-      mockCalls++
-      if (mockBehavior === 'completed') {
-        yield { type: 'text_delta', text: 'Hello human.' }
-        yield {
-          type: 'message_done',
-          message: {
-            role: 'assistant',
-            content: [{ type: 'text', text: 'Hello human.' }],
-            usage: { input_tokens: 10, output_tokens: 5 },
-          },
-        }
-      } else if (mockBehavior === 'fatal_error') {
-        throw new Error('LLM API Error')
-      } else if (mockBehavior === 'max_turns') {
-        yield {
-          type: 'message_done',
-          message: {
-            role: 'assistant',
-            content: [
-              {
-                type: 'tool_use',
-                id: `toolu_turn_${mockCalls}`,
-                name: 'Read',
-                input: { path: 'package.json' },
-              },
-            ],
-            usage: { input_tokens: 5, output_tokens: 5 },
-          },
-        }
+// Installed through setProvider() rather than mock.module(): a module mock in
+// Bun replaces the module for every file that runs later in the same process.
+// The events are the canonical StreamEvents AnthropicProvider emits for each
+// scripted response.
+const provider: LLMProvider = {
+  name: 'anthropic',
+  async *createMessageStream() {
+    mockCalls++
+    if (mockBehavior === 'completed') {
+      yield { type: 'text_delta', text: 'Hello human.' }
+      yield { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } }
+    } else if (mockBehavior === 'fatal_error') {
+      throw new Error('LLM API Error')
+    } else if (mockBehavior === 'max_turns') {
+      yield {
+        type: 'tool_use',
+        id: `toolu_turn_${mockCalls}`,
+        name: 'Read',
+        input: { path: 'package.json' },
       }
-    },
-  }
+      yield { type: 'message_end', usage: { input_tokens: 5, output_tokens: 5 } }
+    }
+  },
+}
+
+beforeEach(() => {
+  setProvider(provider)
+})
+
+afterEach(() => {
+  setProvider(null)
 })
 
 describe('query() API Generator', () => {
