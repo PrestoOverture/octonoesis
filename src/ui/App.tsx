@@ -1,6 +1,8 @@
 import crypto from 'node:crypto'
-import { Box, Static, Text, useApp, useInput, useWindowSize } from 'ink'
+import chalk from 'chalk'
+import { Box, Static, Text, useApp, useInput, useStdout, useWindowSize } from 'ink'
 import React, { useState, useEffect, useRef, useReducer } from 'react'
+import { loadFitnessInput } from '../memory/fitness/io'
 import { registerPromptHandler, unregisterPromptHandler } from '../permissions/confirm'
 import { getResolvedModel } from '../providers'
 import {
@@ -20,12 +22,16 @@ import { getMemoryDir, getRepoRoot } from '../utils/path'
 import { CompactNotice } from './CompactNotice'
 import { ConfirmDialog } from './ConfirmDialog'
 import { PromptInput } from './PromptInput'
+import { Spinner } from './Spinner'
+import { Banner, type BannerSnapshot, StartupBanner } from './StartupBanner'
 import { StatusBar } from './StatusBar'
 import { TaskChip } from './TaskChip'
 import { TodoPanel } from './TodoPanel'
 import { ToolCard } from './ToolCard'
+import { bannerLayout, bannerLines, fitnessLines } from './banner'
 import { appendInputHistory, loadInputHistory } from './inputHistory'
 import { renderMarkdown } from './markdown'
+import { createFrames } from './mascot'
 import { type DisplayItem, seedTranscript, transcriptReducer } from './transcript'
 export type { CanonicalMessage } from '../query'
 
@@ -95,6 +101,7 @@ export function formatTaskNoticeLabel(text: string): string {
 }
 
 export function DisplayEntry({ item }: { item: DisplayItem }) {
+  if (item.kind === 'banner') return <Banner {...item} />
   if (item.kind === 'tool')
     return <ToolCard tool={item.name} args={item.args} status={item.status} />
   if (item.kind === 'compact') return <CompactNotice {...item} />
@@ -209,18 +216,60 @@ export function App(props: AppProps) {
     }
   })
 
-  const [display, dispatch] = useReducer(transcriptReducer, undefined, () => ({
-    ...seedTranscript(initialMessages.length ? initialMessages : ctx.messages, resumeInfo),
-    pending: initialStreamingText,
-    running: initialStreamingToolUses.map((tool, index) => ({
-      id: `initial-${index}`,
-      name: tool.name,
-      args: tool.input ? JSON.stringify(tool.input) : '',
-    })),
-  }))
   const { rows, columns } = useWindowSize()
+  const { stdout } = useStdout()
+  const [frames] = useState(() => createFrames())
+  const [fitness, setFitness] = useState<string[]>([])
+  const [bannerCommitted, setBannerCommitted] = useState(() =>
+    Boolean(resumeInfo || initialMessages.length || ctx.messages?.length),
+  )
+  const lines = bannerLines(ctx.sessionState?.model ?? getResolvedModel(), ctx.repoRoot, fitness)
+  const layout = bannerLayout(
+    columns,
+    rows,
+    lines.length,
+    process.env.NO_COLOR === undefined && chalk.level > 0,
+  )
+  const banner: BannerSnapshot = {
+    lines,
+    layout,
+    mascot: layout === 'text' ? undefined : frames[1],
+  }
+  useEffect(() => {
+    if (bannerCommitted || !ctx.memoryDir) return
+    let active = true
+    loadFitnessInput(ctx.memoryDir)
+      .then((input) => {
+        if (active) setFitness(fitnessLines(input))
+      })
+      .catch((error) => dbg('ui', 'Failed to load banner fitness', error))
+    return () => {
+      active = false
+    }
+  }, [ctx.memoryDir, bannerCommitted])
+
+  const [display, dispatch] = useReducer(transcriptReducer, undefined, () => {
+    const seeded = seedTranscript(
+      initialMessages.length ? initialMessages : ctx.messages,
+      resumeInfo,
+    )
+    return {
+      ...seeded,
+      transcript: [
+        ...(bannerCommitted ? [{ kind: 'banner' as const, ...banner }] : []),
+        ...seeded.transcript,
+      ],
+      pending: initialStreamingText,
+      running: initialStreamingToolUses.map((tool, index) => ({
+        id: `initial-${index}`,
+        name: tool.name,
+        args: tool.input ? JSON.stringify(tool.input) : '',
+      })),
+    }
+  })
   const [inputHistory, setInputHistory] = useState<string[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
+  const generationStarted = useRef(0)
   const { exit } = useApp()
   const abortControllerRef = useRef<AbortController | null>(null)
 
@@ -308,6 +357,10 @@ export function App(props: AppProps) {
   const handleSubmit = (value: string) => {
     if (!value.trim() || isGenerating) return
 
+    if (!bannerCommitted) {
+      dispatch({ type: 'banner', snapshot: banner })
+      setBannerCommitted(true)
+    }
     setInputHistory((previous) =>
       previous[previous.length - 1] === value ? previous : [...previous, value].slice(-500),
     )
@@ -338,6 +391,7 @@ export function App(props: AppProps) {
       return
     }
 
+    generationStarted.current = Date.now()
     setIsGenerating(true)
 
     dispatch({ type: 'user', text: value })
@@ -385,13 +439,21 @@ export function App(props: AppProps) {
   // Leave one terminal row free: Ink clears when leaving an exactly full frame too.
   const height = Math.max(0, rows - 1)
   const controlHeight = pendingConfirm ? Math.max(0, height - 6) : 3
-  const chromeHeight = controlHeight + 6
+  const spinnerHeight = isGenerating && !pendingConfirm ? 1 : 0
+  const chromeHeight = controlHeight + 6 + spinnerHeight
+  const bannerRows = bannerCommitted
+    ? 0
+    : Math.min(
+        Math.max(0, height - chromeHeight),
+        layout === 'above' ? 17 + lines.length : layout === 'beside' ? 17 : lines.length,
+      )
+  const contentHeight = Math.max(0, height - chromeHeight - bannerRows)
   const runningRows = Math.min(
     display.running.length,
-    Math.max(0, height - chromeHeight - (display.pending ? 5 : 0)),
+    Math.max(0, contentHeight - (display.pending ? 5 : 0)),
   )
   const headerRows = display.pending && display.header ? 1 : 0
-  const dynamicChromeHeight = chromeHeight + runningRows + headerRows
+  const dynamicChromeHeight = chromeHeight + bannerRows + runningRows + headerRows
   const tailLines = Math.max(3, rows - dynamicChromeHeight - 2)
   const preview = renderMarkdown(display.pending).replace(/\n+$/, '').split('\n')
   const hidden = Math.max(0, preview.length - tailLines)
@@ -401,13 +463,27 @@ export function App(props: AppProps) {
         {(item, index) => <DisplayEntry key={index} item={item} />}
       </Static>
       <Box flexDirection="column" maxHeight={height} overflow="hidden">
-        {!pendingConfirm ? (
+        {!bannerCommitted ? (
           <Box
-            flexDirection="row"
+            flexDirection="column"
             maxHeight={Math.max(0, height - chromeHeight)}
             overflow="hidden"
             flexShrink={0}
           >
+            <StartupBanner
+              snapshot={banner}
+              frames={frames}
+              animate={Boolean(
+                stdout.isTTY &&
+                  layout !== 'text' &&
+                  ctx.config?.ui.animation !== 'off' &&
+                  process.env.OCTONOESIS_NO_ANIMATION !== '1',
+              )}
+            />
+          </Box>
+        ) : null}
+        {!pendingConfirm ? (
+          <Box flexDirection="row" maxHeight={contentHeight} overflow="hidden" flexShrink={0}>
             <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
               {display.pending ? (
                 <Box flexDirection="column" flexShrink={0}>
@@ -429,6 +505,11 @@ export function App(props: AppProps) {
               </Box>
             </Box>
             <TodoPanel maxRows={Math.max(0, height - chromeHeight)} />
+          </Box>
+        ) : null}
+        {spinnerHeight ? (
+          <Box height={1} flexShrink={0}>
+            <Spinner startedAt={generationStarted.current} />
           </Box>
         ) : null}
         <Box flexDirection="column" maxHeight={controlHeight} overflow="hidden" flexShrink={0}>

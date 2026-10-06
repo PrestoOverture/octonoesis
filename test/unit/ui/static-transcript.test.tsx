@@ -313,10 +313,10 @@ test('an unclosed 200-line fence and a tall todo panel stay bounded, then commit
     await delay(60)
     // The latest repaint must retain the actual last line, including with the header and marker.
     const frame = output.slice(output.lastIndexOf('\x1b[G'))
-    expect(frame).toContain('… 188 lines above')
+    expect(frame).toContain('… 189 lines above')
     expect(frame).toContain('fence-line-199')
     expect(frame).not.toContain('fence-line-000')
-    expect(frame).toContain('+91 more')
+    expect(frame).toContain('+92 more')
     const beforeCommit = output.length
     release()
     for (let i = 0; i < 100 && !finished; i++) await delay(20)

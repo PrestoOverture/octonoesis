@@ -1,7 +1,9 @@
 import type { CanonicalMessage, StreamEvent } from '../query'
+import type { BannerSnapshot } from './StartupBanner'
 import { stableMarkdownLength } from './markdown'
 
 export type DisplayItem =
+  | ({ kind: 'banner' } & BannerSnapshot)
   | { kind: 'resume' | 'user' | 'task_notice'; text: string }
   | { kind: 'assistant' | 'stats' | 'failure'; text: string; verbatim: boolean; header: boolean }
   | { kind: 'tool'; id: string; name: string; args: string; status: 'done' | 'error' }
@@ -20,6 +22,7 @@ export interface TranscriptState {
 }
 export type TranscriptEvent =
   | StreamEvent
+  | { type: 'banner'; snapshot: BannerSnapshot }
   | { type: 'user'; text: string }
   | { type: 'stats' | 'failure'; text: string }
   | { type: 'end' }
@@ -44,6 +47,9 @@ function flush(state: TranscriptState): TranscriptState {
 /** Display-only state: committed objects retain identity and never depend on model history. */
 export function transcriptReducer(state: TranscriptState, event: TranscriptEvent): TranscriptState {
   switch (event.type) {
+    case 'banner':
+      if (state.transcript.some((item) => item.kind === 'banner')) return state
+      return { ...state, transcript: [{ kind: 'banner', ...event.snapshot }, ...state.transcript] }
     case 'text_delta': {
       const pending = state.pending + event.text
       const length = stableMarkdownLength(pending)
