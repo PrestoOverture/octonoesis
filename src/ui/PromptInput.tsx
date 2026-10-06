@@ -98,7 +98,7 @@ export function PromptInput(props: PromptInputProps) {
   return (
     <Box flexDirection="column" marginTop={0}>
       <Box flexDirection="row">
-        <Text color="cyan">🤖 › </Text>
+        <Text color="cyan">› </Text>
         {isDisabled ? (
           <Text color="gray">{placeholder}</Text>
         ) : (

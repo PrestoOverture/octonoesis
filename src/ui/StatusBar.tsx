@@ -1,4 +1,4 @@
-import { Box, Text, useWindowSize } from 'ink'
+import { Box, Text } from 'ink'
 import React from 'react'
 
 /**
@@ -27,8 +27,6 @@ export const StatusBar = React.memo(
     priced,
     contextUtilization,
   }: StatusBarProps) => {
-    const { columns } = useWindowSize()
-    const narrow = columns <= 60
     const totalTokens = inputTokens + outputTokens
 
     /**
@@ -45,14 +43,15 @@ export const StatusBar = React.memo(
 
     return (
       <Box
+        width="100%"
         borderStyle="single"
         borderColor="gray"
         paddingX={1}
         flexDirection="column"
         marginTop={1}
       >
-        <Box flexDirection={narrow ? 'column' : 'row'} justifyContent="space-between">
-          <Box flexShrink={1} minWidth={0}>
+        <Box flexDirection="row" flexWrap="wrap" justifyContent="space-between">
+          <Box flexShrink={1} minWidth={0} flexBasis={33}>
             <Text wrap="truncate-end" color="cyan">
               Model:{' '}
               <Text bold color="white">
@@ -60,7 +59,7 @@ export const StatusBar = React.memo(
               </Text>
             </Text>
           </Box>
-          <Box flexShrink={0} marginLeft={narrow ? 0 : 1}>
+          <Box flexShrink={1} minWidth={0}>
             <Text wrap="truncate-end">
               {priced !== undefined || costUsd !== undefined ? (
                 <Text bold color="yellow">

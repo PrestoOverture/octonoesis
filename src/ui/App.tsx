@@ -465,7 +465,7 @@ export function App(props: AppProps) {
   // follows that live layout immediately; the spare column avoids right-edge autowrap.
   return (
     <Box flexDirection="column" width="100%" paddingRight={1} overflow="hidden">
-      <Static items={display.transcript}>
+      <Static items={display.transcript} style={{ width: '100%', paddingRight: 1 }}>
         {(item, index) => <DisplayEntry key={index} item={item} />}
       </Static>
       <Box flexDirection="column" maxHeight={height} overflow="hidden">

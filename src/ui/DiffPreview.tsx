@@ -1,7 +1,7 @@
 import chalk from 'chalk'
 import { createPatch } from 'diff'
-import { Box, Text, useWindowSize } from 'ink'
-import React from 'react'
+import { Box, type DOMElement, Text, useBoxMetrics } from 'ink'
+import React, { useRef } from 'react'
 import { wrapPreviewLines } from './previewLines'
 
 /**
@@ -22,7 +22,8 @@ export interface DiffPreviewProps {
  */
 export function DiffPreview(props: DiffPreviewProps) {
   const { oldText, newText, filePath, maxLines = 25 } = props
-  const window = useWindowSize()
+  const ref = useRef<DOMElement>(null)
+  const { width } = useBoxMetrics(ref)
   // Generate unified patch with 3 context lines
   const patch = createPatch(filePath, oldText, newText, undefined, undefined, { context: 3 })
 
@@ -30,7 +31,7 @@ export function DiffPreview(props: DiffPreviewProps) {
   const allLines = patch.split(/\r?\n/)
   const diffLines = allLines.slice(4)
   if (diffLines.at(-1) === '') diffLines.pop()
-  const lines = diffLines.map((line) => wrapPreviewLines(line, props.columns ?? window.columns))
+  const lines = diffLines.map((line) => wrapPreviewLines(line, props.columns ?? Math.max(1, width)))
   const limit = Math.max(0, maxLines)
   const totalRows = lines.reduce((sum, line) => sum + line.length, 0)
   const bodyRows = totalRows > limit ? Math.max(0, limit - 1) : limit
@@ -44,26 +45,27 @@ export function DiffPreview(props: DiffPreviewProps) {
   const truncatedCount = diffLines.length - displayedLines.length
 
   return (
-    <Box flexDirection="column" flexShrink={0}>
-      {displayedLines.map((line, index) => {
-        let coloredLine = line
+    <Box ref={ref} width="100%" flexDirection="column" flexShrink={0}>
+      {width > 0 &&
+        displayedLines.map((line, index) => {
+          let coloredLine = line
 
-        if (line.startsWith('+') && !line.startsWith('+++')) {
-          coloredLine = chalk.green(line)
-        } else if (line.startsWith('-') && !line.startsWith('---')) {
-          coloredLine = chalk.red(line)
-        } else if (line.startsWith('@@')) {
-          coloredLine = chalk.cyan(line)
-        } else {
-          coloredLine = chalk.gray(line)
-        }
+          if (line.startsWith('+') && !line.startsWith('+++')) {
+            coloredLine = chalk.green(line)
+          } else if (line.startsWith('-') && !line.startsWith('---')) {
+            coloredLine = chalk.red(line)
+          } else if (line.startsWith('@@')) {
+            coloredLine = chalk.cyan(line)
+          } else {
+            coloredLine = chalk.gray(line)
+          }
 
-        return (
-          // biome-ignore lint/suspicious/noArrayIndexKey: lines are static and won't change order
-          <Text key={index}>{coloredLine}</Text>
-        )
-      })}
-      {truncatedCount > 0 && (
+          return (
+            // biome-ignore lint/suspicious/noArrayIndexKey: lines are static and won't change order
+            <Text key={index}>{coloredLine}</Text>
+          )
+        })}
+      {width > 0 && truncatedCount > 0 && (
         <Text color="yellow">{`… ${truncatedCount} more diff lines not shown`}</Text>
       )}
     </Box>

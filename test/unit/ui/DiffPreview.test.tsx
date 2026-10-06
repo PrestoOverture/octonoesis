@@ -3,14 +3,15 @@ import { render } from 'ink-testing-library'
 import React from 'react'
 import { DiffPreview } from '../../../src/ui/DiffPreview'
 
-describe('DiffPreview Component', () => {
-  test('renders unified diff correctly with context lines', () => {
+describe('DiffPreview Component', async () => {
+  test('renders unified diff correctly with context lines', async () => {
     const oldText = 'line one\nline two\nline three'
     const newText = 'line one\nline modified\nline three'
     const { lastFrame } = render(
       <DiffPreview oldText={oldText} newText={newText} filePath="test.txt" />,
     )
 
+    await new Promise((resolve) => setTimeout(resolve, 50))
     const frame = lastFrame()
     // Check that we render hunk headers and line content modifications
     expect(frame).toContain('@@')
@@ -18,7 +19,7 @@ describe('DiffPreview Component', () => {
     expect(frame).toContain('+line modified')
   })
 
-  test('truncates long diff outputs', () => {
+  test('truncates long diff outputs', async () => {
     const oldText = Array.from({ length: 40 }, (_, i) => `line ${i}`).join('\n')
     const newText = Array.from({ length: 40 }, (_, i) => `modified ${i}`).join('\n')
 
@@ -26,6 +27,7 @@ describe('DiffPreview Component', () => {
       <DiffPreview oldText={oldText} newText={newText} filePath="test.txt" />,
     )
 
+    await new Promise((resolve) => setTimeout(resolve, 50))
     const frame = lastFrame()
     // It should have truncated the output and displayed the truncation indicator
     expect(frame).toContain('more diff lines not shown')

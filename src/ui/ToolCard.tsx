@@ -16,16 +16,16 @@ export interface ToolCardProps {
  * @returns A JSX.Element showing the tool card.
  */
 export const ToolCard = React.memo(({ tool, args, status }: ToolCardProps) => {
-  let icon = '⏳'
+  let icon = '…'
   let color = 'yellow'
   let statusText = 'running'
 
   if (status === 'done') {
-    icon = '✅'
+    icon = '✓'
     color = 'green'
     statusText = 'done'
   } else if (status === 'error') {
-    icon = '❌'
+    icon = '✗'
     color = 'red'
     statusText = 'error'
   }
@@ -36,14 +36,16 @@ export const ToolCard = React.memo(({ tool, args, status }: ToolCardProps) => {
 
   return (
     <Box marginY={0} paddingX={1} flexDirection="row">
-      <Text color={color}>{icon} </Text>
-      <Text bold color="white">
-        {tool}
-      </Text>
-      <Text color="gray"> {truncatedArgs}</Text>
-      <Text color={color} dimColor>
-        {' '}
-        ({statusText})
+      <Text wrap="truncate-end">
+        <Text color={color}>{icon} </Text>
+        <Text bold color="white">
+          {tool}
+        </Text>
+        <Text color="gray"> {truncatedArgs}</Text>
+        <Text color={color} dimColor>
+          {' '}
+          ({statusText})
+        </Text>
       </Text>
     </Box>
   )

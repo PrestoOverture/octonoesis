@@ -425,3 +425,76 @@ test('conversation resize redraws only the dynamic region and cancels reset on u
     setTodos(previousTodos)
   }
 })
+
+for (const columns of [91, 60]) {
+  test(`CJK streaming and permission borders stay inside the parent at ${columns}x24`, async () => {
+    const tty = await terminal({ columns, rows: 24, animation: 'off' })
+    let release = () => {}
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    setProvider({
+      name: 'anthropic',
+      async *createMessageStream() {
+        yield { type: 'text_delta', text: '终端显示宽度必须正确。'.repeat(80) }
+        await gate
+        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      },
+    })
+    const check = (chunks: string[]) => {
+      for (const chunk of chunks) {
+        for (const line of stripVTControlCharacters(chunk).split('\n')) {
+          expect(Bun.stringWidth(line)).toBeLessThan(columns)
+          if (line.includes('│')) {
+            expect(line.split('│').length).toBe(3)
+            expect(line.trimEnd().endsWith('│')).toBe(true)
+          }
+        }
+      }
+    }
+    try {
+      await delay(100)
+      tty.stdin.write('hello')
+      await delay(40)
+      tty.stdin.write('\r')
+      await delay(200)
+      check(tty.chunks)
+      expect(normalized(tty.chunks.join(''))).toContain('终端')
+      const start = tty.chunks.length
+      const permission = requestPermission('Write', {
+        path: '测试.txt',
+        content: '内容'.repeat(150),
+      })
+      await delay(200)
+      const prompt = tty.chunks.slice(start)
+      check(prompt)
+      noClears(tty.chunks.join(''))
+      const output = normalized(prompt.join(''))
+      expect(output).toContain('[Permission Required]')
+      expect(output).toContain('Model:')
+      expect(output).toContain('cost:')
+      expect(output).toContain('╭')
+      expect(output).toContain('╮')
+      expect(output).toContain('╰')
+      expect(output).toContain('╯')
+      expect(output).toContain('┌')
+      expect(output).toContain('┐')
+      expect(output).toContain('└')
+      expect(output).toContain('┘')
+      tty.stdin.write('n')
+      await permission
+    } finally {
+      release()
+      await delay(50)
+      await tty.close()
+    }
+  })
+}
+test('TUI chrome uses no variation-selector or pictographic emoji', async () => {
+  const directory = path.join(import.meta.dir, '../../../src/ui')
+  for (const name of await fs.readdir(directory)) {
+    if (!name.endsWith('.tsx')) continue
+    const source = await fs.readFile(path.join(directory, name), 'utf8')
+    expect(/[\u{1f300}-\u{1faff}]|\ufe0f/u.test(source)).toBe(false)
+  }
+})
