@@ -33,6 +33,7 @@ import { appendInputHistory, loadInputHistory } from './inputHistory'
 import { renderMarkdown } from './markdown'
 import { createFrames } from './mascot'
 import { type DisplayItem, seedTranscript, transcriptReducer } from './transcript'
+import { useResizeReset } from './useResizeReset'
 export type { CanonicalMessage } from '../query'
 
 /**
@@ -217,6 +218,8 @@ export function App(props: AppProps) {
   })
 
   const { rows, columns } = useWindowSize()
+  const resizing = useResizeReset()
+  const statusHeight = columns <= 60 ? 6 : 5
   const { stdout } = useStdout()
   const [frames] = useState(() => createFrames())
   const [fitness, setFitness] = useState<string[]>([])
@@ -229,6 +232,7 @@ export function App(props: AppProps) {
     rows,
     lines.length,
     process.env.NO_COLOR === undefined && chalk.level > 0,
+    9 + statusHeight - 5,
   )
   const banner: BannerSnapshot = {
     lines,
@@ -438,9 +442,9 @@ export function App(props: AppProps) {
   }
   // Leave one terminal row free: Ink clears when leaving an exactly full frame too.
   const height = Math.max(0, rows - 1)
-  const controlHeight = pendingConfirm ? Math.max(0, height - 6) : 3
+  const controlHeight = pendingConfirm ? Math.max(0, height - statusHeight - 1) : 3
   const spinnerHeight = isGenerating && !pendingConfirm ? 1 : 0
-  const chromeHeight = controlHeight + 6 + spinnerHeight
+  const chromeHeight = controlHeight + statusHeight + 1 + spinnerHeight
   const bannerRows = bannerCommitted
     ? 0
     : Math.min(
@@ -457,8 +461,10 @@ export function App(props: AppProps) {
   const tailLines = Math.max(3, rows - dynamicChromeHeight - 2)
   const preview = renderMarkdown(display.pending).replace(/\n+$/, '').split('\n')
   const hidden = Math.max(0, preview.length - tailLines)
+  // Ink relayouts on resize before React receives the resize event. A percentage width
+  // follows that live layout immediately; the spare column avoids right-edge autowrap.
   return (
-    <Box flexDirection="column" width={columns}>
+    <Box flexDirection="column" width="100%" paddingRight={1} overflow="hidden">
       <Static items={display.transcript}>
         {(item, index) => <DisplayEntry key={index} item={item} />}
       </Static>
@@ -475,6 +481,7 @@ export function App(props: AppProps) {
               frames={frames}
               animate={Boolean(
                 stdout.isTTY &&
+                  !resizing &&
                   layout !== 'text' &&
                   ctx.config?.ui.animation !== 'off' &&
                   process.env.OCTONOESIS_NO_ANIMATION !== '1',
@@ -529,7 +536,7 @@ export function App(props: AppProps) {
             />
           )}
         </Box>
-        <Box flexDirection="column" maxHeight={5} overflow="hidden" flexShrink={0}>
+        <Box flexDirection="column" maxHeight={statusHeight} overflow="hidden" flexShrink={0}>
           <StatusBar
             modelName={sessionView?.sessionState.model ?? modelName}
             inputTokens={sessionView?.sessionState.usage.input_tokens ?? 0}

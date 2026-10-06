@@ -1,3 +1,4 @@
+declare const Bun: { stringWidth(text: string): number }
 import { expect, test } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
@@ -10,9 +11,11 @@ import React from 'react'
 import { parseConfig } from '../../../src/config/schema'
 import { requestPermission } from '../../../src/permissions/confirm'
 import { setProvider } from '../../../src/providers'
+import { getTodos, setTodos } from '../../../src/state/todos'
 import { App } from '../../../src/ui/App'
 import { bannerLayout, version } from '../../../src/ui/banner'
 import { createFrames } from '../../../src/ui/mascot'
+import { prepareScreenSequence } from '../../../src/ui/screen'
 import { restoreEnv } from '../../helpers/env'
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -80,6 +83,7 @@ async function terminal(
   return {
     chunks,
     stdin,
+    stdout,
     async close() {
       view.unmount()
       chalk.level = level
@@ -290,5 +294,134 @@ test('ledger fixture loads after first paint and appears in the banner', async (
     noClears(tty.chunks.join(''))
   } finally {
     await tty.close()
+  }
+})
+
+test('resize immediately bounds banner frames to the live terminal width', async () => {
+  const tty = await terminal()
+  try {
+    await delay(100)
+    for (const [columns, rows, mascot] of [
+      [70, 40, true],
+      [50, 40, false],
+      [100, 22, false],
+      [100, 40, true],
+      [60, 30, false],
+      [45, 30, false],
+    ] as const) {
+      const start = tty.chunks.length
+      tty.stdout.columns = columns
+      tty.stdout.rows = rows
+      tty.stdout.emit('resize')
+      await delay(550)
+      const output = tty.chunks.slice(start).join('')
+      const lines = normalized(output).split('\n')
+      for (const line of lines) expect(Bun.stringWidth(line)).toBeLessThan(columns)
+      const frame = output.slice(output.lastIndexOf('\x1b[G'))
+      expect(/[▀▄█]/.test(frame)).toBe(mascot)
+      const titleLine = normalized(frame)
+        .split('\n')
+        .findIndex((line) => line.includes('Noe ·'))
+      if (columns === 70) expect(titleLine).toBeGreaterThan(15)
+      else expect(titleLine).toBe(0)
+      expect(output).not.toContain('\x1b[3J')
+    }
+  } finally {
+    await tty.close()
+  }
+})
+
+test('resize bursts scroll once, then redraw a full frame without destructive clears', async () => {
+  const tty = await terminal({ animation: 'off' })
+  try {
+    await delay(100)
+    for (const burst of [
+      [[50, 40]],
+      [[100, 40]],
+      [[100, 22]],
+      [
+        [100, 40],
+        [60, 30],
+        [45, 30],
+      ],
+    ]) {
+      const start = tty.chunks.length
+      for (const dimensions of burst) {
+        tty.stdout.columns = dimensions[0] ?? 100
+        tty.stdout.rows = dimensions[1] ?? 40
+        tty.stdout.emit('resize')
+        await delay(30)
+      }
+      expect(tty.chunks.slice(start).join('')).not.toContain('\x1b[H\x1b[0J')
+      await delay(250)
+      const output = tty.chunks.slice(start).join('')
+      const sequence = prepareScreenSequence(tty.stdout.rows)
+      expect(output.split(sequence).length - 1).toBe(1)
+      const redraw = normalized(output.slice(output.indexOf(sequence) + sequence.length))
+      expect(redraw.split('Noe · Octonoesis').length - 1).toBe(1)
+      expect(redraw).toContain('Type a message...')
+      expect(redraw).toContain('Model:')
+      noClears(output)
+    }
+    const before = tty.chunks.length
+    await delay(250)
+    expect(tty.chunks.length).toBe(before)
+  } finally {
+    await tty.close()
+  }
+})
+
+test('conversation resize redraws only the dynamic region and cancels reset on unmount', async () => {
+  const previousTodos = getTodos()
+  setTodos([])
+  const tty = await terminal()
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  setProvider({
+    name: 'anthropic',
+    async *createMessageStream() {
+      yield {
+        type: 'text_delta',
+        text: `committed-resize-reply\n\n${Array.from({ length: 60 }, (_, index) => `streaming-resize-${index}`).join('\n')}`,
+      }
+      await gate
+      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+    },
+  })
+  try {
+    await delay(100)
+    tty.stdin.write('resize conversation')
+    await delay(40)
+    tty.stdin.write('\r')
+    await delay(250)
+    const start = tty.chunks.length
+    tty.stdout.rows = 20
+    tty.stdout.columns = 45
+    tty.stdout.emit('resize')
+    await delay(300)
+    const output = tty.chunks.slice(start).join('')
+    const sequence = prepareScreenSequence(20)
+    expect(output.split(sequence).length - 1).toBe(1)
+    const redraw = output.slice(output.indexOf(sequence) + sequence.length)
+    expect(output).not.toContain('committed-resize-reply')
+    expect(redraw).toContain('streaming-resize-59')
+    expect(redraw).not.toContain('Noe ·')
+    expect(redraw).toContain('ctrl+c to interrupt')
+    expect(redraw).toContain('Type a message...')
+    expect(redraw).toContain('Model:')
+    noClears(output)
+    release()
+    await delay(100)
+    tty.stdout.emit('resize')
+    await tty.close()
+    const closed = tty.chunks.length
+    await delay(250)
+    expect(tty.chunks.length).toBe(closed)
+  } finally {
+    release()
+    await tty.close()
+    setTodos(previousTodos)
   }
 })

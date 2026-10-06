@@ -32,8 +32,14 @@ export function bannerLines(model: string, repo: string, fitness: string[] = [])
   ]
 }
 
-export function bannerLayout(columns: number, rows: number, lineCount: number, color: boolean) {
+export function bannerLayout(
+  columns: number,
+  rows: number,
+  lineCount: number,
+  color: boolean,
+  chromeHeight = 9,
+) {
   const layout = columns >= 76 ? 'beside' : 'above'
   const height = layout === 'beside' ? Math.max(17, lineCount) : 17 + lineCount
-  return color && columns >= 60 && height + 9 <= rows - 1 ? layout : 'text'
+  return color && columns >= 60 && height + chromeHeight <= rows - 1 ? layout : 'text'
 }
