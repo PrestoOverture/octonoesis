@@ -1,5 +1,5 @@
-import { Box, Text, useInput } from 'ink'
-import React, { useState } from 'react'
+import { Box, type DOMElement, Text, measureElement, useInput } from 'ink'
+import React, { useState, useLayoutEffect, useRef } from 'react'
 import {
   type InputHistoryCursor,
   createInputHistoryCursor,
@@ -11,6 +11,7 @@ import { type PromptBuffer, applyPromptInput, createPromptBuffer } from './promp
  * Props for the PromptInput interactive text input component.
  */
 export interface PromptInputProps {
+  onHeightChange?: (height: number) => void
   history: string[]
   onSubmit: (value: string) => void
   placeholder?: string
@@ -62,6 +63,11 @@ export function PromptInput(props: PromptInputProps) {
     isDisabled = false,
     initialValue = '',
   } = props
+  const measuredRef = useRef<DOMElement>(null)
+  useLayoutEffect(() => {
+    if (measuredRef.current)
+      props.onHeightChange?.(Math.min(3, measureElement(measuredRef.current).height))
+  })
   const [buffer, setBuffer] = useState(() => createPromptBuffer(initialValue))
   const [historyCursor, setHistoryCursor] = useState<InputHistoryCursor>(() =>
     createInputHistoryCursor(),
@@ -96,7 +102,7 @@ export function PromptInput(props: PromptInputProps) {
   )
 
   return (
-    <Box flexDirection="column" marginTop={0}>
+    <Box ref={measuredRef} flexDirection="column" flexShrink={0} marginTop={0}>
       <Box flexDirection="row">
         <Text color="cyan">› </Text>
         {isDisabled ? (

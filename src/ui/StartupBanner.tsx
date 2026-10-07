@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from 'node:util'
 import { Box, Text, useInput } from 'ink'
 import React, { useEffect, useRef, useState } from 'react'
 
@@ -10,7 +11,13 @@ export function Banner({ lines, mascot, layout }: BannerSnapshot) {
   return (
     <Box flexDirection={layout === 'beside' ? 'row' : 'column'} flexShrink={0}>
       {mascot ? (
-        <Box width={33} flexShrink={0} marginRight={layout === 'beside' ? 2 : 0}>
+        <Box
+          width={Math.max(
+            ...mascot.split('\n').map((line) => stripVTControlCharacters(line).length),
+          )}
+          flexShrink={0}
+          marginRight={layout === 'beside' ? 2 : 0}
+        >
           <Text>{mascot}</Text>
         </Box>
       ) : null}
