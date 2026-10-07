@@ -1,7 +1,17 @@
 import crypto from 'node:crypto'
 import chalk from 'chalk'
-import { Box, Static, Text, useApp, useInput, useStdout, useWindowSize } from 'ink'
-import React, { useState, useEffect, useRef, useReducer } from 'react'
+import {
+  Box,
+  type DOMElement,
+  Static,
+  Text,
+  measureElement,
+  useApp,
+  useInput,
+  useStdout,
+  useWindowSize,
+} from 'ink'
+import React, { useState, useLayoutEffect, useEffect, useRef, useReducer } from 'react'
 import { loadFitnessInput } from '../memory/fitness/io'
 import { registerPromptHandler, unregisterPromptHandler } from '../permissions/confirm'
 import { getResolvedModel } from '../providers'
@@ -31,7 +41,7 @@ import { ToolCard } from './ToolCard'
 import { bannerLayout, bannerLines, fitnessLines } from './banner'
 import { appendInputHistory, loadInputHistory } from './inputHistory'
 import { renderMarkdown } from './markdown'
-import { createFrames } from './mascot'
+import { COMPACT_SIZE, createFrames } from './mascot'
 import { type DisplayItem, seedTranscript, transcriptReducer } from './transcript'
 import { useResizeReset } from './useResizeReset'
 export type { CanonicalMessage } from '../query'
@@ -219,9 +229,15 @@ export function App(props: AppProps) {
 
   const { rows, columns } = useWindowSize()
   const resizing = useResizeReset()
-  const statusHeight = columns <= 60 ? 6 : 5
+  const [statusHeight, setStatusHeight] = useState(columns <= 60 ? 6 : 5)
+  const [inputHeight, setInputHeight] = useState(3)
+  const [isGenerating, setIsGenerating] = useState(false)
+  const statusRef = useRef<DOMElement>(null)
+  useLayoutEffect(() => {
+    if (statusRef.current) setStatusHeight(measureElement(statusRef.current).height)
+  })
   const { stdout } = useStdout()
-  const [frames] = useState(() => createFrames())
+  const [frames] = useState(() => createFrames(chalk, true))
   const [fitness, setFitness] = useState<string[]>([])
   const [bannerCommitted, setBannerCommitted] = useState(() =>
     Boolean(resumeInfo || initialMessages.length || ctx.messages?.length),
@@ -232,7 +248,7 @@ export function App(props: AppProps) {
     rows,
     lines.length,
     process.env.NO_COLOR === undefined && chalk.level > 0,
-    9 + statusHeight - 5,
+    inputHeight + statusHeight + 1 + (isGenerating ? 1 : 0),
   )
   const banner: BannerSnapshot = {
     lines,
@@ -272,7 +288,6 @@ export function App(props: AppProps) {
     }
   })
   const [inputHistory, setInputHistory] = useState<string[]>([])
-  const [isGenerating, setIsGenerating] = useState(false)
   const generationStarted = useRef(0)
   const { exit } = useApp()
   const abortControllerRef = useRef<AbortController | null>(null)
@@ -442,14 +457,22 @@ export function App(props: AppProps) {
   }
   // Leave one terminal row free: Ink clears when leaving an exactly full frame too.
   const height = Math.max(0, rows - 1)
-  const controlHeight = pendingConfirm ? Math.max(0, height - statusHeight - 1) : 3
+  const controlHeight = pendingConfirm
+    ? Math.max(0, height - statusHeight - 1)
+    : bannerCommitted
+      ? 3
+      : inputHeight
   const spinnerHeight = isGenerating && !pendingConfirm ? 1 : 0
   const chromeHeight = controlHeight + statusHeight + 1 + spinnerHeight
   const bannerRows = bannerCommitted
     ? 0
     : Math.min(
         Math.max(0, height - chromeHeight),
-        layout === 'above' ? 17 + lines.length : layout === 'beside' ? 17 : lines.length,
+        layout === 'above'
+          ? COMPACT_SIZE.lines + lines.length
+          : layout === 'beside'
+            ? Math.max(COMPACT_SIZE.lines, lines.length)
+            : lines.length,
       )
   const contentHeight = Math.max(0, height - chromeHeight - bannerRows)
   const runningRows = Math.min(
@@ -529,6 +552,7 @@ export function App(props: AppProps) {
             />
           ) : (
             <PromptInput
+              onHeightChange={setInputHeight}
               history={inputHistory}
               onSubmit={handleSubmit}
               placeholder={placeholder}
@@ -536,7 +560,7 @@ export function App(props: AppProps) {
             />
           )}
         </Box>
-        <Box flexDirection="column" maxHeight={statusHeight} overflow="hidden" flexShrink={0}>
+        <Box ref={statusRef} flexDirection="column" flexShrink={0}>
           <StatusBar
             modelName={sessionView?.sessionState.model ?? modelName}
             inputTokens={sessionView?.sessionState.usage.input_tokens ?? 0}

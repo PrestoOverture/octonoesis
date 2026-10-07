@@ -1,6 +1,7 @@
 import { version } from '../../package.json'
 import { type FitnessInput, buildFitnessDashboard } from '../memory/fitness/dashboard'
 import { toIsoWeek } from '../memory/fitness/metrics'
+import { COMPACT_SIZE } from './mascot'
 export { version }
 
 export function fitnessLines(input: FitnessInput, now = new Date()): string[] {
@@ -39,7 +40,8 @@ export function bannerLayout(
   color: boolean,
   chromeHeight = 9,
 ) {
-  const layout = columns >= 76 ? 'beside' : 'above'
-  const height = layout === 'beside' ? Math.max(17, lineCount) : 17 + lineCount
-  return color && columns >= 60 && height + chromeHeight <= rows - 1 ? layout : 'text'
+  const layout = columns >= 60 ? 'beside' : 'above'
+  const height =
+    layout === 'beside' ? Math.max(COMPACT_SIZE.lines, lineCount) : COMPACT_SIZE.lines + lineCount
+  return color && columns >= 40 && height + chromeHeight <= rows - 1 ? layout : 'text'
 }
