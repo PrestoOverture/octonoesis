@@ -17,6 +17,7 @@ import {
 import { flushJournal, formatJournalFailureNotice } from './memory/journal.ts'
 import { rebuildRules } from './memory/rules/rebuild.ts'
 import { getRulesDir } from './memory/rules/store.ts'
+import { claimProcessSignals } from './providers/fork.ts'
 import { getResolvedModel, setConfiguredModel } from './providers/index.ts'
 import { type ToolContext, runQuery } from './query'
 import type { SessionState } from './query/types.ts'
@@ -321,6 +322,7 @@ program
       }
     }
 
+    claimProcessSignals()
     const controller = new AbortController()
     let signalExitCode: number | undefined
     let unmount: (() => void) | undefined

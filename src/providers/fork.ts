@@ -237,10 +237,24 @@ export function buildForkChildEnvironment(
   return { ...env, ...getProviderCredentialEnvironment(), ...childEnv }
 }
 
-// The CLI owns process exit; this module only owns its fork children.
+let processSignalsClaimed = false
+
+/** Transfers signal exit handling to the CLI's graceful shutdown handlers. */
+export function claimProcessSignals(): void {
+  processSignalsClaimed = true
+}
+
+// Always reap children, but preserve default termination without a CLI owner.
 process.once('exit', forceKillForkChildren)
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
-  process.on(signal, forceKillForkChildren)
+  const handleSignal = () => {
+    forceKillForkChildren()
+    if (!processSignalsClaimed) {
+      process.removeListener(signal, handleSignal)
+      process.kill(process.pid, signal)
+    }
+  }
+  process.on(signal, handleSignal)
 }
 
 /**
