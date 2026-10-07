@@ -1072,6 +1072,7 @@ export async function* query(
  * Options for executing a query via the CLI engine.
  */
 export interface RunQueryOptions {
+  signal?: AbortSignal
   stdoutIsTTY?: boolean
   messages?: CanonicalMessage[]
   persistSession?: boolean
@@ -1109,7 +1110,7 @@ export async function runQuery(
     sandbox,
     config,
   }
-  const generator = query(userPrompt, ctx)
+  const generator = query(userPrompt, ctx, options.signal)
   const textOutput = createMarkdownStream(
     (text) => process.stdout.write(text),
     options.stdoutIsTTY ?? process.stdout.isTTY === true,

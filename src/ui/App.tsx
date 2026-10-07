@@ -50,6 +50,8 @@ export type { CanonicalMessage } from '../query'
  * Props for the root TUI application component.
  */
 export interface AppProps {
+  shutdownSignal?: AbortSignal
+  onQuery?: (completion: Promise<void>) => void
   messages?: CanonicalMessage[]
   streamingText?: string
   streamingToolUses?: { name: string; status?: 'running' | 'done' | 'error'; input?: unknown }[]
@@ -419,10 +421,16 @@ export function App(props: AppProps) {
     abortControllerRef.current = controller
 
     // Execute query loop asynchronously in the background
-    ;(async () => {
+    const completion = (async () => {
       try {
         const rewrittenValue = await rewriteSkillSlashCommand(value, ctx.repoRoot)
-        const generator = query(rewrittenValue, ctx, controller.signal)
+        const generator = query(
+          rewrittenValue,
+          ctx,
+          props.shutdownSignal
+            ? AbortSignal.any([controller.signal, props.shutdownSignal])
+            : controller.signal,
+        )
         let queryResult: QueryResult
         while (true) {
           const step = await generator.next()
@@ -454,6 +462,7 @@ export function App(props: AppProps) {
         abortControllerRef.current = null
       }
     })()
+    props.onQuery?.(completion)
   }
   // Leave one terminal row free: Ink clears when leaving an exactly full frame too.
   const height = Math.max(0, rows - 1)
