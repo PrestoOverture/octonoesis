@@ -237,24 +237,11 @@ export function buildForkChildEnvironment(
   return { ...env, ...getProviderCredentialEnvironment(), ...childEnv }
 }
 
-/**
- * Registers signal handlers on the parent process to kill all active fork children on exit or termination.
- * @param signal Termination signal ('SIGINT' or 'SIGTERM').
- */
-function installParentSignalCleanup(signal: 'SIGINT' | 'SIGTERM'): void {
-  const handleSignal = () => {
-    forceKillForkChildren()
-    if (process.listenerCount(signal) === 1) {
-      process.removeListener(signal, handleSignal)
-      process.kill(process.pid, signal)
-    }
-  }
-  process.on(signal, handleSignal)
-}
-
+// The CLI owns process exit; this module only owns its fork children.
 process.once('exit', forceKillForkChildren)
-installParentSignalCleanup('SIGINT')
-installParentSignalCleanup('SIGTERM')
+for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) {
+  process.on(signal, forceKillForkChildren)
+}
 
 /**
  * Type guard checking whether a value is a non-null, non-array object.

@@ -321,83 +321,120 @@ program
       }
     }
 
-    if (!prompt) {
-      let latestSession: { sessionState: SessionState; priced: boolean } | undefined
-      const sessionId = crypto.randomUUID()
-      const tuiCtx: ToolContext = {
-        repoRoot: startupRepoRoot,
-        memoryDir,
-        persistSession:
-          process.stdin.isTTY === true ||
-          resumedSession !== undefined ||
-          options.saveSession === true,
-        messages: structuredClone(resumedSession?.messages ?? []),
-        sessionId,
-        sessionState: createSessionState(sessionId, getResolvedModel()),
-        sandbox,
-        config: startupConfig,
-        tasks: new Map(),
+    const controller = new AbortController()
+    let signalExitCode: number | undefined
+    let unmount: (() => void) | undefined
+    let deadline: ReturnType<typeof setTimeout> | undefined
+    const signalCodes = { SIGTERM: 143, SIGINT: 130, SIGHUP: 129 } as const
+    const handlers = Object.entries(signalCodes).map(([signal, code]) => {
+      const handler = () => {
+        if (signalExitCode !== undefined) process.exit(signalExitCode)
+        signalExitCode = code
+        // Keep the deadline referenced even if graceful cleanup leaves no handles.
+        deadline = setTimeout(() => process.exit(code), 3000)
+        controller.abort()
+        unmount?.()
       }
-      if (process.stdout.isTTY === true) {
-        process.stdout.write(prepareScreenSequence(process.stdout.rows))
-      }
-      const { waitUntilExit } = render(
-        <App
-          ctx={tuiCtx}
-          resumeInfo={
-            resumedSession
-              ? {
-                  sessionId: resumedSession.session_id,
-                  messageCount: resumedSession.messages.length,
-                  updatedAt: resumedSession.updated_at,
-                }
-              : undefined
-          }
-          onSessionState={(sessionState, priced) => {
-            latestSession = { sessionState, priced }
-          }}
-        />,
-        { exitOnCtrlC: false, incrementalRendering: false },
-      )
-      await waitUntilExit()
-      try {
-        await cleanupTasks(tuiCtx)
-      } catch (error) {
-        dbg('cli', 'Failed to clean up background tasks', error)
-      }
-      await flushSessionStats()
-      if (latestSession) {
-        console.log(formatSessionSummary(latestSession.sessionState, latestSession.priced))
-      }
-      await flushJournal()
-      const memoryNotice = formatMemoryUnavailableNotice()
-      if (memoryNotice) console.error(memoryNotice)
-      const journalNotice = formatJournalFailureNotice()
-      if (journalNotice) console.error(journalNotice)
-      return
-    }
+      process.on(signal, handler)
+      return { signal, handler }
+    })
 
     try {
-      await runQuery(
-        await rewriteSkillSlashCommand(prompt, startupRepoRoot),
-        sandbox,
-        startupConfig,
-        {
+      if (!prompt) {
+        let latestSession: { sessionState: SessionState; priced: boolean } | undefined
+        const sessionId = crypto.randomUUID()
+        const tuiCtx: ToolContext = {
+          repoRoot: startupRepoRoot,
           memoryDir,
-          messages: resumedSession?.messages,
           persistSession:
+            process.stdin.isTTY === true ||
             resumedSession !== undefined ||
-            options.continue === true ||
-            options.resume !== undefined ||
             options.saveSession === true,
-        },
-      )
-    } catch (error) {
-      if (error instanceof Error) {
-        console.error(`Error: ${error.message}`)
-        process.exit(1)
+          messages: structuredClone(resumedSession?.messages ?? []),
+          sessionId,
+          sessionState: createSessionState(sessionId, getResolvedModel()),
+          sandbox,
+          config: startupConfig,
+          tasks: new Map(),
+        }
+        if (process.stdout.isTTY === true) {
+          process.stdout.write(prepareScreenSequence(process.stdout.rows))
+        }
+        let activeQuery: Promise<void> | undefined
+        const instance = render(
+          <App
+            ctx={tuiCtx}
+            shutdownSignal={controller.signal}
+            onQuery={(completion) => {
+              activeQuery = completion
+            }}
+            resumeInfo={
+              resumedSession
+                ? {
+                    sessionId: resumedSession.session_id,
+                    messageCount: resumedSession.messages.length,
+                    updatedAt: resumedSession.updated_at,
+                  }
+                : undefined
+            }
+            onSessionState={(sessionState, priced) => {
+              latestSession = { sessionState, priced }
+            }}
+          />,
+          { exitOnCtrlC: false, incrementalRendering: false },
+        )
+        unmount = instance.unmount
+        if (controller.signal.aborted) unmount()
+        await instance.waitUntilExit()
+        await activeQuery
+        try {
+          await cleanupTasks(tuiCtx)
+        } catch (error) {
+          dbg('cli', 'Failed to clean up background tasks', error)
+        }
+        await flushSessionStats()
+        if (!latestSession && tuiCtx.sessionState) {
+          latestSession = { sessionState: tuiCtx.sessionState, priced: false }
+        }
+        if (latestSession) {
+          console.log(formatSessionSummary(latestSession.sessionState, latestSession.priced))
+        }
+        await flushJournal()
+        const memoryNotice = formatMemoryUnavailableNotice()
+        if (memoryNotice) console.error(memoryNotice)
+        const journalNotice = formatJournalFailureNotice()
+        if (journalNotice) console.error(journalNotice)
+        return
       }
-      throw error
+
+      try {
+        await runQuery(
+          await rewriteSkillSlashCommand(prompt, startupRepoRoot),
+          sandbox,
+          startupConfig,
+          {
+            signal: controller.signal,
+            memoryDir,
+            messages: resumedSession?.messages,
+            persistSession:
+              resumedSession !== undefined ||
+              options.continue === true ||
+              options.resume !== undefined ||
+              options.saveSession === true,
+          },
+        )
+      } catch (error) {
+        if (error instanceof Error) {
+          console.error(`Error: ${error.message}`)
+          if (signalExitCode === undefined) process.exit(1)
+        } else {
+          throw error
+        }
+      }
+    } finally {
+      if (signalExitCode !== undefined) process.exit(signalExitCode)
+      if (deadline) clearTimeout(deadline)
+      for (const { signal, handler } of handlers) process.removeListener(signal, handler)
     }
   })
 
