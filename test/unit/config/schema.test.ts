@@ -33,6 +33,7 @@ function expectConfigError(raw: unknown, path: string, problem?: string): void {
 describe('Octonoesis config schema', () => {
   it('applies the complete defaults to empty and undefined input', () => {
     const expected: OctonoesisConfig = {
+      ui: { animation: 'on' },
       maxTurns: 50,
       sandbox: { enabled: false },
       mcpServers: {},

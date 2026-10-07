@@ -47,7 +47,7 @@ async function waitFor(predicate: () => boolean | Promise<boolean>): Promise<voi
 }
 
 function promptLine(frame: string | undefined): string {
-  return (frame ?? '').split('\n').find((line) => line.includes('🤖 ›')) ?? ''
+  return (frame ?? '').split('\n').find((line) => line.trimStart().startsWith('›')) ?? ''
 }
 
 function userText(message: CanonicalMessage | undefined): string {

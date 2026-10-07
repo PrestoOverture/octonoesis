@@ -1,5 +1,5 @@
-import { Box, Text, useInput, useWindowSize } from 'ink'
-import React from 'react'
+import { Box, type DOMElement, Text, useBoxMetrics, useInput, useWindowSize } from 'ink'
+import React, { useRef } from 'react'
 import { DiffPreview } from './DiffPreview'
 import { wrapPreviewLines } from './previewLines'
 
@@ -38,10 +38,12 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   // Format parameters cleanly for non-Edit tools
   const paramsStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2)
 
-  const { columns, rows } = useWindowSize()
-  const width = Math.max(1, columns - 2)
+  const { rows } = useWindowSize()
+  const ref = useRef<DOMElement>(null)
+  const metrics = useBoxMetrics(ref)
+  const width = Math.max(1, metrics.width - 2)
   const heading = wrapPreviewLines(
-    `⚠️ [Permission Required] Tool ${toolName} wants to execute.`,
+    `! [Permission Required] Tool ${toolName} wants to execute.`,
     width,
   )
   const footer = wrapPreviewLines(
@@ -58,28 +60,39 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const visible = parameters.slice(0, parameters.length > bodyRows ? bodyRows - 1 : bodyRows)
   const hidden = parameters.length - visible.length
   return (
-    <Box flexDirection="column" borderStyle="round" borderColor="yellow" flexShrink={0}>
-      <Text bold color="yellow">
-        {heading.join('\n')}
-      </Text>
-      <Text bold color="gray">
-        {label.join('\n')}
-      </Text>
-      {isEdit ? (
-        <DiffPreview
-          oldText={editInput.old_string}
-          newText={editInput.new_string}
-          filePath={editInput.path}
-          maxLines={bodyRows}
-          columns={width}
-        />
-      ) : (
-        <Box flexDirection="column" flexShrink={0}>
-          <Text color="white">{visible.join('\n')}</Text>
-          {hidden ? <Text color="yellow">… {hidden} more lines not shown</Text> : null}
-        </Box>
-      )}
-      <Text>{footer.join('\n')}</Text>
+    <Box
+      ref={ref}
+      width="100%"
+      flexDirection="column"
+      borderStyle="round"
+      borderColor="yellow"
+      flexShrink={0}
+    >
+      {metrics.hasMeasured ? (
+        <>
+          <Text bold color="yellow">
+            {heading.join('\n')}
+          </Text>
+          <Text bold color="gray">
+            {label.join('\n')}
+          </Text>
+          {isEdit ? (
+            <DiffPreview
+              oldText={editInput.old_string}
+              newText={editInput.new_string}
+              filePath={editInput.path}
+              maxLines={bodyRows}
+              columns={width}
+            />
+          ) : (
+            <Box flexDirection="column" flexShrink={0}>
+              <Text color="white">{visible.join('\n')}</Text>
+              {hidden ? <Text color="yellow">… {hidden} more lines not shown</Text> : null}
+            </Box>
+          )}
+          <Text>{footer.join('\n')}</Text>
+        </>
+      ) : null}
     </Box>
   )
 }

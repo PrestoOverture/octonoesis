@@ -43,51 +43,56 @@ export const StatusBar = React.memo(
 
     return (
       <Box
+        width="100%"
         borderStyle="single"
         borderColor="gray"
         paddingX={1}
         flexDirection="column"
         marginTop={1}
       >
-        <Box flexDirection="row" justifyContent="space-between">
-          <Box flexDirection="row">
-            <Text color="cyan">Model: </Text>
-            <Text bold color="white">
-              {modelName}
+        <Box flexDirection="row" flexWrap="wrap" justifyContent="space-between">
+          <Box flexShrink={1} minWidth={0} flexBasis={33}>
+            <Text wrap="truncate-end" color="cyan">
+              Model:{' '}
+              <Text bold color="white">
+                {modelName}
+              </Text>
             </Text>
           </Box>
-          <Box flexDirection="row">
-            {priced !== undefined || costUsd !== undefined ? (
-              <Text bold color="yellow">
-                {priced === false ? 'cost: n/a' : `cost: $${(costUsd ?? 0).toFixed(4)}`}
-              </Text>
-            ) : null}
-            {contextUtilization !== undefined ? (
-              <>
-                {priced !== undefined || costUsd !== undefined ? (
-                  <Text color="gray"> | </Text>
-                ) : null}
-                <Text bold color="magenta">
-                  ctx: {Math.round(contextUtilization * 100)}%
+          <Box flexShrink={1} minWidth={0}>
+            <Text wrap="truncate-end">
+              {priced !== undefined || costUsd !== undefined ? (
+                <Text bold color="yellow">
+                  {priced === false ? 'cost: n/a' : `cost: $${(costUsd ?? 0).toFixed(4)}`}
                 </Text>
-              </>
-            ) : null}
+              ) : null}
+              {contextUtilization !== undefined ? (
+                <>
+                  {priced !== undefined || costUsd !== undefined ? (
+                    <Text color="gray"> | </Text>
+                  ) : null}
+                  <Text bold color="magenta">
+                    ctx: {Math.round(contextUtilization * 100)}%
+                  </Text>
+                </>
+              ) : null}
+            </Text>
           </Box>
         </Box>
-        <Box flexDirection="row">
-          <Text color="gray">Usage: </Text>
+        <Text wrap="truncate-end" color="gray">
+          Usage:{' '}
           <Text bold color="green">
             in: {formatTokens(inputTokens)}
           </Text>
-          <Text color="gray"> | </Text>
+          {' | '}
           <Text bold color="green">
             out: {formatTokens(outputTokens)}
           </Text>
-          <Text color="gray"> | </Text>
+          {' | '}
           <Text bold color="green">
             total: {formatTokens(totalTokens)}
           </Text>
-        </Box>
+        </Text>
       </Box>
     )
   },

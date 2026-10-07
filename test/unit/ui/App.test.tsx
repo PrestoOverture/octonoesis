@@ -31,12 +31,12 @@ describe('App TUI component', () => {
 
       // 2. Verify StreamingResponse renders progressive stream & tool state
       expect(frame).toContain('thinking...')
-      expect(frame).toContain('⏳')
+      expect(frame).toContain('…')
       expect(frame).toContain('Bash')
       expect(frame).toContain('(running)')
 
       // 3. Verify Input container prompts user
-      expect(frame).toContain('🤖 ›')
+      expect(frame).toContain('›')
     }
   })
 

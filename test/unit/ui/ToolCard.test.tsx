@@ -9,7 +9,7 @@ describe('ToolCard Component', () => {
     const frame = lastFrame()
     expect(frame).toBeDefined()
     if (frame) {
-      expect(frame).toContain('⏳')
+      expect(frame).toContain('…')
       expect(frame).toContain('Bash')
       expect(frame).toContain('bun test')
       expect(frame).toContain('(running)')
@@ -21,7 +21,7 @@ describe('ToolCard Component', () => {
     const frame = lastFrame()
     expect(frame).toBeDefined()
     if (frame) {
-      expect(frame).toContain('✅')
+      expect(frame).toContain('✓')
       expect(frame).toContain('Read')
       expect(frame).toContain('package.json')
       expect(frame).toContain('(done)')
@@ -33,7 +33,7 @@ describe('ToolCard Component', () => {
     const frame = lastFrame()
     expect(frame).toBeDefined()
     if (frame) {
-      expect(frame).toContain('❌')
+      expect(frame).toContain('✗')
       expect(frame).toContain('Glob')
       expect(frame).toContain('invalid/**')
       expect(frame).toContain('(error)')

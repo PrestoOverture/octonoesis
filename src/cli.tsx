@@ -5,6 +5,7 @@ import path from 'node:path'
 import { Command } from 'commander'
 import { render } from 'ink'
 import React from 'react'
+import { version } from '../package.json'
 import { getConfigTrustWarning, loadConfig } from './config/load.ts'
 import type { OctonoesisConfig } from './config/schema.ts'
 import { appendExperimentRecord, readExperiments } from './experiments/registry.ts'
@@ -127,7 +128,7 @@ function formatExperimentList(experiments: ExperimentRecord[]): string {
 
 const program = new Command()
 
-program.name('octonoesis').description('An open-source terminal coding agent').version('1.1.3')
+program.name('octonoesis').description('An open-source terminal coding agent').version(version)
 
 program
   .command('rebuild-rules')
@@ -356,7 +357,7 @@ program
             latestSession = { sessionState, priced }
           }}
         />,
-        { exitOnCtrlC: false },
+        { exitOnCtrlC: false, incrementalRendering: false },
       )
       await waitUntilExit()
       try {

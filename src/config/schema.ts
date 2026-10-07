@@ -84,6 +84,10 @@ const compactionSchema = z
 
 export const octonoesisConfigSchema = z
   .object({
+    ui: z
+      .object({ animation: z.enum(['on', 'off']).default('on') })
+      .strict()
+      .default({ animation: 'on' }),
     model: z.string().optional(),
     maxTurns: positiveIntegerSchema.default(50),
     sandbox: sandboxSchema.default({ enabled: false }),
