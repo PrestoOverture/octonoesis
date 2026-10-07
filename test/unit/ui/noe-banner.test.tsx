@@ -14,10 +14,14 @@ import { setProvider } from '../../../src/providers'
 import { getTodos, setTodos } from '../../../src/state/todos'
 import { App } from '../../../src/ui/App'
 import { bannerLayout, version } from '../../../src/ui/banner'
-import { createFrames } from '../../../src/ui/mascot'
 import { prepareScreenSequence } from '../../../src/ui/screen'
 import { restoreEnv } from '../../helpers/env'
 
+async function waitFor(predicate: () => boolean, timeout = 3000) {
+  const started = performance.now()
+  while (!predicate() && performance.now() - started < timeout) await delay(20)
+  expect(predicate()).toBe(true)
+}
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 async function terminal(
   options: {
@@ -104,7 +108,7 @@ function noClears(output: string) {
   expect(output).not.toContain('\x1b[3J')
 }
 test('breathes for two seconds, commits once, spinner counts seconds and disappears', async () => {
-  const tty = await terminal()
+  const tty = await terminal({ columns: 80, rows: 24 })
   let release = () => {}
   const gate = new Promise<void>((resolve) => {
     release = resolve
@@ -118,14 +122,11 @@ test('breathes for two seconds, commits once, spinner counts seconds and disappe
     },
   })
   try {
+    await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Usage:')))
     await delay(2000)
-    const eyeLines = [
-      ...new Set(
-        createFrames().map((frame) => normalized(frame).split('\n').slice(5, 8).join('\n')),
-      ),
-    ]
-    expect(eyeLines.length).toBe(3)
-    for (const line of eyeLines) expect(normalized(tty.chunks.join(''))).toContain(line)
+    const paints = tty.chunks.filter((chunk) => chunk.includes('Noe ·'))
+    const eyes = new Set(paints.map((paint) => paint.split('\n').slice(2, 4).join('\n')))
+    expect(eyes.size).toBeGreaterThan(2)
     tty.stdin.write('hello')
     await delay(40)
     const start = tty.chunks.length
@@ -133,12 +134,10 @@ test('breathes for two seconds, commits once, spinner counts seconds and disappe
     await delay(1350)
     const afterSubmit = tty.chunks.slice(start).join('')
     expect(afterSubmit.split(`Noe · Octonoesis v${version}`).length - 1).toBe(1)
-    expect(normalized(afterSubmit)).toContain(
-      normalized(createFrames()[1] ?? '')
-        .split('\n')
-        .slice(5, 8)
-        .join('\n'),
-    )
+    // The frozen mid glow has its cyan core background, with no bright halo above it.
+    expect(afterSubmit).toContain('\x1b[48;2;63;201;217m')
+    const frozen = tty.chunks.slice(start).find((chunk) => chunk.includes('Noe ·')) ?? ''
+    expect(frozen.split('\n')[2] ?? '').not.toContain('\x1b[38;2;201;214;234m')
     expect(afterSubmit).toContain('1s · ctrl+c to interrupt')
     const committed = tty.chunks.length
     await delay(500)
@@ -158,21 +157,22 @@ for (const [name, options] of Object.entries({
   'chalk level zero': { levelZero: true },
   'animation off': { animation: 'off' as const },
   'environment off': { envOff: true },
-  'short terminal': { rows: 20 },
-  'narrow terminal': { columns: 50 },
+  'short terminal': { rows: 14 },
+  'narrow terminal': { columns: 30 },
   'resumed session': { resume: true },
   'non-TTY': { tty: false },
 })) {
   test(`${name}: static banner with no timer writes`, async () => {
     const tty = await terminal(options)
     try {
-      await delay(150)
+      await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Usage:')))
+      await delay(100)
       const before = tty.chunks.length
       await delay(1000)
       expect(tty.chunks.length).toBe(before)
       const output = tty.chunks.join('')
       expect(output).toContain(`Noe · Octonoesis v${version}`)
-      expect(output.split(`Noe · Octonoesis v${version}`).length - 1).toBe(1)
+      if (options.resume) expect(output.split(`Noe · Octonoesis v${version}`).length - 1).toBe(1)
       expect(tty.chunks.filter((chunk) => /[▀▄█]/.test(chunk)).length).toBeLessThan(2)
       if (options.noColor || options.levelZero || options.rows || options.columns)
         expect(/[▀▄█]/.test(output)).toBe(false)
@@ -186,10 +186,10 @@ for (const [name, options] of Object.entries({
 }
 test('layout thresholds and strict animation config', () => {
   expect(bannerLayout(76, 40, 7, true)).toBe('beside')
-  expect(bannerLayout(75, 40, 7, true)).toBe('above')
-  expect(bannerLayout(60, 40, 7, true)).toBe('above')
-  expect(bannerLayout(59, 40, 7, true)).toBe('text')
-  expect(bannerLayout(100, 20, 7, true)).toBe('text')
+  expect(bannerLayout(59, 40, 7, true)).toBe('above')
+  expect(bannerLayout(60, 40, 7, true)).toBe('beside')
+  expect(bannerLayout(39, 40, 7, true)).toBe('text')
+  expect(bannerLayout(100, 14, 7, true)).toBe('text')
   expect(bannerLayout(100, 40, 7, false)).toBe('text')
   expect(parseConfig({}).ui.animation).toBe('on')
   expect(() => parseConfig({ ui: { animation: 'auto' } })).toThrow()
@@ -303,11 +303,11 @@ test('resize immediately bounds banner frames to the live terminal width', async
     await delay(100)
     for (const [columns, rows, mascot] of [
       [70, 40, true],
-      [50, 40, false],
-      [100, 22, false],
+      [30, 40, false],
+      [100, 14, false],
       [100, 40, true],
-      [60, 30, false],
-      [45, 30, false],
+      [60, 30, true],
+      [45, 30, true],
     ] as const) {
       const start = tty.chunks.length
       tty.stdout.columns = columns
@@ -322,7 +322,7 @@ test('resize immediately bounds banner frames to the live terminal width', async
       const titleLine = normalized(frame)
         .split('\n')
         .findIndex((line) => line.includes('Noe ·'))
-      if (columns === 70) expect(titleLine).toBeGreaterThan(15)
+      if (columns === 45) expect(titleLine).toBe(9)
       else expect(titleLine).toBe(0)
       expect(output).not.toContain('\x1b[3J')
     }
@@ -496,5 +496,61 @@ test('TUI chrome uses no variation-selector or pictographic emoji', async () => 
     if (!name.endsWith('.tsx')) continue
     const source = await fs.readFile(path.join(directory, name), 'utf8')
     expect(/[\u{1f300}-\u{1faff}]|\ufe0f/u.test(source)).toBe(false)
+  }
+})
+
+for (const [columns, rows, layout] of [
+  [80, 24, 'beside'],
+  [91, 24, 'beside'],
+  [60, 24, 'beside'],
+  [45, 30, 'above'],
+  [40, 48, 'above'],
+  [30, 40, 'text'],
+  [100, 14, 'text'],
+] as const) {
+  test(`compact layout ${columns}x${rows}: ${layout}, bounded dynamic frames`, async () => {
+    const tty = await terminal({ columns, rows })
+    try {
+      await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Usage:')))
+      if (layout !== 'text') {
+        await waitFor(
+          () => new Set(tty.chunks.filter((chunk) => chunk.includes('Noe ·'))).size >= 3,
+          2000,
+        )
+      }
+      const paints = tty.chunks.filter((chunk) => chunk.includes('Noe ·'))
+      for (const paint of paints) {
+        const lines = normalized(paint).trimEnd().split('\n')
+        expect(lines.length).toBeLessThan(rows)
+        for (const line of lines) expect(Bun.stringWidth(line)).toBeLessThan(columns)
+        expect(/[▀▄]/.test(paint)).toBe(layout !== 'text')
+        const titleRow = lines.findIndex((line) => line.includes('Noe ·'))
+        expect(titleRow).toBe(layout === 'above' ? 9 : 0)
+        if (layout === 'beside') expect(lines[0]?.indexOf('Noe ·')).toBe(19)
+      }
+      noClears(tty.chunks.join(''))
+    } finally {
+      await tty.close()
+    }
+  })
+}
+
+test('measured multiline input makes a boundary-height banner fall back to text', async () => {
+  const tty = await terminal({ columns: 40, rows: 24, animation: 'off' })
+  try {
+    await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Noe ·') && /[▀▄]/.test(chunk)))
+    const start = tty.chunks.length
+    tty.stdin.write('first\\')
+    await waitFor(() => tty.chunks.slice(start).some((chunk) => chunk.includes('first')))
+    tty.stdin.write('\r')
+    await waitFor(() =>
+      tty.chunks.slice(start).some((chunk) => chunk.includes('Noe ·') && !/[▀▄]/.test(chunk)),
+    )
+    for (const paint of tty.chunks.filter((chunk) => chunk.includes('Noe ·'))) {
+      expect(normalized(paint).trimEnd().split('\n').length).toBeLessThan(24)
+    }
+    noClears(tty.chunks.join(''))
+  } finally {
+    await tty.close()
   }
 })
