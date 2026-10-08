@@ -39,12 +39,12 @@ test('split markdown, three same-name tools, notices and end form an immutable d
   expect(state.pending).toBe('')
   expect(state.running).toEqual([])
   expect(state.transcript).toEqual([
-    { kind: 'user', text: 'go' },
+    { kind: 'user', text: 'go', spacer: true },
     { kind: 'assistant', text: '**hello**\n\n', verbatim: false, header: true },
     { kind: 'assistant', text: 'next `token`', verbatim: false, header: false },
-    { kind: 'tool', id: '2', name: 'Read', args: '{"path":"2.txt"}', status: 'error' },
-    { kind: 'tool', id: '1', name: 'Read', args: '{"path":"1.txt"}', status: 'done' },
-    { kind: 'tool', id: '3', name: 'Read', args: '{"path":"3.txt"}', status: 'done' },
+    { kind: 'tool', id: '2', name: 'Read', args: '2.txt', status: 'error' },
+    { kind: 'tool', id: '1', name: 'Read', args: '1.txt', status: 'done' },
+    { kind: 'tool', id: '3', name: 'Read', args: '3.txt', status: 'done' },
     { kind: 'compact', preTokens: 200, postTokens: 20, durationMs: 1 },
     { kind: 'task_notice', text: 'notice' },
     { kind: 'assistant', text: 'final tail', verbatim: false, header: true },
@@ -61,7 +61,14 @@ test('seeding copies history into display items; shrinking model history cannot 
         { type: 'tool_use', id: 'a', name: 'Read', input: { path: 'a' } },
       ],
     },
-    { role: 'tool', tool_use_id: 'a', content: '{"error":"missing"}' },
+    {
+      role: 'tool',
+      tool_use_id: 'a',
+      content: [
+        { type: 'tool_result', tool_use_id: 'a', content: '{"error":"missing"}', is_error: true },
+        { type: 'text', text: '{"error":"missing"}' },
+      ],
+    },
   ]
   let state = seedTranscript(messages, {
     sessionId: 'resume-id',

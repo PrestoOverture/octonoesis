@@ -1,12 +1,20 @@
 import type { CanonicalMessage, StreamEvent } from '../query'
+import { type RepoRoots, primaryArg, summarizeToolResult } from '../query/toolSummary'
 import type { BannerSnapshot } from './StartupBanner'
 import { stableMarkdownLength } from './markdown'
 
 export type DisplayItem =
   | ({ kind: 'banner' } & BannerSnapshot)
-  | { kind: 'resume' | 'user' | 'task_notice'; text: string }
+  | { kind: 'resume' | 'user' | 'task_notice'; text: string; spacer?: boolean }
   | { kind: 'assistant' | 'stats' | 'failure'; text: string; verbatim: boolean; header: boolean }
-  | { kind: 'tool'; id: string; name: string; args: string; status: 'done' | 'error' }
+  | {
+      kind: 'tool'
+      id: string
+      name: string
+      args: string
+      status: 'done' | 'error'
+      summary?: string
+    }
   | { kind: 'compact'; preTokens: number; postTokens: number; durationMs: number }
 
 export interface RunningTool {
@@ -45,7 +53,11 @@ function flush(state: TranscriptState): TranscriptState {
 }
 
 /** Display-only state: committed objects retain identity and never depend on model history. */
-export function transcriptReducer(state: TranscriptState, event: TranscriptEvent): TranscriptState {
+export function transcriptReducer(
+  state: TranscriptState,
+  event: TranscriptEvent,
+  repoRoots?: RepoRoots,
+): TranscriptState {
   switch (event.type) {
     case 'banner':
       if (state.transcript.some((item) => item.kind === 'banner')) return state
@@ -73,14 +85,14 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         header: true,
         running: [
           ...state.running,
-          { id: event.id, name: event.name, args: event.input ? JSON.stringify(event.input) : '' },
+          { id: event.id, name: event.name, args: primaryArg(event.name, event.input, repoRoots) },
         ],
       }
     case 'tool_done': {
       const tool = state.running.find((tool) => tool.id === event.id)
       if (!tool) return state
       return {
-        ...append(state, { kind: 'tool', ...tool, status: event.status }),
+        ...append(state, { kind: 'tool', ...tool, status: event.status, summary: event.summary }),
         running: state.running.filter((tool) => tool.id !== event.id),
       }
     }
@@ -95,8 +107,17 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         header: true,
       }
     case 'user':
-    case 'task_notice':
-      return { ...append(flush(state), { kind: event.type, text: event.text }), header: true }
+    case 'task_notice': {
+      const next = flush(state)
+      return {
+        ...append(next, {
+          kind: event.type,
+          text: event.text,
+          ...(event.type === 'user' ? { spacer: next.transcript.at(-1)?.kind !== 'banner' } : {}),
+        }),
+        header: true,
+      }
+    }
     case 'stats':
     case 'failure':
       return {
@@ -112,7 +133,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
       let next = flush(state)
       // Cancellation can end the generator before tool_done arrives.
       for (const tool of next.running)
-        next = append(next, { kind: 'tool', ...tool, status: 'error' })
+        next = append(next, { kind: 'tool', ...tool, status: 'error', summary: 'cancelled' })
       return { ...next, running: [], header: true }
     }
     default:
@@ -123,6 +144,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
 export function seedTranscript(
   messages: CanonicalMessage[] = [],
   resume?: { sessionId: string; messageCount: number; updatedAt: string },
+  repoRoots?: RepoRoots,
 ): TranscriptState {
   let state: TranscriptState = { transcript: [], pending: '', header: true, running: [] }
   if (resume)
@@ -145,20 +167,30 @@ export function seedTranscript(
         if (block.type === 'text')
           state = transcriptReducer(state, { type: 'text_delta', text: block.text })
         if (block.type === 'tool_use') {
-          state = transcriptReducer(state, block)
+          state = transcriptReducer(state, block, repoRoots)
           const result = messages.find(
             (candidate) => candidate.role === 'tool' && candidate.tool_use_id === block.id,
           )
+          const blockResult =
+            result?.role === 'tool' && Array.isArray(result.content)
+              ? result.content.find((block) => block.type === 'tool_result')
+              : undefined
+          const content =
+            result?.role === 'tool' && typeof result.content === 'string'
+              ? result.content
+              : blockResult?.type === 'tool_result'
+                ? blockResult.content
+                : ''
+          const display = summarizeToolResult(block.name, block.input, {
+            ok: !(blockResult?.type === 'tool_result' && blockResult.is_error),
+            content,
+          })
           state = transcriptReducer(state, {
             type: 'tool_done',
             id: block.id,
             name: block.name,
-            status:
-              result?.role === 'tool' &&
-              typeof result.content === 'string' &&
-              result.content.includes('"error":')
-                ? 'error'
-                : 'done',
+            status: display.failed ? 'error' : 'done',
+            summary: display.summary,
           })
         }
       }

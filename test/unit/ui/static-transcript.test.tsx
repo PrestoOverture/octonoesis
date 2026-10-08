@@ -95,7 +95,7 @@ test('long replies and ten tools never clear the fake TTY', async () => {
     expect(output).not.toContain('\x1b[3J')
     expect(output.split('oracle-line-000').length - 1).toBe(1)
     expect(output.split('oracle-line-199').length - 1).toBe(1)
-    expect(output.split('(done)').length - 1).toBe(10)
+    expect(output.split('✓ Read').length - 1).toBe(10)
     expect(turn).toBe(2)
   } finally {
     view.unmount()
@@ -313,10 +313,10 @@ test('an unclosed 200-line fence and a tall todo panel stay bounded, then commit
     await delay(60)
     // The latest repaint must retain the actual last line, including with the header and marker.
     const frame = output.slice(output.lastIndexOf('\x1b[G'))
-    expect(frame).toContain('… 189 lines above')
+    expect(frame).toContain('… 186 lines above')
     expect(frame).toContain('fence-line-199')
     expect(frame).not.toContain('fence-line-000')
-    expect(frame).toContain('+92 more')
+    expect(frame).toContain('+89 more')
     const beforeCommit = output.length
     release()
     for (let i = 0; i < 100 && !finished; i++) await delay(20)

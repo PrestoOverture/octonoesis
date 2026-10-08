@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { realpathSync } from 'node:fs'
 import chalk from 'chalk'
 import {
   Box,
@@ -7,6 +8,7 @@ import {
   Text,
   measureElement,
   useApp,
+  useBoxMetrics,
   useInput,
   useStdout,
   useWindowSize,
@@ -22,6 +24,7 @@ import {
   formatQueryFailure,
   query,
 } from '../query'
+import { primaryArg } from '../query/toolSummary'
 import type { SessionState } from '../query/types'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { rewriteSkillSlashCommand } from '../skills/execute'
@@ -44,6 +47,7 @@ import { renderMarkdown } from './markdown'
 import { COMPACT_SIZE, createFrames } from './mascot'
 import { type DisplayItem, seedTranscript, transcriptReducer } from './transcript'
 import { useResizeReset } from './useResizeReset'
+import { wrapAssistant } from './wrapAssistant'
 export type { CanonicalMessage } from '../query'
 
 /**
@@ -113,10 +117,18 @@ export function formatTaskNoticeLabel(text: string): string {
   return `Task › ${taskId} ${status}: ${truncateTaskNoticeSummary(summary)}`
 }
 
-export function DisplayEntry({ item }: { item: DisplayItem }) {
+export function DisplayEntry({ item, width }: { item: DisplayItem; width?: number }) {
   if (item.kind === 'banner') return <Banner {...item} />
   if (item.kind === 'tool')
-    return <ToolCard tool={item.name} args={item.args} status={item.status} />
+    return (
+      <ToolCard
+        width={width}
+        tool={item.name}
+        args={item.args}
+        status={item.status}
+        summary={item.summary}
+      />
+    )
   if (item.kind === 'compact') return <CompactNotice {...item} />
   if (item.kind === 'resume') return <Text color="yellow">{item.text}</Text>
   if (item.kind === 'task_notice')
@@ -127,20 +139,24 @@ export function DisplayEntry({ item }: { item: DisplayItem }) {
     )
   if (item.kind === 'user')
     return (
-      <Text bold color="cyan">
-        User › <Text color="white">{item.text}</Text>
-      </Text>
+      <Box flexDirection="column">
+        {item.spacer ? <Text> </Text> : null}
+        <Text>
+          <Text color="cyan">❯ </Text>
+          <Text color="white">{item.text}</Text>
+        </Text>
+      </Box>
     )
   if ('verbatim' in item)
     return (
       <Box flexDirection="column">
-        {item.header ? (
-          <Text bold color="green">
-            Agent ›
-          </Text>
-        ) : null}
+        {item.header ? <Text> </Text> : null}
         <Text color="white">
-          {item.verbatim ? item.text : renderMarkdown(item.text).replace(/\n+$/, '')}
+          {item.verbatim
+            ? item.text
+            : width === undefined
+              ? renderMarkdown(item.text).replace(/\n+$/, '')
+              : wrapAssistant(renderMarkdown(item.text).replace(/\n+$/, ''), width)}
         </Text>
       </Box>
     )
@@ -176,14 +192,12 @@ export function StreamingResponse(props: {
     <Box flexDirection="column" marginY={0}>
       {text ? (
         <Box flexDirection="column">
-          <Text bold color="green">
-            Agent ›
-          </Text>
+          <Text> </Text>
           <Text color="white">{renderMarkdown(text).replace(/\n+$/, '')}</Text>
         </Box>
       ) : null}
       {toolUses.map((tool, idx) => {
-        const argsStr = tool.input ? JSON.stringify(tool.input) : ''
+        const argsStr = primaryArg(tool.name, tool.input)
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
           <ToolCard key={idx} tool={tool.name} args={argsStr} status={tool.status} />
@@ -229,9 +243,21 @@ export function App(props: AppProps) {
     }
   })
 
+  const [repoRoots] = useState(() => {
+    try {
+      return [ctx.repoRoot, realpathSync(ctx.repoRoot)]
+    } catch {
+      return [ctx.repoRoot]
+    }
+  })
+  const parentRef = useRef<DOMElement>(null)
+  const parentMetrics = useBoxMetrics(parentRef)
+  const contentRef = useRef<DOMElement>(null)
+  const contentMetrics = useBoxMetrics(contentRef)
+  const transcriptWidth = Math.max(1, parentMetrics.width - 1)
   const { rows, columns } = useWindowSize()
   const resizing = useResizeReset()
-  const [statusHeight, setStatusHeight] = useState(columns <= 60 ? 6 : 5)
+  const [statusHeight, setStatusHeight] = useState(1)
   const [inputHeight, setInputHeight] = useState(3)
   const [isGenerating, setIsGenerating] = useState(false)
   const statusRef = useRef<DOMElement>(null)
@@ -270,25 +296,31 @@ export function App(props: AppProps) {
     }
   }, [ctx.memoryDir, bannerCommitted])
 
-  const [display, dispatch] = useReducer(transcriptReducer, undefined, () => {
-    const seeded = seedTranscript(
-      initialMessages.length ? initialMessages : ctx.messages,
-      resumeInfo,
-    )
-    return {
-      ...seeded,
-      transcript: [
-        ...(bannerCommitted ? [{ kind: 'banner' as const, ...banner }] : []),
-        ...seeded.transcript,
-      ],
-      pending: initialStreamingText,
-      running: initialStreamingToolUses.map((tool, index) => ({
-        id: `initial-${index}`,
-        name: tool.name,
-        args: tool.input ? JSON.stringify(tool.input) : '',
-      })),
-    }
-  })
+  const [display, dispatch] = useReducer(
+    (state: ReturnType<typeof seedTranscript>, event: Parameters<typeof transcriptReducer>[1]) =>
+      transcriptReducer(state, event, repoRoots),
+    undefined,
+    () => {
+      const seeded = seedTranscript(
+        initialMessages.length ? initialMessages : ctx.messages,
+        resumeInfo,
+        repoRoots,
+      )
+      return {
+        ...seeded,
+        transcript: [
+          ...(bannerCommitted ? [{ kind: 'banner' as const, ...banner }] : []),
+          ...seeded.transcript,
+        ],
+        pending: initialStreamingText,
+        running: initialStreamingToolUses.map((tool, index) => ({
+          id: `initial-${index}`,
+          name: tool.name,
+          args: primaryArg(tool.name, tool.input, repoRoots),
+        })),
+      }
+    },
+  )
   const [inputHistory, setInputHistory] = useState<string[]>([])
   const generationStarted = useRef(0)
   const { exit } = useApp()
@@ -466,13 +498,14 @@ export function App(props: AppProps) {
   }
   // Leave one terminal row free: Ink clears when leaving an exactly full frame too.
   const height = Math.max(0, rows - 1)
+  const inputSpacer = display.transcript.length > 0 ? 1 : 0
   const controlHeight = pendingConfirm
-    ? Math.max(0, height - statusHeight - 1)
+    ? Math.max(0, height - statusHeight - 1 - inputSpacer)
     : bannerCommitted
       ? 3
       : inputHeight
   const spinnerHeight = isGenerating && !pendingConfirm ? 1 : 0
-  const chromeHeight = controlHeight + statusHeight + 1 + spinnerHeight
+  const chromeHeight = controlHeight + statusHeight + 1 + spinnerHeight + inputSpacer
   const bannerRows = bannerCommitted
     ? 0
     : Math.min(
@@ -491,14 +524,20 @@ export function App(props: AppProps) {
   const headerRows = display.pending && display.header ? 1 : 0
   const dynamicChromeHeight = chromeHeight + bannerRows + runningRows + headerRows
   const tailLines = Math.max(3, rows - dynamicChromeHeight - 2)
-  const preview = renderMarkdown(display.pending).replace(/\n+$/, '').split('\n')
+  const preview = wrapAssistant(
+    renderMarkdown(display.pending).replace(/\n+$/, ''),
+    contentMetrics.width,
+  ).split('\n')
   const hidden = Math.max(0, preview.length - tailLines)
   // Ink relayouts on resize before React receives the resize event. A percentage width
   // follows that live layout immediately; the spare column avoids right-edge autowrap.
   return (
-    <Box flexDirection="column" width="100%" paddingRight={1} overflow="hidden">
-      <Static items={display.transcript} style={{ width: '100%', paddingRight: 1 }}>
-        {(item, index) => <DisplayEntry key={index} item={item} />}
+    <Box ref={parentRef} flexDirection="column" width="100%" paddingRight={1} overflow="hidden">
+      <Static
+        items={parentMetrics.hasMeasured ? display.transcript : []}
+        style={{ width: '100%', paddingRight: 1 }}
+      >
+        {(item, index) => <DisplayEntry key={index} item={item} width={transcriptWidth} />}
       </Static>
       <Box flexDirection="column" maxHeight={height} overflow="hidden">
         {!bannerCommitted ? (
@@ -523,14 +562,10 @@ export function App(props: AppProps) {
         ) : null}
         {!pendingConfirm ? (
           <Box flexDirection="row" maxHeight={contentHeight} overflow="hidden" flexShrink={0}>
-            <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
-              {display.pending ? (
+            <Box ref={contentRef} flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
+              {display.pending && contentMetrics.hasMeasured ? (
                 <Box flexDirection="column" flexShrink={0}>
-                  {display.header ? (
-                    <Text bold color="green">
-                      Agent ›
-                    </Text>
-                  ) : null}
+                  {display.header ? <Text> </Text> : null}
                   {hidden ? <Text dimColor>… {hidden} lines above</Text> : null}
                   <Text wrap="truncate-end">{preview.slice(-tailLines).join('\n')}</Text>
                 </Box>
@@ -538,7 +573,12 @@ export function App(props: AppProps) {
               <Box flexDirection="column" maxHeight={runningRows} overflow="hidden" flexShrink={0}>
                 {display.running.map((tool) => (
                   <Box key={tool.id} height={1} flexShrink={0} overflow="hidden">
-                    <ToolCard tool={tool.name} args={tool.args} status="running" />
+                    <ToolCard
+                      width={contentMetrics.width}
+                      tool={tool.name}
+                      args={tool.args}
+                      status="running"
+                    />
                   </Box>
                 ))}
               </Box>
@@ -549,6 +589,11 @@ export function App(props: AppProps) {
         {spinnerHeight ? (
           <Box height={1} flexShrink={0}>
             <Spinner startedAt={generationStarted.current} />
+          </Box>
+        ) : null}
+        {inputSpacer ? (
+          <Box height={1} flexShrink={0}>
+            <Text> </Text>
           </Box>
         ) : null}
         <Box flexDirection="column" maxHeight={controlHeight} overflow="hidden" flexShrink={0}>

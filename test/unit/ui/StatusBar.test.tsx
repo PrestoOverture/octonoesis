@@ -12,9 +12,9 @@ describe('StatusBar Component', () => {
     expect(frame).toBeDefined()
     if (frame) {
       expect(frame).toContain('claude-haiku-4-5')
-      expect(frame).toContain('in: 1.5k')
-      expect(frame).toContain('out: 500')
-      expect(frame).toContain('total: 2.0k')
+      expect(frame).toContain('1.5k in')
+      expect(frame).toContain('500 out')
+      expect(frame).toBe('claude-haiku-4-5 · $0.0000 · ctx 0% · 1.5k in / 500 out')
     }
   })
 })

@@ -24,19 +24,19 @@ describe('App TUI component', () => {
     expect(frame).toBeDefined()
     if (frame) {
       // 1. Verify MessageList renders conversation history (separated to prevent ANSI-color interference)
-      expect(frame).toContain('User ›')
+      expect(frame).toContain('❯')
       expect(frame).toContain('hello agent')
-      expect(frame).toContain('Agent ›')
+      expect(frame).not.toContain('Agent ›')
       expect(frame).toContain('hello human')
 
       // 2. Verify StreamingResponse renders progressive stream & tool state
       expect(frame).toContain('thinking...')
       expect(frame).toContain('…')
       expect(frame).toContain('Bash')
-      expect(frame).toContain('(running)')
+      expect(frame).toContain('…')
 
       // 3. Verify Input container prompts user
-      expect(frame).toContain('›')
+      expect(frame).toContain('❯')
     }
   })
 
@@ -77,7 +77,7 @@ describe('App TUI component', () => {
       const frame = lastFrame()
       expect(frame).toBeDefined()
       if (frame) {
-        expect(frame).toContain('User ›')
+        expect(frame).toContain('❯')
         expect(frame).toContain('/stats')
         expect(frame).toContain('bun-test|TypeError')
         expect(frame).toContain('uncertain') // because total attempts is 1 (< 3 attempts)
@@ -140,7 +140,7 @@ describe('App TUI component', () => {
     expect(frame).not.toContain('<task-notification>')
   })
 
-  it('still renders an ordinary user message as a User › bubble, unaffected', () => {
+  it('still renders an ordinary user message as a ❯ echo, unaffected', () => {
     const messages: CanonicalMessage[] = [
       { role: 'user', content: 'a completely ordinary message, not a task notice' },
     ]
@@ -149,7 +149,7 @@ describe('App TUI component', () => {
     const frame = lastFrame()
     expect(frame).toBeDefined()
     if (!frame) return
-    expect(frame).toContain('User ›')
+    expect(frame).toContain('❯')
     expect(frame).toContain('a completely ordinary message, not a task notice')
     expect(frame).not.toContain('Task ›')
   })

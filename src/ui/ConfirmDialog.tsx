@@ -1,7 +1,7 @@
 import { Box, type DOMElement, Text, useBoxMetrics, useInput, useWindowSize } from 'ink'
 import React, { useRef } from 'react'
 import { DiffPreview } from './DiffPreview'
-import { wrapPreviewLines } from './previewLines'
+import { wrapPreviewLines, wrapProseLines } from './previewLines'
 
 /**
  * Props for the ConfirmDialog interactive tool authorization dialog.
@@ -42,15 +42,15 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
   const ref = useRef<DOMElement>(null)
   const metrics = useBoxMetrics(ref)
   const width = Math.max(1, metrics.width - 2)
-  const heading = wrapPreviewLines(
+  const heading = wrapProseLines(
     `! [Permission Required] Tool ${toolName} wants to execute.`,
     width,
   )
-  const footer = wrapPreviewLines(
+  const footer = wrapProseLines(
     'Press [y] Yes once / [n] No / [a] Always allow for this input',
     width,
   )
-  const label = wrapPreviewLines(isEdit ? `File: ${editInput.path}` : 'Parameters:', width)
+  const label = wrapProseLines(isEdit ? `File: ${editInput.path}` : 'Parameters:', width)
   // Borders, heading, payload label and answer keys are accounted for before the body.
   const bodyRows = Math.max(
     1,

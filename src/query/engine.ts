@@ -78,6 +78,7 @@ import {
   selectKeepTail,
   shouldCompact,
 } from './compact'
+import { summarizeToolResult } from './toolSummary'
 import type { ExitReason, QueryLoopContext, QueryResultV1, QueryState, SessionState } from './types'
 
 registerTool(readTool)
@@ -93,7 +94,7 @@ const sessionAgentTools = new WeakMap<QueryLoopContext, [AgentTool, SendMessageT
 export type StreamEvent =
   | ProviderStreamEvent
   | { type: 'task_notice'; text: string }
-  | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error' }
+  | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error'; summary?: string }
   | { type: 'compact'; preTokens: number; postTokens: number; durationMs: number }
   | { type: 'session_state'; sessionState: SessionState; priced: boolean }
 
@@ -756,11 +757,16 @@ export async function* executeTools(
             { type: 'text', text: cancellationMessage },
           ],
         })
+        const display = summarizeToolResult(cancelledToolUse.name, cancelledToolUse.input, {
+          ok: false,
+          content: cancellationMessage,
+        })
         yield {
           type: 'tool_done',
           id: cancelledToolUse.id,
           name: cancelledToolUse.name,
-          status: 'error',
+          status: display.failed ? 'error' : 'done',
+          summary: display.summary,
         }
       }
       break
@@ -772,19 +778,24 @@ export async function* executeTools(
     let isError = false
     const toolResult = await runTool(toolUse.name, toolUse.input, ctx)
 
-    yield {
-      type: 'tool_done',
-      id: toolUse.id,
-      name: toolUse.name,
-      status: toolResult.ok ? 'done' : 'error',
-    }
-
     if (toolResult.ok) {
       toolResultContent =
         typeof toolResult.value === 'string' ? toolResult.value : JSON.stringify(toolResult.value)
     } else {
       isError = true
       toolResultContent = JSON.stringify({ error: toolResult.error })
+    }
+
+    const display = summarizeToolResult(toolUse.name, toolUse.input, {
+      ok: toolResult.ok,
+      content: toolResultContent,
+    })
+    yield {
+      type: 'tool_done',
+      id: toolUse.id,
+      name: toolUse.name,
+      status: display.failed ? 'error' : 'done',
+      summary: display.summary,
     }
 
     const verifyResult = ctx._lastVerifyResultForQuery
