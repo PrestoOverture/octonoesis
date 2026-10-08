@@ -67,7 +67,7 @@ function tty(columns: number, rows: number) {
 
 test('80-column resumed tools shorten realpath aliases and preserve long-argument summaries', async () => {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'ui2-delta-'))
-  const repo = path.join(temporary, 'repository-'.repeat(7))
+  const repo = path.join(temporary, 'repository-'.repeat(12))
   const alias = path.join(temporary, 'alias')
   await fs.mkdir(repo)
   await fs.symlink(repo, alias)
