@@ -5,7 +5,9 @@ function fields(input: unknown): Record<string, unknown> {
 function string(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
-export function primaryArg(name: string, input: unknown): string {
+export type RepoRoots = string | readonly string[]
+
+export function primaryArg(name: string, input: unknown, repoRoot?: RepoRoots): string {
   const args = fields(input)
   let value: string
   switch (name) {
@@ -38,7 +40,27 @@ export function primaryArg(name: string, input: unknown): string {
     default:
       value = string(Object.values(args).find((value) => typeof value === 'string'))
   }
-  return value.split(/\r?\n/)[0] ?? ''
+  value = value.split(/\r?\n/)[0] ?? ''
+  const roots = (typeof repoRoot === 'string' ? [repoRoot] : (repoRoot ?? []))
+    .map((root) => root.replace(/\/+$/, '') || '/')
+    .sort((a, b) => b.length - a.length)
+  for (const root of roots) {
+    if (name === 'Bash') {
+      for (const directory of [root, `'${root}'`, `"${root}"`]) {
+        for (const separator of [' && ', '; ', ';']) {
+          const prefix = `cd ${directory}${separator}`
+          if (value.startsWith(prefix)) value = value.slice(prefix.length)
+        }
+      }
+    }
+    // Match path boundaries, not lookalikes such as /repo-other or /outside/repo.
+    const escaped = root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    value = value.replace(
+      new RegExp(`(^|[\\s"'=:(])${escaped}(/|(?=$|[\\s"';)]))`, 'g'),
+      (_match, boundary: string, slash: string) => `${boundary}${slash ? '' : '.'}`,
+    )
+  }
+  return value
 }
 function parse(content: string): unknown {
   try {

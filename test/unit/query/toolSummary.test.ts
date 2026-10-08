@@ -90,3 +90,25 @@ test('error prefixes, fallback, and engine cancellation', () => {
       .summary,
   ).toBe('cancelled')
 })
+
+for (const [name, input, expected] of [
+  ['Read', { path: '/repo/src/x.ts' }, 'src/x.ts'],
+  ['Edit', { path: '/private/repo/src/x.ts' }, 'src/x.ts'],
+  ['Write', { path: '/repo' }, '.'],
+  ['Grep', { pattern: 'needle', path: '/private/repo' }, 'needle .'],
+  ['Read', { path: '/repo-other/x.ts' }, '/repo-other/x.ts'],
+  ['Read', { path: '/outside/repo/x.ts' }, '/outside/repo/x.ts'],
+  ['Bash', { command: 'cd /repo && bun test' }, 'bun test'],
+  ['Bash', { command: 'cd /private/repo; bun test' }, 'bun test'],
+  ['Bash', { command: 'cd /repo;bun test' }, 'bun test'],
+  ['Bash', { command: 'cat /repo/a /private/repo/b' }, 'cat a b'],
+  ['Bash', { command: 'cd /elsewhere && bun test' }, 'cd /elsewhere && bun test'],
+  ['Unknown', { path: '/repo/data' }, 'data'],
+] as const)
+  test(`repo-relative ${name}: ${expected}`, () => {
+    expect(primaryArg(name, input, ['/repo', '/private/repo'])).toBe(expected)
+  })
+test('accepts a single repo root and quoted Bash cd', () => {
+  expect(primaryArg('Read', { path: '/repo/x' }, '/repo/')).toBe('x')
+  expect(primaryArg('Bash', { command: 'cd "/my repo" && bun test' }, '/my repo')).toBe('bun test')
+})

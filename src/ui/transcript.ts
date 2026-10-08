@@ -1,5 +1,5 @@
 import type { CanonicalMessage, StreamEvent } from '../query'
-import { primaryArg, summarizeToolResult } from '../query/toolSummary'
+import { type RepoRoots, primaryArg, summarizeToolResult } from '../query/toolSummary'
 import type { BannerSnapshot } from './StartupBanner'
 import { stableMarkdownLength } from './markdown'
 
@@ -53,7 +53,11 @@ function flush(state: TranscriptState): TranscriptState {
 }
 
 /** Display-only state: committed objects retain identity and never depend on model history. */
-export function transcriptReducer(state: TranscriptState, event: TranscriptEvent): TranscriptState {
+export function transcriptReducer(
+  state: TranscriptState,
+  event: TranscriptEvent,
+  repoRoots?: RepoRoots,
+): TranscriptState {
   switch (event.type) {
     case 'banner':
       if (state.transcript.some((item) => item.kind === 'banner')) return state
@@ -81,7 +85,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
         header: true,
         running: [
           ...state.running,
-          { id: event.id, name: event.name, args: primaryArg(event.name, event.input) },
+          { id: event.id, name: event.name, args: primaryArg(event.name, event.input, repoRoots) },
         ],
       }
     case 'tool_done': {
@@ -140,6 +144,7 @@ export function transcriptReducer(state: TranscriptState, event: TranscriptEvent
 export function seedTranscript(
   messages: CanonicalMessage[] = [],
   resume?: { sessionId: string; messageCount: number; updatedAt: string },
+  repoRoots?: RepoRoots,
 ): TranscriptState {
   let state: TranscriptState = { transcript: [], pending: '', header: true, running: [] }
   if (resume)
@@ -162,7 +167,7 @@ export function seedTranscript(
         if (block.type === 'text')
           state = transcriptReducer(state, { type: 'text_delta', text: block.text })
         if (block.type === 'tool_use') {
-          state = transcriptReducer(state, block)
+          state = transcriptReducer(state, block, repoRoots)
           const result = messages.find(
             (candidate) => candidate.role === 'tool' && candidate.tool_use_id === block.id,
           )
