@@ -122,7 +122,7 @@ test('breathes for two seconds, commits once, spinner counts seconds and disappe
     },
   })
   try {
-    await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Usage:')))
+    await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Type a message')))
     await delay(2000)
     const paints = tty.chunks.filter((chunk) => chunk.includes('Noe ·'))
     const eyes = new Set(paints.map((paint) => paint.split('\n').slice(2, 4).join('\n')))
@@ -157,7 +157,7 @@ for (const [name, options] of Object.entries({
   'chalk level zero': { levelZero: true },
   'animation off': { animation: 'off' as const },
   'environment off': { envOff: true },
-  'short terminal': { rows: 14 },
+  'short terminal': { rows: 10 },
   'narrow terminal': { columns: 30 },
   'resumed session': { resume: true },
   'non-TTY': { tty: false },
@@ -165,7 +165,7 @@ for (const [name, options] of Object.entries({
   test(`${name}: static banner with no timer writes`, async () => {
     const tty = await terminal(options)
     try {
-      await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Usage:')))
+      await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Type a message')))
       await delay(100)
       const before = tty.chunks.length
       await delay(1000)
@@ -304,7 +304,7 @@ test('resize immediately bounds banner frames to the live terminal width', async
     for (const [columns, rows, mascot] of [
       [70, 40, true],
       [30, 40, false],
-      [100, 14, false],
+      [100, 10, false],
       [100, 40, true],
       [60, 30, true],
       [45, 30, true],
@@ -360,7 +360,7 @@ test('resize bursts scroll once, then redraw a full frame without destructive cl
       const redraw = normalized(output.slice(output.indexOf(sequence) + sequence.length))
       expect(redraw.split('Noe · Octonoesis').length - 1).toBe(1)
       expect(redraw).toContain('Type a message...')
-      expect(redraw).toContain('Model:')
+      expect(redraw).toContain('ctx ')
       noClears(output)
     }
     const before = tty.chunks.length
@@ -410,7 +410,7 @@ test('conversation resize redraws only the dynamic region and cancels reset on u
     expect(redraw).not.toContain('Noe ·')
     expect(redraw).toContain('ctrl+c to interrupt')
     expect(redraw).toContain('Type a message...')
-    expect(redraw).toContain('Model:')
+    expect(redraw).toContain('ctx ')
     noClears(output)
     release()
     await delay(100)
@@ -471,16 +471,16 @@ for (const columns of [91, 60]) {
       noClears(tty.chunks.join(''))
       const output = normalized(prompt.join(''))
       expect(output).toContain('[Permission Required]')
-      expect(output).toContain('Model:')
-      expect(output).toContain('cost:')
+      expect(output).toContain('ctx ')
+      expect(output).toContain('$')
       expect(output).toContain('╭')
       expect(output).toContain('╮')
       expect(output).toContain('╰')
       expect(output).toContain('╯')
-      expect(output).toContain('┌')
-      expect(output).toContain('┐')
-      expect(output).toContain('└')
-      expect(output).toContain('┘')
+      expect(output).not.toContain('┌')
+      expect(output).not.toContain('┐')
+      expect(output).not.toContain('└')
+      expect(output).not.toContain('┘')
       tty.stdin.write('n')
       await permission
     } finally {
@@ -491,6 +491,7 @@ for (const columns of [91, 60]) {
   })
 }
 test('TUI chrome uses no variation-selector or pictographic emoji', async () => {
+  for (const glyph of ['✓', '✗', '…', '·', '❯', '−']) expect(Bun.stringWidth(glyph)).toBe(1)
   const directory = path.join(import.meta.dir, '../../../src/ui')
   for (const name of await fs.readdir(directory)) {
     if (!name.endsWith('.tsx')) continue
@@ -506,12 +507,12 @@ for (const [columns, rows, layout] of [
   [45, 30, 'above'],
   [40, 48, 'above'],
   [30, 40, 'text'],
-  [100, 14, 'text'],
+  [100, 10, 'text'],
 ] as const) {
   test(`compact layout ${columns}x${rows}: ${layout}, bounded dynamic frames`, async () => {
     const tty = await terminal({ columns, rows })
     try {
-      await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Usage:')))
+      await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Type a message')))
       if (layout !== 'text') {
         await waitFor(
           () => new Set(tty.chunks.filter((chunk) => chunk.includes('Noe ·'))).size >= 3,
@@ -536,7 +537,7 @@ for (const [columns, rows, layout] of [
 }
 
 test('measured multiline input makes a boundary-height banner fall back to text', async () => {
-  const tty = await terminal({ columns: 40, rows: 24, animation: 'off' })
+  const tty = await terminal({ columns: 40, rows: 19, animation: 'off' })
   try {
     await waitFor(() => tty.chunks.some((chunk) => chunk.includes('Noe ·') && /[▀▄]/.test(chunk)))
     const start = tty.chunks.length
@@ -547,7 +548,7 @@ test('measured multiline input makes a boundary-height banner fall back to text'
       tty.chunks.slice(start).some((chunk) => chunk.includes('Noe ·') && !/[▀▄]/.test(chunk)),
     )
     for (const paint of tty.chunks.filter((chunk) => chunk.includes('Noe ·'))) {
-      expect(normalized(paint).trimEnd().split('\n').length).toBeLessThan(24)
+      expect(normalized(paint).trimEnd().split('\n').length).toBeLessThan(19)
     }
     noClears(tty.chunks.join(''))
   } finally {

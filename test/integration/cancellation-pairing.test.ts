@@ -18,9 +18,13 @@ import { registerTool, unregisterTool } from '../../src/tools/registry'
 
 async function collectQuery(
   generator: AsyncGenerator<StreamEvent, QueryResult, undefined>,
+  events: StreamEvent[] = [],
 ): Promise<QueryResult> {
   let step = await generator.next()
-  while (!step.done) step = await generator.next()
+  while (!step.done) {
+    events.push(step.value)
+    step = await generator.next()
+  }
   return step.value
 }
 
@@ -143,7 +147,17 @@ test('repairs streamed tool pairing before a cancelled session continues', async
       tasks: new Map(),
     }
 
-    const cancelled = await collectQuery(query('Start both tools', ctx, controller.signal))
+    const events: StreamEvent[] = []
+    const cancelled = await collectQuery(query('Start both tools', ctx, controller.signal), events)
+    expect(
+      events.find((event) => event.type === 'tool_done' && event.id === 'must-not-run'),
+    ).toEqual({
+      type: 'tool_done',
+      id: 'must-not-run',
+      name: 'MustNotRun',
+      status: 'error',
+      summary: 'cancelled',
+    })
     const continued = await collectQuery(
       query('Continue after cancellation', ctx, new AbortController().signal),
     )

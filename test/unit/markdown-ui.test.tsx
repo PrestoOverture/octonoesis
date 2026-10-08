@@ -102,8 +102,8 @@ test('assistant history and streaming frames have no trailing blank line', () =>
   const history = render(<MessageList messages={messages} />)
   const streaming = render(<StreamingResponse text="**hi**" />)
   try {
-    expect(strip(history.lastFrame() ?? '')).toBe('Agent ›\nhi\nUser › next')
-    expect(strip(streaming.lastFrame() ?? '')).toBe('Agent ›\nhi')
+    expect(strip(history.lastFrame() ?? '')).toBe('\nhi\n\n❯ next')
+    expect(strip(streaming.lastFrame() ?? '')).toBe('\nhi')
   } finally {
     history.unmount()
     streaming.unmount()

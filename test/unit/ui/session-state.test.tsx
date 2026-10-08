@@ -70,11 +70,11 @@ describe('App session observability', () => {
       view.stdin.write('show observability')
       await new Promise((resolve) => setTimeout(resolve, 20))
       view.stdin.write('\r')
-      const frame = await waitForFrame(view.lastFrame, 'cost: $0.0012')
+      const frame = await waitForFrame(view.lastFrame, '$0.0012')
 
-      expect(frame).toContain('in: 1.0k')
-      expect(frame).toContain('out: 100')
-      expect(frame).toContain('ctx: 1%')
+      expect(frame).toContain('1.0k in')
+      expect(frame).toContain('100 out')
+      expect(frame).toContain('ctx 1%')
       expect(snapshots.at(-1)?.sessionState.usage).toEqual({
         input_tokens: 1_000,
         output_tokens: 100,

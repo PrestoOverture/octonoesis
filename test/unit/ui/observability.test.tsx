@@ -18,8 +18,8 @@ describe('observability UI', () => {
     )
 
     const frame = lastFrame() ?? ''
-    expect(frame).toContain('cost: $1.2346')
-    expect(frame).toContain('ctx: 42%')
+    expect(frame).toContain('$1.2346')
+    expect(frame).toContain('ctx 42%')
   })
 
   it('renders n/a instead of a fake zero for an unpriced model', () => {
@@ -35,9 +35,9 @@ describe('observability UI', () => {
     )
 
     const frame = lastFrame() ?? ''
-    expect(frame).toContain('cost: n/a')
-    expect(frame).not.toContain('cost: $0.0000')
-    expect(frame).toContain('ctx: 1%')
+    expect(frame).toContain('cost n/a')
+    expect(frame).not.toContain('$0.0000')
+    expect(frame).toContain('ctx 1%')
   })
 
   it('renders the polished compact notice with its established leading line', () => {

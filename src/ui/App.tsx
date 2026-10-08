@@ -22,6 +22,7 @@ import {
   formatQueryFailure,
   query,
 } from '../query'
+import { primaryArg } from '../query/toolSummary'
 import type { SessionState } from '../query/types'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { rewriteSkillSlashCommand } from '../skills/execute'
@@ -116,7 +117,9 @@ export function formatTaskNoticeLabel(text: string): string {
 export function DisplayEntry({ item }: { item: DisplayItem }) {
   if (item.kind === 'banner') return <Banner {...item} />
   if (item.kind === 'tool')
-    return <ToolCard tool={item.name} args={item.args} status={item.status} />
+    return (
+      <ToolCard tool={item.name} args={item.args} status={item.status} summary={item.summary} />
+    )
   if (item.kind === 'compact') return <CompactNotice {...item} />
   if (item.kind === 'resume') return <Text color="yellow">{item.text}</Text>
   if (item.kind === 'task_notice')
@@ -127,18 +130,18 @@ export function DisplayEntry({ item }: { item: DisplayItem }) {
     )
   if (item.kind === 'user')
     return (
-      <Text bold color="cyan">
-        User › <Text color="white">{item.text}</Text>
-      </Text>
+      <Box flexDirection="column">
+        {item.spacer ? <Text> </Text> : null}
+        <Text>
+          <Text color="cyan">❯ </Text>
+          <Text color="white">{item.text}</Text>
+        </Text>
+      </Box>
     )
   if ('verbatim' in item)
     return (
       <Box flexDirection="column">
-        {item.header ? (
-          <Text bold color="green">
-            Agent ›
-          </Text>
-        ) : null}
+        {item.header ? <Text> </Text> : null}
         <Text color="white">
           {item.verbatim ? item.text : renderMarkdown(item.text).replace(/\n+$/, '')}
         </Text>
@@ -176,14 +179,12 @@ export function StreamingResponse(props: {
     <Box flexDirection="column" marginY={0}>
       {text ? (
         <Box flexDirection="column">
-          <Text bold color="green">
-            Agent ›
-          </Text>
+          <Text> </Text>
           <Text color="white">{renderMarkdown(text).replace(/\n+$/, '')}</Text>
         </Box>
       ) : null}
       {toolUses.map((tool, idx) => {
-        const argsStr = tool.input ? JSON.stringify(tool.input) : ''
+        const argsStr = primaryArg(tool.name, tool.input)
         return (
           // biome-ignore lint/suspicious/noArrayIndexKey: indices are stable in terminal chat history
           <ToolCard key={idx} tool={tool.name} args={argsStr} status={tool.status} />
@@ -231,7 +232,7 @@ export function App(props: AppProps) {
 
   const { rows, columns } = useWindowSize()
   const resizing = useResizeReset()
-  const [statusHeight, setStatusHeight] = useState(columns <= 60 ? 6 : 5)
+  const [statusHeight, setStatusHeight] = useState(1)
   const [inputHeight, setInputHeight] = useState(3)
   const [isGenerating, setIsGenerating] = useState(false)
   const statusRef = useRef<DOMElement>(null)
@@ -285,7 +286,7 @@ export function App(props: AppProps) {
       running: initialStreamingToolUses.map((tool, index) => ({
         id: `initial-${index}`,
         name: tool.name,
-        args: tool.input ? JSON.stringify(tool.input) : '',
+        args: primaryArg(tool.name, tool.input),
       })),
     }
   })
@@ -526,11 +527,7 @@ export function App(props: AppProps) {
             <Box flexDirection="column" flexGrow={1} flexShrink={1} minWidth={0}>
               {display.pending ? (
                 <Box flexDirection="column" flexShrink={0}>
-                  {display.header ? (
-                    <Text bold color="green">
-                      Agent ›
-                    </Text>
-                  ) : null}
+                  {display.header ? <Text> </Text> : null}
                   {hidden ? <Text dimColor>… {hidden} lines above</Text> : null}
                   <Text wrap="truncate-end">{preview.slice(-tailLines).join('\n')}</Text>
                 </Box>
