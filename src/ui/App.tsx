@@ -256,13 +256,16 @@ export function App(props: AppProps) {
   const contentMetrics = useBoxMetrics(contentRef)
   const transcriptWidth = Math.max(1, parentMetrics.width - 1)
   const { rows, columns } = useWindowSize()
-  const resizing = useResizeReset()
+  const { resizing, epoch, interactive } = useResizeReset()
   const [statusHeight, setStatusHeight] = useState(1)
   const [inputHeight, setInputHeight] = useState(3)
   const [isGenerating, setIsGenerating] = useState(false)
   const statusRef = useRef<DOMElement>(null)
   useLayoutEffect(() => {
-    if (statusRef.current) setStatusHeight(measureElement(statusRef.current).height)
+    if (!resizing && statusRef.current) {
+      const height = measureElement(statusRef.current).height
+      if (height > 0) setStatusHeight(height)
+    }
   })
   const { stdout } = useStdout()
   const [frames] = useState(() => createFrames(chalk, true))
@@ -529,17 +532,89 @@ export function App(props: AppProps) {
     contentMetrics.width,
   ).split('\n')
   const hidden = Math.max(0, preview.length - tailLines)
+  // Measure only the not-yet-printed batch, before exposing it to Static. This
+  // counts actual Yoga rows (including wrapping and margins), without briefly
+  // printing a full-height filler that would scroll a short session offscreen.
+  const batchRef = useRef<DOMElement>(null)
+  const [printed, setPrinted] = useState({ epoch: -1, count: 0, rows: 0 })
+  const current = printed.epoch === epoch ? printed : { epoch, count: 0, rows: 0 }
+  const ready = parentMetrics.hasMeasured && !resizing
+  const entries = display.transcript.map<DisplayItem>((item) => {
+    if (item.kind !== 'banner' || epoch === 0) return item
+    const resizedLayout = bannerLayout(
+      columns,
+      rows,
+      item.lines.length,
+      process.env.NO_COLOR === undefined && chalk.level > 0,
+      inputHeight + statusHeight + 1 + (isGenerating ? 1 : 0),
+    )
+    return {
+      ...item,
+      layout: resizedLayout,
+      mascot: resizedLayout === 'text' ? undefined : frames[1],
+    }
+  })
+  useLayoutEffect(() => {
+    if (!ready || !batchRef.current || current.count === entries.length) return
+    const batchRows = measureElement(batchRef.current).height
+    setPrinted({ epoch, count: entries.length, rows: current.rows + batchRows })
+  })
+  const dynamicRef = useRef<DOMElement>(null)
+  const [occupied, setOccupied] = useState({ epoch: -1, staticRows: 0, dynamicRows: 0 })
+  // A taller live frame can scroll static rows out of the viewport. Keep that
+  // vacated space when it shrinks; newly printed static rows consume it again.
+  const minimumRows = Math.min(
+    height,
+    Math.max(
+      0,
+      height - current.rows,
+      occupied.epoch === epoch ? occupied.dynamicRows - (current.rows - occupied.staticRows) : 0,
+    ),
+  )
+  useLayoutEffect(() => {
+    if (!interactive || resizing || !dynamicRef.current) return
+    const dynamicRows = measureElement(dynamicRef.current).height
+    if (
+      occupied.epoch !== epoch ||
+      occupied.staticRows !== current.rows ||
+      occupied.dynamicRows !== dynamicRows
+    )
+      setOccupied({ epoch, staticRows: current.rows, dynamicRows })
+  })
+  const taskChip = (
+    <Box flexDirection="column" maxHeight={1} overflow="hidden" flexShrink={0}>
+      <TaskChip ctx={ctx} />
+    </Box>
+  )
   // Ink relayouts on resize before React receives the resize event. A percentage width
   // follows that live layout immediately; the spare column avoids right-edge autowrap.
   return (
     <Box ref={parentRef} flexDirection="column" width="100%" paddingRight={1} overflow="hidden">
+      <Box height={0} flexDirection="column" overflow="hidden" flexShrink={0}>
+        <Box ref={batchRef} position="absolute" width="100%" flexDirection="column" flexShrink={0}>
+          {ready
+            ? entries.slice(current.count).map((item, index) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: append-only measurement batch
+                <DisplayEntry key={index} item={item} width={transcriptWidth} />
+              ))
+            : null}
+        </Box>
+      </Box>
       <Static
-        items={parentMetrics.hasMeasured ? display.transcript : []}
+        key={epoch}
+        items={entries.slice(0, current.count)}
         style={{ width: '100%', paddingRight: 1 }}
       >
         {(item, index) => <DisplayEntry key={index} item={item} width={transcriptWidth} />}
       </Static>
-      <Box flexDirection="column" maxHeight={height} overflow="hidden">
+      <Box
+        ref={dynamicRef}
+        flexDirection="column"
+        height={resizing ? 0 : undefined}
+        minHeight={interactive && !resizing ? minimumRows : 0}
+        maxHeight={height}
+        overflow="hidden"
+      >
         {!bannerCommitted ? (
           <Box
             flexDirection="column"
@@ -586,6 +661,7 @@ export function App(props: AppProps) {
             <TodoPanel maxRows={Math.max(0, height - chromeHeight)} />
           </Box>
         ) : null}
+        {interactive ? <Box flexGrow={1} flexShrink={0} /> : null}
         {spinnerHeight ? (
           <Box height={1} flexShrink={0}>
             <Spinner startedAt={generationStarted.current} />
@@ -606,7 +682,9 @@ export function App(props: AppProps) {
             />
           ) : (
             <PromptInput
-              onHeightChange={setInputHeight}
+              onHeightChange={(height) => {
+                if (!resizing && height > 0) setInputHeight(height)
+              }}
               history={inputHistory}
               onSubmit={handleSubmit}
               placeholder={placeholder}
@@ -614,6 +692,7 @@ export function App(props: AppProps) {
             />
           )}
         </Box>
+        {interactive ? taskChip : null}
         <Box ref={statusRef} flexDirection="column" flexShrink={0}>
           <StatusBar
             modelName={sessionView?.sessionState.model ?? modelName}
@@ -624,9 +703,7 @@ export function App(props: AppProps) {
             contextUtilization={sessionView?.sessionState.contextUtilization ?? 0}
           />
         </Box>
-        <Box flexDirection="column" maxHeight={1} overflow="hidden" flexShrink={0}>
-          <TaskChip ctx={ctx} />
-        </Box>
+        {!interactive ? taskChip : null}
       </Box>
     </Box>
   )
