@@ -14,7 +14,7 @@ import { setProvider } from '../../../src/providers'
 import { getTodos, setTodos } from '../../../src/state/todos'
 import { App } from '../../../src/ui/App'
 import { bannerLayout, version } from '../../../src/ui/banner'
-import { prepareScreenSequence } from '../../../src/ui/screen'
+import { RESIZE_CLEAR } from '../../../src/ui/useResizeReset'
 import { restoreEnv } from '../../helpers/env'
 
 async function waitFor(predicate: () => boolean, timeout = 3000) {
@@ -39,6 +39,7 @@ async function terminal(
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'noe-banner-'))
   await options.prepare?.(directory)
   const env = {
+    CI: undefined,
     OCTONOESIS_MEMORY_DIR: directory,
     OCTONOESIS_DISABLE_MEMORY: '1',
     OCTONOESIS_DISABLE_COMPACT: '1',
@@ -88,6 +89,7 @@ async function terminal(
     chunks,
     stdin,
     stdout,
+    flush: () => view.waitUntilRenderFlush(),
     async close() {
       view.unmount()
       chalk.level = level
@@ -313,25 +315,27 @@ test('resize immediately bounds banner frames to the live terminal width', async
       tty.stdout.columns = columns
       tty.stdout.rows = rows
       tty.stdout.emit('resize')
-      await delay(550)
+      await waitFor(() => tty.chunks.slice(start).join('').includes(RESIZE_CLEAR))
+      await tty.flush()
       const output = tty.chunks.slice(start).join('')
       const lines = normalized(output).split('\n')
       for (const line of lines) expect(Bun.stringWidth(line)).toBeLessThan(columns)
-      const frame = output.slice(output.lastIndexOf('\x1b[G'))
+      const frame =
+        [...tty.chunks.slice(start)].reverse().find((chunk) => chunk.includes('Noe ·')) ?? ''
       expect(/[▀▄█]/.test(frame)).toBe(mascot)
       const titleLine = normalized(frame)
         .split('\n')
         .findIndex((line) => line.includes('Noe ·'))
       if (columns === 45) expect(titleLine).toBe(9)
       else expect(titleLine).toBe(0)
-      expect(output).not.toContain('\x1b[3J')
+      expect(output).toContain(RESIZE_CLEAR)
     }
   } finally {
     await tty.close()
   }
 })
 
-test('resize bursts scroll once, then redraw a full frame without destructive clears', async () => {
+test('resize bursts clear once, then redraw a full frame', async () => {
   const tty = await terminal({ animation: 'off' })
   try {
     await delay(100)
@@ -353,15 +357,16 @@ test('resize bursts scroll once, then redraw a full frame without destructive cl
         await delay(30)
       }
       expect(tty.chunks.slice(start).join('')).not.toContain('\x1b[H\x1b[0J')
-      await delay(250)
+      await waitFor(() => tty.chunks.slice(start).join('').includes(RESIZE_CLEAR))
+      await tty.flush()
       const output = tty.chunks.slice(start).join('')
-      const sequence = prepareScreenSequence(tty.stdout.rows)
+      const sequence = RESIZE_CLEAR
       expect(output.split(sequence).length - 1).toBe(1)
       const redraw = normalized(output.slice(output.indexOf(sequence) + sequence.length))
       expect(redraw.split('Noe · Octonoesis').length - 1).toBe(1)
       expect(redraw).toContain('Type a message...')
       expect(redraw).toContain('ctx ')
-      noClears(output)
+      expect(output.split('\x1b[3J').length - 1).toBe(1)
     }
     const before = tty.chunks.length
     await delay(250)
@@ -371,7 +376,7 @@ test('resize bursts scroll once, then redraw a full frame without destructive cl
   }
 })
 
-test('conversation resize redraws only the dynamic region and cancels reset on unmount', async () => {
+test('conversation resize reprints committed text and cancels reset on unmount', async () => {
   const previousTodos = getTodos()
   setTodos([])
   const tty = await terminal()
@@ -400,18 +405,19 @@ test('conversation resize redraws only the dynamic region and cancels reset on u
     tty.stdout.rows = 20
     tty.stdout.columns = 45
     tty.stdout.emit('resize')
-    await delay(300)
+    await waitFor(() => tty.chunks.slice(start).join('').includes(RESIZE_CLEAR))
+    await tty.flush()
     const output = tty.chunks.slice(start).join('')
-    const sequence = prepareScreenSequence(20)
+    const sequence = RESIZE_CLEAR
     expect(output.split(sequence).length - 1).toBe(1)
     const redraw = output.slice(output.indexOf(sequence) + sequence.length)
-    expect(output).not.toContain('committed-resize-reply')
+    expect(redraw.split('committed-resize-reply').length - 1).toBe(1)
     expect(redraw).toContain('streaming-resize-59')
-    expect(redraw).not.toContain('Noe ·')
+    expect(redraw.split('Noe ·').length - 1).toBe(1)
     expect(redraw).toContain('ctrl+c to interrupt')
     expect(redraw).toContain('Type a message...')
     expect(redraw).toContain('ctx ')
-    noClears(output)
+    expect(output.split('\x1b[3J').length - 1).toBe(1)
     release()
     await delay(100)
     tty.stdout.emit('resize')
