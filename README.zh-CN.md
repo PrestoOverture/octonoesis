@@ -9,7 +9,7 @@
 
 读代码、改文件、跑测试、连接 MCP、委派子智能体、运行后台任务——这些 Octonoesis 都能做，但不一样的是：它会随着使用逐渐更懂*你的*代码仓库。与那些每次会话都"失忆"的智能体不同，它维护一份只追加的（append-only）观察账本，记录每一次操作与结果，把"失败→修复"的过程蒸馏成人类可读的规则，并在下次遇到同类错误时把规则注入上下文。
 
-基于 **Bun** 运行时、以 TypeScript 编写，使用 **Ink** 构建 TUI。一条设计原则贯穿始终：**LLM 负责解释，harness 负责授权。** 模型可以起草规则和摘要，但只有外部证据（一条失败的测试重新变绿）和用户的明确操作才能晋升规则、提升自治权限或触碰账本。学习到的经验只靠规则决定去留，不靠模型自评。
+基于 **Bun** 运行时、以 TypeScript 编写，使用 **Ink** 构建 TUI，吉祥物是 Noe——一只八条触须、思考时第三只眼会呼吸发光的小生物。一条设计原则贯穿始终：**LLM 负责解释，harness 负责授权。** 模型可以起草规则和摘要，但只有外部证据（一条失败的测试重新变绿）和用户的明确操作才能晋升规则、提升自治权限或触碰账本。学习到的经验只靠规则决定去留，不靠模型自评。
 
 <img src="demo/hero.gif" alt="Octonoesis 端到端修复真实 bug：搜索、diff 预览编辑、权限确认、测试通过" width="800">
 
@@ -19,7 +19,8 @@
 
 **核心**
 - 7 个内置工具（Read、Glob、Grep、Edit、Write、Bash、TodoWrite），Zod 校验，串行执行，路径锁定在仓库根目录内。
-- 交互式 TUI + 一次性命令行模式，流式输出，`Ctrl+C` 取消，429/5xx 指数退避重试。
+- 交互式 TUI + 一次性命令行模式，流式 markdown 输出，`Ctrl+C` 取消，429/5xx 指数退避重试。
+- 每个工具调用一行，带结果摘要——`✓ Read src/user.ts · 42 lines`、`✗ Bash bun test · exit 1`——学习闭环也直接显示在对话里（见下文）。输入框和状态行固定在窗口底部；调整窗口大小时整段会话按新宽度干净地重排。
 - 每个非只读的（Non-Read Only）操作都要经过用户授权：`[y] 允许 / [n] 拒绝 / [a] 总是允许`，编辑带 diff 预览。
 - 默认 Claude，也支持任何 OpenAI 兼容端点（GPT、DeepSeek、Qwen、Ollama）。
 
@@ -27,7 +28,7 @@
 - 上下文快满时自动压缩（fork 出摘要器）。
 - 长期记忆：会话结束时自动提取持久事实（分别为：user、feedback、project、reference）到 `.octonoesis/memory/`，下次查询时召回。
 - 项目指令：`CLAUDE.md` 会被载入系统提示词；放一个 `OCTONOESIS.md` 可覆盖它，也可设置 `projectInstructions: "off"` 关闭。
-- 实时可观测性：状态栏显示模型、token、费用与上下文占用百分比；每次会话追加写入 `.octonoesis/stats.jsonl`，退出时 print 总花费。
+- 实时可观测性：底部状态行显示模型、费用、上下文占用百分比与 token；每次会话追加写入 `.octonoesis/stats.jsonl`，退出时 print 总花费。
 
 **学习闭环** —— 见[下文](#学习闭环)
 
@@ -48,7 +49,7 @@
 
 ## 学习闭环
 
-每次工具调用连同三级错误指纹（`tool|error_class`、`+file`、`+expression`）写入**日志（journal）**。状态机把日志切分成"失败→修复→验证"的**片段（episode）**；LLM 蒸馏器把合格片段转成**规则（rules）**——每条一个 markdown 文件。下次碰到匹配的失败，最相关的规则（最多 2 条）和工具输出一起**注入**上下文。
+每次工具调用连同三级错误指纹（`tool|error_class`、`+file`、`+expression`）写入**日志（journal）**。状态机把日志切分成"失败→修复→验证"的**片段（episode）**；每次查询结束时，LLM 蒸馏器自动把新片段转成**规则（rules）**——每条一个 markdown 文件。下次碰到匹配的失败，最相关的规则（最多 2 条）和工具输出一起**注入**上下文；宽泛且已被验证的规则还会在会话开始时载入。
 
 规则的置信度只有一种积累方式：当初失败的命令重新跑过。贝叶斯 Beta 后验，不靠模型自评。
 
@@ -62,20 +63,35 @@ flowchart LR
     L -->|"规则可用于下次失败"| M
 ```
 
-<img src="demo/learning-loop.gif" alt="会话 1 修复 bug 并蒸馏出规则；会话 2 碰到同类错误，一次修复" width="800">
+<img src="demo/learning-loop.gif" alt="会话 1 修复 bug 并学到一条规则；会话 2 碰到同类错误，规则被召回并记为命中" width="800">
+
+学习闭环直接显示在对话里——只在真的发生时才出现：
+
+```text
+✗ Bash bun test · exit 1
+  ↳ recalled rule-undefined-property-access-runtime · 0.60
+✓ Edit src/buggy.ts · +4 −4 lines
+✓ Bash bun test · exit 0
+  ↳ rule-undefined-property-access-runtime hit · 0.60 → 0.67
+✻ strengthened 1 rule
+```
 
 规则就是一个文件，可以看、可以改、可以删：
 
 ```yaml
 ---
-id: rule-optional-chaining-null
+id: rule-undefined-property-access-runtime
 triggers:
+  tools: [Bash]
+  command_prefix: [bun test]
   error_signatures:
-    - Bash|TypeError|src/user.ts|evaluating 'user.name'
+    - bun-test|TypeError
+    - bun-test|TypeError|src/buggy.ts
+    - bun-test|TypeError|src/buggy.ts|evaluating user.name
 alpha: 5
 beta: 2
 confidence: 0.7143
-evidence: [ep_0001, ep_0014]
+evidence: [ep_0001, ep_0002]
 status: active
 ---
 
@@ -97,7 +113,7 @@ octonoesis --stats                  # 每个 bucket 的 Beta 后验 + 95% 置信
 ## 安装
 
 **前置条件：**
-- **Bun** ≥ 1.2.0 —— `curl -fsSL https://bun.sh/install | bash`
+- **Bun** ≥ 1.4.0 —— `curl -fsSL https://bun.sh/install | bash`
 - **ripgrep**（可选，当自带的 `@vscode/ripgrep` 跑不起来时兜底）
 
 ```bash

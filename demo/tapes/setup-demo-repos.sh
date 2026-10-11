@@ -117,4 +117,12 @@ cat > "$LEARN/.octonoesis/config.json" <<'EOF'
 }
 EOF
 
+# --- self-repo: a scratch clone of this repo for the integration demo ---
+# Its own .octonoesis/ keeps demo sessions out of the real ledger, and task logs
+# land where the Bash tool says they are.
+SELF="$DEMO_ROOT/self-repo"
+git clone -q --depth 1 "file://$REPO_ROOT" "$SELF"
+ln -s "$REPO_ROOT/node_modules" "$SELF/node_modules"
+if [ -f "$REPO_ROOT/.env" ]; then cp "$REPO_ROOT/.env" "$SELF/.env"; fi
+
 echo "demo repos ready under $DEMO_ROOT"
