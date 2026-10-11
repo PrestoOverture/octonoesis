@@ -115,7 +115,7 @@ export function transcriptReducer(
         (next, rule) =>
           append(next, {
             kind: 'learning',
-            prefix: '  ↳ ',
+            prefix: '  ↳ recalled ',
             text: rule.id,
             suffix: ` · ${rule.confidence.toFixed(2)}`,
           }),

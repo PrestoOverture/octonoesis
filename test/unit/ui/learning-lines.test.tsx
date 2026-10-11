@@ -106,9 +106,9 @@ for (const [columns, rows] of [
       expect(output).not.toContain(longId)
       for (const line of lines) expect(Bun.stringWidth(line)).toBeLessThan(columns ?? 80)
       const fail = lines.findIndex((line) => line.includes('Bash') && line.includes('exit 1'))
-      expect(lines[fail + 1]).toContain('  ↳ rule-')
+      expect(lines[fail + 1]).toContain('  ↳ recalled rule-')
       expect(lines[fail + 1]).toContain('… · 0.60')
-      expect(lines[fail + 2]).toContain('  ↳ rule-other · 0.50')
+      expect(lines[fail + 2]).toContain('  ↳ recalled rule-other · 0.50')
       const pass = lines.findIndex((line) => line.includes('Bash') && line.includes('exit 0'))
       expect(lines[pass + 1]).toContain('… hit · 0.60 → 0.67')
       expect(lines[pass + 3]).toContain('… miss · 0.60 → 0.50')
@@ -210,7 +210,7 @@ test('a failing verification can report an outcome and then recall under the sam
   expect(recalled.transcript.length).toBe(outcome.transcript.length + 1)
   expect(recalled.transcript.at(-1)).toEqual({
     kind: 'learning',
-    prefix: '  ↳ ',
+    prefix: '  ↳ recalled ',
     text: 'new-rule',
     suffix: ' · 0.60',
   })
