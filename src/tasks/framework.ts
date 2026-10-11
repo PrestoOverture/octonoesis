@@ -111,16 +111,13 @@ async function readTaskTail(logPath: string | undefined): Promise<string> {
   }
 }
 
-/**
- * Computes a repository-relative path to a task's log file using POSIX forward slashes.
- *
- * @param ctx - Query loop context containing repoRoot.
- * @param task - TaskState object.
- * @returns Relative log file path.
- */
-function relativeLogPath(ctx: QueryLoopContext, task: TaskState): string {
-  if (!task.logPath) return `.octonoesis/tasks/${task.id}.log`
-  return path.relative(ctx.repoRoot, task.logPath).split(path.sep).join('/')
+/** Report logs inside the repository relatively; keep outside logs absolute. */
+export async function taskOutputLogPath(ctx: QueryLoopContext, task: TaskState): Promise<string> {
+  const logPath = path.resolve(task.logPath ?? (await taskLogPath(task.id)))
+  const relative = path.relative(ctx.repoRoot, logPath)
+  return relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)
+    ? logPath
+    : relative.split(path.sep).join('/')
 }
 
 /**
@@ -171,7 +168,7 @@ async function formatTaskNotification(ctx: QueryLoopContext, task: TaskState): P
   ]
   if (task.type === 'shell') lines.push(`<exit_code>${task.exitCode ?? ''}</exit_code>`)
   lines.push(
-    `<output_file>${relativeLogPath(ctx, task)}</output_file>`,
+    `<output_file>${await taskOutputLogPath(ctx, task)}</output_file>`,
     `<summary>${taskSummary(task)}</summary>`,
     '</task-notification>',
     'Last output:',
