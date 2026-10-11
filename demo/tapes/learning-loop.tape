@@ -1,14 +1,15 @@
-# Learning-loop demo: session 1 fails+fixes a bug; `rebuild-rules` distills the
-# episode into a human-readable rule; session 2 hits the same error class in a
-# different file with the rule available for post-failure injection.
+# Learning-loop demo (TUI): session 1 fails, fixes a bug and auto-distills a rule
+# (`✻ learned 1 rule`); session 2 hits the same error class in a different file —
+# the rule is recalled under the failing test run and scored a hit when it passes.
 # Prereq: bash demo/tapes/setup-demo-repos.sh   (then run `vhs demo/tapes/learning-loop.tape` from the repo root)
 #
 # Determinism notes:
 # - The scratch repo's untracked .octonoesis/config.json allowlists the Bash
 #   test commands, so each session prompts exactly once — the Edit.
-# - An OPEN permission prompt is detected as the cursor line ending "input:"
-#   (Line scope); answered prompts are no longer the cursor line.
-# - Session completion is the shell prompt line returning ("^>\s*$" — vhs PS1).
+# - Session ends are detected on the learning lines themselves (`learned`,
+#   `hit ·`, `strengthened`), which never appear in the echoed user prompt.
+# - Permission prompts are detected on the dialog heading, not its footer: vhs's
+#   Screen read can miss the bottom rows of a frame taller than the window.
 Require bun
 
 Output demo/learning-loop.gif
@@ -27,40 +28,51 @@ Type "cd /tmp/octo-demo/learning-repo && export PATH=/tmp/octo-demo/bin:$PATH &&
 Enter
 Show
 
-# Show the failure first
-Type "bun test src/user.test.ts 2>&1 | tail -6"
+# Session 1: the rule pool is empty
+Type "octonoesis"
+Sleep 500ms
 Enter
-Sleep 4s
-
-# Session 1: one-shot fix — a single Edit approval, test runs are config-allowlisted
-Type "octonoesis 'Run bun test src/user.test.ts, fix src/user.ts so it passes, then run it again to confirm.'"
-Enter
-Wait@120s /input:\s*$/
-Sleep 1500ms
-Type "y"
-Enter
-Wait@240s /^>\s*$/
-Sleep 1500ms
-
-# Distill the recorded episode into a rule, then show it — a plain markdown file
-Type "octonoesis rebuild-rules"
-Enter
-Wait@120s /^>\s*$/
+Wait+Screen@30s /Type a message/
 Sleep 1s
-Type "cat .octonoesis/rules/*.md"
+Type "Run bun test src/user.test.ts, fix src/user.ts so it passes, then run it again to confirm. Be brief."
+Sleep 500ms
 Enter
-Sleep 8s
+Wait+Screen@120s /Permission Required/
+Sleep 2s
+Type "y"
+Wait+Screen@240s /learned \d+ rules?:/
+Sleep 4s
+Ctrl+C
+Sleep 2s
 
-# Session 2: same error class, different file — the rule is now in the pool
+# The learned rule is a plain markdown file
 Hide
 Type "clear"
 Enter
 Show
-Type "octonoesis 'bun test src/order.test.ts fails the same way. Run it, fix src/order.ts, then run bun test to confirm everything passes.'"
+Type "head -16 .octonoesis/rules/*.md"
 Enter
-Wait@120s /input:\s*$/
-Sleep 1500ms
+Sleep 6s
+
+# Session 2: same error class, different file — recalled, then scored
+Hide
+Type "clear"
+Enter
+Show
+Type "octonoesis"
+Sleep 500ms
+Enter
+Wait+Screen@30s /Type a message/
+Sleep 1s
+Type "bun test src/order.test.ts fails too. Run it, fix src/order.ts, then run it again to confirm. Be brief."
+Sleep 500ms
+Enter
+Wait+Screen@120s /Permission Required/
+Sleep 2s
 Type "y"
-Enter
-Wait@240s /^>\s*$/
+Wait+Screen@240s /hit ·/
+# Query-end distillation runs after the answer; wait for its line, then linger.
+Wait+Screen@120s /(strengthened|learned) \d+ rules?/
 Sleep 5s
+Ctrl+C
+Sleep 2500ms

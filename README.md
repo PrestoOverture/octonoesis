@@ -9,7 +9,7 @@ A terminal coding agent that learns from its own mistakes.
 
 Octonoesis reads code, edits files, runs tests, connects to MCP servers, and delegates to sub-agents. The difference is what happens after. Every tool call goes into an append-only journal. Failures get fingerprinted. A state machine segments them into fail→fix→verify episodes, and an LLM distiller turns those into rules — plain markdown files you can read, edit, or delete. Next time the same kind of error comes up, the relevant rules get injected into context. Confidence is earned by evidence (the failing command passes again), not model self-assessment.
 
-TypeScript on **Bun**, **Ink** TUI. One design rule: **the LLM interprets, the harness authorizes.**
+TypeScript on **Bun**, **Ink** TUI, with Noe — an eight-tendrilled mascot whose third eye breathes while it thinks. One design rule: **the LLM interprets, the harness authorizes.**
 
 <img src="demo/hero.gif" alt="Octonoesis fixing a real bug end-to-end: search, diff-previewed edit, permission prompt, tests passing" width="800">
 
@@ -19,7 +19,8 @@ TypeScript on **Bun**, **Ink** TUI. One design rule: **the LLM interprets, the h
 
 **Core**
 - 7 built-in tools (Read, Glob, Grep, Edit, Write, Bash, TodoWrite). Zod-validated, serial execution, repo-root confined.
-- Interactive TUI and one-shot CLI. Streaming output. `Ctrl+C` to cancel. Retries on 429/5xx with backoff.
+- Interactive TUI and one-shot CLI. Streaming markdown output. `Ctrl+C` to cancel. Retries on 429/5xx with backoff.
+- One line per tool call with a result summary — `✓ Read src/user.ts · 42 lines`, `✗ Bash bun test · exit 1` — plus the learning loop shown inline (see below). Input and status line stay pinned to the bottom; resizing reflows the whole session cleanly.
 - Permission prompt on every mutation — `[y] once / [n] no / [a] always` — with diff preview for edits.
 - Claude by default; any OpenAI-compatible endpoint via `LLM_PROVIDER=openai`.
 
@@ -27,7 +28,7 @@ TypeScript on **Bun**, **Ink** TUI. One design rule: **the LLM interprets, the h
 - Auto-compaction near the context limit (forked summarizer), so 20+ turn sessions work fine.
 - Long-term memory: facts extracted at session end into `.octonoesis/memory/`, recalled per query.
 - Project instructions from `CLAUDE.md` (or `OCTONOESIS.md` to override).
-- StatusBar shows model, tokens, cost, context %. Stats logged to `.octonoesis/stats.jsonl`.
+- Status line shows model, cost, context %, tokens. Stats logged to `.octonoesis/stats.jsonl`.
 
 **Learning loop** — [details below](#learning-loop)
 
@@ -48,7 +49,7 @@ TypeScript on **Bun**, **Ink** TUI. One design rule: **the LLM interprets, the h
 
 ## Learning Loop
 
-Tool calls are journaled with three-level error fingerprints (`tool|error_class`, `+file`, `+expression`). A state machine segments the journal into fail→fix→verify **episodes**. An LLM distiller turns eligible episodes into **rules** — one markdown file each. On the next matching failure, the best rules (max 2) get **injected** with the tool output.
+Tool calls are journaled with three-level error fingerprints (`tool|error_class`, `+file`, `+expression`). A state machine segments the journal into fail→fix→verify **episodes**. At the end of each query, an LLM distiller turns new episodes into **rules** — one markdown file each. On the next matching failure, the best rules (max 2) get **injected** with the tool output; broad, proven rules are also loaded at session start.
 
 A rule earns confidence only when the command that originally failed passes again. Bayesian Beta posteriors — never model self-assessment.
 
@@ -62,20 +63,35 @@ flowchart LR
     L -->|"rules available for next failure"| M
 ```
 
-<img src="demo/learning-loop.gif" alt="Session 1 fails and fixes a bug, distilling a rule; session 2 hits the same error class and fixes it first try" width="800">
+<img src="demo/learning-loop.gif" alt="Session 1 fails and fixes a bug and learns a rule; session 2 hits the same error class, the rule is recalled and scored a hit" width="800">
+
+The loop is visible in the transcript — only when something actually happens:
+
+```text
+✗ Bash bun test · exit 1
+  ↳ recalled rule-undefined-property-access-runtime · 0.60
+✓ Edit src/buggy.ts · +4 −4 lines
+✓ Bash bun test · exit 0
+  ↳ rule-undefined-property-access-runtime hit · 0.60 → 0.67
+✻ strengthened 1 rule
+```
 
 A rule is just a file:
 
 ```yaml
 ---
-id: rule-optional-chaining-null
+id: rule-undefined-property-access-runtime
 triggers:
+  tools: [Bash]
+  command_prefix: [bun test]
   error_signatures:
-    - Bash|TypeError|src/user.ts|evaluating 'user.name'
+    - bun-test|TypeError
+    - bun-test|TypeError|src/buggy.ts
+    - bun-test|TypeError|src/buggy.ts|evaluating user.name
 alpha: 5
 beta: 2
 confidence: 0.7143
-evidence: [ep_0001, ep_0014]
+evidence: [ep_0001, ep_0002]
 status: active
 ---
 
@@ -86,7 +102,7 @@ Check the call site — the caller may be passing `null` where a valid object is
 
 ```bash
 ls .octonoesis/rules/               # every rule is a file
-octonoesis rebuild-rules --force    # regenerate from episodes.jsonl
+octonoesis rebuild-rules --force    # regenerate every rule from episodes.jsonl
 octonoesis --stats                  # per-bucket Beta posterior + 95% credible interval
 ```
 
@@ -97,7 +113,7 @@ Active pool caps at 150 rules. When full, they compete on `specificity × confid
 ## Installation
 
 **Requirements:**
-- **Bun** ≥ 1.2.0 — `curl -fsSL https://bun.sh/install | bash`
+- **Bun** ≥ 1.4.0 — `curl -fsSL https://bun.sh/install | bash`
 - **ripgrep** (optional fallback if bundled `@vscode/ripgrep` can't run)
 
 ```bash
