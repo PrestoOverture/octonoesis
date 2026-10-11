@@ -8,7 +8,12 @@ export function fitnessLines(input: FitnessInput, now = new Date()): string[] {
   const report = buildFitnessDashboard(input, { now })
   const active = report.rule_pool_health.status_counts.active
   const episodes = input.episodes.length
-  const lines = active || episodes ? [`${active} active rules · ${episodes} episodes`] : []
+  const lines =
+    active || episodes
+      ? [
+          `${active} active ${active === 1 ? 'rule' : 'rules'} · ${episodes} ${episodes === 1 ? 'episode' : 'episodes'}`,
+        ]
+      : []
   const weekly = report.calibration_trend.weekly
   const current = weekly.find((week) => week.week === toIsoWeek(now.toISOString()))
   const previous = weekly.find(
