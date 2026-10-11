@@ -368,3 +368,57 @@ for (const options of [{ ci: true }, { tty: false }])
       await tty.close()
     }
   })
+
+for (const live of [false, true]) {
+  test(`user echo wraps prose, explicit lines and long words live=${live}, including resize reprints`, async () => {
+    const prose = `echo-start ${'words stay together while wrapping '.repeat(8)}echo-end`
+    const content = `${prose}\nexplicit-second-line\n${'x'.repeat(180)}\nlast-user-line`
+    const history: CanonicalMessage[] = [{ role: 'user', content }]
+    const tty = await terminal(live ? [] : history)
+    try {
+      if (live) {
+        setProvider({
+          name: 'anthropic',
+          async *createMessageStream() {
+            yield { type: 'text_delta', text: 'echo-reply' }
+            yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+          },
+        })
+        await until(() => tty.screen.visible.some((line) => line.includes('ctx ')))
+        const beforeInput = tty.chunks.length
+        tty.stdin.write(content)
+        await until(() => tty.chunks.length > beforeInput)
+        await tty.flush()
+        tty.stdin.write('\r')
+        await until(() => tty.screen.lines.join('\n').includes('echo-reply'))
+      }
+      for (const columns of [80, 60, 80]) {
+        if (columns !== tty.stdout.columns) await tty.resize(columns, 24)
+        await until(() => tty.screen.lines.some((line) => line.includes('  last-user-line')))
+        const start = tty.screen.lines.findIndex((line) => line.startsWith('❯ echo-start'))
+        const end = tty.screen.lines.findIndex(
+          (line, index) => index > start && line === '  last-user-line',
+        )
+        expect(start).toBeGreaterThan(-1)
+        expect(end).toBeGreaterThan(start)
+        const lines = tty.screen.lines.slice(start, end + 1)
+        for (const line of lines) expect(Bun.stringWidth(line)).toBeLessThan(columns)
+        for (const line of lines.slice(1)) expect(/^ {2}\S/.test(line)).toBe(true)
+        expect(lines).toContain('  explicit-second-line')
+        const wordLines = lines.filter((line) => /^ {2}x+$/.test(line))
+        expect(wordLines.length).toBeGreaterThan(1)
+        expect(wordLines.map((line) => line.slice(2)).join('')).toBe('x'.repeat(180))
+        const proseEnd = lines.findIndex((line) => line.endsWith('echo-end'))
+        expect(
+          lines
+            .slice(0, proseEnd + 1)
+            .map((line) => line.slice(2))
+            .join(' '),
+        ).toBe(prose)
+        expect(history[0]?.content).toBe(content)
+      }
+    } finally {
+      await tty.close()
+    }
+  }, 15000)
+}
