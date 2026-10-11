@@ -11,6 +11,7 @@ export interface ContextSource {
   priority: ContextPriority
   content: string
   tokens?: number
+  ruleIds?: string[]
 }
 
 /** Token budget limits and per-source caps for prompt compilation. */
@@ -25,6 +26,7 @@ export interface CompiledContext {
   preamble: string
   totalTokens: number
   dropped: string[]
+  sessionStartRuleIds?: string[]
 }
 
 export const DEFAULT_CONTEXT_BUDGET: ContextBudget = {
@@ -193,5 +195,8 @@ export function compileContext(sources: ContextSource[], budget: ContextBudget):
     preamble,
     totalTokens: estimateTokens(systemStable) + estimateTokens(preamble),
     dropped,
+    sessionStartRuleIds: includedSources(systemSources).flatMap((source) =>
+      (source.ruleIds ?? []).filter((id) => source.content.includes(`### ${id}\n`)),
+    ),
   }
 }

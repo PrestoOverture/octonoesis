@@ -292,7 +292,7 @@ test('ledger fixture loads after first paint and appears in the banner', async (
     await delay(200)
     const paints = tty.chunks.filter((chunk) => chunk.includes('Noe ·'))
     expect(paints[0]).not.toContain('active rules')
-    expect(tty.chunks.join('')).toContain('0 active rules · 1 episodes')
+    expect(tty.chunks.join('')).toContain('0 active rules · 1 episode')
     noClears(tty.chunks.join(''))
   } finally {
     await tty.close()
@@ -497,7 +497,8 @@ for (const columns of [91, 60]) {
   })
 }
 test('TUI chrome uses no variation-selector or pictographic emoji', async () => {
-  for (const glyph of ['✓', '✗', '…', '·', '❯', '−']) expect(Bun.stringWidth(glyph)).toBe(1)
+  for (const glyph of ['✓', '✗', '…', '·', '❯', '−', '✻', '↳'])
+    expect(Bun.stringWidth(glyph)).toBe(1)
   const directory = path.join(import.meta.dir, '../../../src/ui')
   for (const name of await fs.readdir(directory)) {
     if (!name.endsWith('.tsx')) continue

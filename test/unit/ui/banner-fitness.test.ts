@@ -70,7 +70,7 @@ test('empty directory hides ledger and trend; disk fixture counts and ISO week t
     await fs.writeFile(path.join(directory, 'rules/rule-test.md'), serializeRule(rule))
     await fs.writeFile(path.join(directory, 'episodes.jsonl'), JSON.stringify(episode))
     const input = await loadFitnessInput(directory)
-    expect(fitnessLines(input, now)).toEqual(['1 active rules · 1 episodes'])
+    expect(fitnessLines(input, now)).toEqual(['1 active rule · 1 episode'])
     for (const [current, previous, visible] of [
       [9, 10, false],
       [10, 9, false],
@@ -93,7 +93,7 @@ test('empty directory hides ledger and trend; disk fixture counts and ISO week t
       ...records(10, '2025-12-15T12:00:00Z'),
       ...records(10, '2025-12-22T12:00:00Z'),
     ]
-    expect(fitnessLines(input, now)).toEqual(['1 active rules · 1 episodes'])
+    expect(fitnessLines(input, now)).toEqual(['1 active rule · 1 episode'])
   } finally {
     await fs.rm(directory, { recursive: true, force: true })
   }

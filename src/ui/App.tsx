@@ -34,6 +34,7 @@ import { dbg } from '../utils/debug'
 import { getMemoryDir, getRepoRoot } from '../utils/path'
 import { CompactNotice } from './CompactNotice'
 import { ConfirmDialog } from './ConfirmDialog'
+import { LearningLine } from './LearningLine'
 import { PromptInput } from './PromptInput'
 import { Spinner } from './Spinner'
 import { Banner, type BannerSnapshot, StartupBanner } from './StartupBanner'
@@ -118,6 +119,7 @@ export function formatTaskNoticeLabel(text: string): string {
 }
 
 export function DisplayEntry({ item, width }: { item: DisplayItem; width?: number }) {
+  if (item.kind === 'learning') return <LearningLine {...item} width={width} />
   if (item.kind === 'banner') return <Banner {...item} />
   if (item.kind === 'tool')
     return (

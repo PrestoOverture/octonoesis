@@ -18,11 +18,11 @@ import {
   formatJournalFailureNotice,
   setSessionId,
 } from '../memory/journal'
-import { runSessionEndAutoDistill } from '../memory/rules/autoDistill'
+import { type AutoDistillResult, runSessionEndAutoDistill } from '../memory/rules/autoDistill'
 import { updateLifecycle } from '../memory/rules/lifecycle'
 import { findMatchingRules, formatMatchAdvice } from '../memory/rules/match'
 import { getRulesDir, loadAllRules, loadRule, saveRule } from '../memory/rules/store'
-import type { RuleFile } from '../memory/rules/types'
+import { type RuleFile, calculateConfidence } from '../memory/rules/types'
 import { assembleSessionContext } from '../prompts/context'
 import { buildStaticPrompt } from '../prompts/static'
 import { getProvider, getResolvedModel, setConfiguredModel } from '../providers'
@@ -91,7 +91,18 @@ registerTool(todoWriteTool)
 
 const sessionAgentTools = new WeakMap<QueryLoopContext, [AgentTool, SendMessageTool]>()
 
+export type LearningEvent =
+  | {
+      type: 'rule_recall'
+      trigger: 'session_start' | 'failure'
+      toolUseId?: string
+      rules: { id: string; confidence: number }[]
+    }
+  | { type: 'rule_outcome'; id: string; hit: boolean; before: number; after: number }
+  | ({ type: 'rules_learned' } & AutoDistillResult)
+
 export type StreamEvent =
+  | LearningEvent
   | ProviderStreamEvent
   | { type: 'task_notice'; text: string }
   | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error'; summary?: string }
@@ -128,6 +139,7 @@ export type EngineState = QueryState & {
   input: string
   inputDigest: string
   rules: RuleFile[]
+  sessionStartRuleIds?: string[]
   contextSnapshot?: ContextSnapshot
   provider?: LLMProvider
   system?: string
@@ -390,6 +402,7 @@ async function prepareQueryState(
     skills,
     state.rules,
   )
+  state.sessionStartRuleIds = compiledContext.sessionStartRuleIds
   if (skills.length > 0) {
     registerTool(
       new SkillTool(skills, {
@@ -811,7 +824,17 @@ export async function* executeTools(
           if (recordedOutcomes.has(rule.id)) continue
 
           recordedOutcomes.add(rule.id)
-          await recordRuleOutcome(rule.id, postSigs.includes(fingerprint.fine), ctx.repoRoot)
+          try {
+            const outcome = await recordRuleOutcome(
+              rule.id,
+              postSigs.includes(fingerprint.fine),
+              ctx.repoRoot,
+            )
+            if (outcome && !isMemoryDisabled())
+              yield { type: 'rule_outcome', id: rule.id, ...outcome }
+          } catch (error) {
+            dbg('query', 'Failed to record rule outcome', error)
+          }
         }
       }
     }
@@ -831,6 +854,20 @@ export async function* executeTools(
 
         for (const match of matches) {
           ctx.injectedRules?.push({ rule: match.rule, fingerprint: match.fingerprint })
+        }
+        try {
+          if (!isMemoryDisabled())
+            yield {
+              type: 'rule_recall',
+              trigger: 'failure',
+              toolUseId: toolUse.id,
+              rules: matches.map(({ rule }) => ({
+                id: rule.id,
+                confidence: calculateConfidence(rule.alpha, rule.beta),
+              })),
+            }
+        } catch (error) {
+          dbg('query', 'Failed to display recalled rules', error)
         }
       }
     }
@@ -923,6 +960,7 @@ export async function* query(
   await initializeHooks(ctx)
   const state = await initQueryState(input, ctx, signal)
   let exitReason: ExitReason = 'fatal_error'
+  let learnedEvent: Extract<StreamEvent, { type: 'rules_learned' }> | undefined
 
   try {
     if (ctx.abortSignal?.aborted) {
@@ -931,8 +969,20 @@ export async function* query(
       return cancellationResult(state)
     }
 
+    const firstQuery = state.messages.length === 0
     yield* injectTaskNotifications(state, ctx)
     const readyState = await prepareQueryState(state, ctx)
+    try {
+      if (firstQuery && !isMemoryDisabled() && state.sessionStartRuleIds?.length) {
+        const rules = state.sessionStartRuleIds.flatMap((id) => {
+          const rule = state.rules.find((rule) => rule.id === id)
+          return rule ? [{ id, confidence: calculateConfidence(rule.alpha, rule.beta) }] : []
+        })
+        if (rules.length) yield { type: 'rule_recall', trigger: 'session_start', rules }
+      }
+    } catch (error) {
+      dbg('query', 'Failed to display session-start rules', error)
+    }
 
     while (readyState.turn < ctx.config.maxTurns) {
       if (ctx.abortSignal?.aborted) {
@@ -1030,9 +1080,12 @@ export async function* query(
     try {
       if (ctx.sessionId) {
         ctx.autoDistillAttemptedEpisodeIds ??= new Set<string>()
-        await runSessionEndAutoDistill(ctx.sessionId, ctx.repoRoot, {
+        const learned = await runSessionEndAutoDistill(ctx.sessionId, ctx.repoRoot, {
           attemptedEpisodeIds: ctx.autoDistillAttemptedEpisodeIds,
         })
+        if (!isMemoryDisabled() && (learned.created.length || learned.updated)) {
+          learnedEvent = { type: 'rules_learned', ...learned }
+        }
       }
     } catch (error) {
       dbg('query', 'Failed to run session-end auto-distillation hook', error)
@@ -1075,6 +1128,13 @@ export async function* query(
       } catch (error) {
         dbg('query', 'Failed to print debug calibration summary', error)
       }
+    }
+    // Finish all ledger cleanup before yielding: an early generator.return() caller
+    // may not resume a yield in finally. The event still precedes query completion.
+    try {
+      if (learnedEvent && !isMemoryDisabled()) yield learnedEvent
+    } catch (error) {
+      dbg('query', 'Failed to display learned rules', error)
     }
   }
 }
@@ -1188,15 +1248,15 @@ export async function runQuery(
   if (journalNotice) console.error(journalNotice)
 }
 
-/** Persist only this verification outcome against the current hot-dir rule. */
+/** Persist this outcome against the current hot-dir rule, returning its real confidence delta. */
 export async function recordRuleOutcome(
   ruleId: string,
   stillFailing: boolean,
   repoRoot: string,
   rulesDir: string = getRulesDir(),
-): Promise<void> {
+): Promise<{ hit: boolean; before: number; after: number } | undefined> {
   try {
-    await withFileLock(
+    return await withFileLock(
       `${rulesDir}.lock`,
       async () => {
         const rule = await loadRule(ruleId, rulesDir)
@@ -1207,6 +1267,7 @@ export async function recordRuleOutcome(
           )
           return
         }
+        const before = calculateConfidence(rule.alpha, rule.beta)
         if (stillFailing) {
           rule.misses++
           rule.beta++
@@ -1219,6 +1280,7 @@ export async function recordRuleOutcome(
         }
         await updateLifecycle(rule, repoRoot)
         await saveRule(rule, rulesDir)
+        return { hit: !stillFailing, before, after: calculateConfidence(rule.alpha, rule.beta) }
       },
       RULES_LOCK_OPTIONS,
     )

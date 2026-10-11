@@ -16,13 +16,18 @@ import { disambiguateRuleId } from './identity.ts'
 import { updateLifecycle } from './lifecycle.ts'
 import { enforcePoolCap } from './pool.ts'
 import { archiveRule, loadAllRules, loadAllRulesIncludingArchived, saveRule } from './store.ts'
-import type { RuleFile } from './types.ts'
+import type { RuleFile, RuleStatus } from './types.ts'
 
 export const AUTO_DISTILL_MAX_CALLS_PER_QUERY_END = 3
 /** @deprecated Use AUTO_DISTILL_MAX_CALLS_PER_QUERY_END; retained for API compatibility. */
 export const AUTO_DISTILL_MAX_CALLS_PER_SESSION = AUTO_DISTILL_MAX_CALLS_PER_QUERY_END
 export const AUTO_DISTILL_MIN_VALUE_SCORE = 0
 export const AUTO_DISTILL_EXTRACTOR_VERSION = '0.2.0'
+
+export interface AutoDistillResult {
+  created: { id: string; status: RuleStatus }[]
+  updated: number
+}
 
 /**
  * Options controlling automated rule distillation from episodes.
@@ -105,15 +110,16 @@ function isAutoDistillEligible(episode: Episode): boolean {
  * @param sessionId - Identifier of the completed session
  * @param repoRoot - Root directory of the repository for lifecycle updates
  * @param options - Configuration options such as memory directory, max calls, and model overrides
- * @returns Promise resolving when distillation and persistence complete
+ * @returns Newly persisted rules and the number of existing rules updated
  */
 export async function runSessionEndAutoDistill(
   sessionId: string,
   repoRoot: string,
   options: AutoDistillOptions = {},
-): Promise<void> {
+): Promise<AutoDistillResult> {
+  const result: AutoDistillResult = { created: [], updated: 0 }
   if (isMemoryDisabled() || isTruthyEnv(process.env.OCTONOESIS_DISABLE_AUTO_DISTILL)) {
-    return
+    return result
   }
 
   const memoryDir = options.memoryDir ?? getMemoryDir()
@@ -125,7 +131,7 @@ export async function runSessionEndAutoDistill(
         new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
     )
 
-  if (episodes.length === 0) return
+  if (episodes.length === 0) return result
 
   const rulesDir = path.join(memoryDir, 'rules')
   try {
@@ -133,6 +139,7 @@ export async function runSessionEndAutoDistill(
       `${rulesDir}.lock`,
       async () => {
         const rules = await loadAllRulesIncludingArchived(rulesDir)
+        const existingIds = new Set(rules.map((rule) => rule.id))
         const evidencedEpisodeIds = new Set(rules.flatMap((rule) => rule.evidence))
         const initiallyCoveredSignatures = new Set(
           episodes
@@ -231,6 +238,8 @@ export async function runSessionEndAutoDistill(
           } else {
             await saveRule(rule, rulesDir)
           }
+          if (existingIds.has(rule.id)) result.updated++
+          else result.created.push({ id: rule.id, status: rule.status })
         }
       },
       RULES_LOCK_OPTIONS,
@@ -239,4 +248,5 @@ export async function runSessionEndAutoDistill(
     if (!(error instanceof LockTimeoutError)) throw error
     warnLockTimeout(error)
   }
+  return result
 }

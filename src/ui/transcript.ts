@@ -15,6 +15,7 @@ export type DisplayItem =
       status: 'done' | 'error'
       summary?: string
     }
+  | { kind: 'learning'; prefix: string; text: string; suffix: string }
   | { kind: 'compact'; preTokens: number; postTokens: number; durationMs: number }
 
 export interface RunningTool {
@@ -96,6 +97,48 @@ export function transcriptReducer(
         running: state.running.filter((tool) => tool.id !== event.id),
       }
     }
+    case 'rule_recall': {
+      if (!event.rules.length) return state
+      if (event.trigger === 'session_start')
+        return append(flush(state), {
+          kind: 'learning',
+          prefix: '',
+          text: `✻ recalled ${event.rules.length} ${event.rules.length === 1 ? 'rule' : 'rules'} for this repo`,
+          suffix: '',
+        })
+      // Events arrive immediately after their tool_done; never reorder committed Static items.
+      let index = state.transcript.length - 1
+      while (state.transcript[index]?.kind === 'learning') index--
+      const tool = state.transcript[index]
+      if (!event.toolUseId || tool?.kind !== 'tool' || tool.id !== event.toolUseId) return state
+      return event.rules.reduce(
+        (next, rule) =>
+          append(next, {
+            kind: 'learning',
+            prefix: '  ↳ recalled ',
+            text: rule.id,
+            suffix: ` · ${rule.confidence.toFixed(2)}`,
+          }),
+        state,
+      )
+    }
+    case 'rule_outcome':
+      return append(state, {
+        kind: 'learning',
+        prefix: '  ↳ ',
+        text: event.id,
+        suffix: ` ${event.hit ? 'hit' : 'miss'} · ${event.before.toFixed(2)} → ${event.after.toFixed(2)}`,
+      })
+    case 'rules_learned':
+      if (!event.created.length && !event.updated) return state
+      return append(flush(state), {
+        kind: 'learning',
+        prefix: '',
+        suffix: '',
+        text: event.created.length
+          ? `✻ learned ${event.created.length} ${event.created.length === 1 ? 'rule' : 'rules'}: ${event.created.map((rule) => `${rule.id} (${rule.status})`).join(', ')}`
+          : `✻ strengthened ${event.updated} ${event.updated === 1 ? 'rule' : 'rules'}`,
+      })
     case 'compact':
       return {
         ...append(flush(state), {
