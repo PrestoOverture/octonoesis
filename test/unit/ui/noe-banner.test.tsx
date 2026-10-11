@@ -497,7 +497,8 @@ for (const columns of [91, 60]) {
   })
 }
 test('TUI chrome uses no variation-selector or pictographic emoji', async () => {
-  for (const glyph of ['✓', '✗', '…', '·', '❯', '−']) expect(Bun.stringWidth(glyph)).toBe(1)
+  for (const glyph of ['✓', '✗', '…', '·', '❯', '−', '✻', '↳'])
+    expect(Bun.stringWidth(glyph)).toBe(1)
   const directory = path.join(import.meta.dir, '../../../src/ui')
   for (const name of await fs.readdir(directory)) {
     if (!name.endsWith('.tsx')) continue

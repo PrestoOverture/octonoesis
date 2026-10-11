@@ -432,7 +432,10 @@ describe('session-end auto-distillation', () => {
     }
     setProvider(provider)
 
-    await expect(runSessionEndAutoDistill('session-auto-distill', tempDir)).resolves.toBeUndefined()
+    await expect(runSessionEndAutoDistill('session-auto-distill', tempDir)).resolves.toEqual({
+      created: [{ id: 'rule-auto-case-2', status: 'candidate' }],
+      updated: 0,
+    })
 
     expect(calls).toBe(2)
     expect((await loadAllRules()).length).toBe(1)

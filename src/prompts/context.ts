@@ -126,13 +126,15 @@ export async function buildSessionContextSources(
     })
   }
   if (!isMemoryDisabled()) {
-    const sessionStartRules = formatSessionStartRules(selectSessionStartRules(rules))
+    const selected = selectSessionStartRules(rules)
+    const sessionStartRules = formatSessionStartRules(selected)
     if (sessionStartRules.length > 0) {
       sources.push({
         id: 'active_rules',
         channel: 'systemStable',
         priority: 'medium',
         content: sessionStartRules,
+        ruleIds: selected.map((rule) => rule.id),
       })
     }
   }
