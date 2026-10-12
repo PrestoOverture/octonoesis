@@ -145,7 +145,11 @@ export function DisplayEntry({ item, width }: { item: DisplayItem; width?: numbe
         {item.spacer ? <Text> </Text> : null}
         <Text>
           <Text color="cyan">❯ </Text>
-          <Text color="white">{item.text}</Text>
+          <Text color="white">
+            {width === undefined
+              ? item.text
+              : wrapAssistant(item.text, Math.max(1, width - 2)).replace(/\n/g, '\n  ')}
+          </Text>
         </Text>
       </Box>
     )

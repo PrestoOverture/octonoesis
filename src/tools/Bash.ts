@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { resolveSandboxConfig } from '../sandbox/manager'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { wrapWithSandbox } from '../sandbox/wrapper'
+import { taskOutputLogPath } from '../tasks/framework'
 import { startLocalShellTask } from '../tasks/localShell'
 import { shellChildEnv } from '../utils/childEnv'
 import type { Tool, ToolContext, ToolResult } from './Tool'
@@ -121,7 +122,7 @@ class BashTool implements Tool<BashInput, string> {
           value: JSON.stringify({
             task_id: record.task.id,
             status: 'running',
-            output_log: `.octonoesis/tasks/${record.task.id}.log`,
+            output_log: await taskOutputLogPath(ctx, record.task),
           }),
         }
       } catch (error) {
