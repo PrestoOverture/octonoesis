@@ -67,17 +67,22 @@ import { zodToJsonSchema } from '../utils/schema'
 import type { ContextSnapshot } from '../utils/tokens'
 import {
   contextTokensWithEstimation,
+  estimateMessagesTokens,
   getContextWindowSize,
   totalTokensFromUsage,
 } from '../utils/tokens'
+import { BackgroundCompaction } from './backgroundCompact'
 import {
   CompactAbortError,
   CompactError,
+  type CompactResult,
   compact,
   createCompactSummaryMessage,
+  isCompactionDisabled,
   selectKeepTail,
   shouldCompact,
 } from './compact'
+import { clearOldToolResults } from './toolResultClearing'
 import { summarizeToolResult } from './toolSummary'
 import type { ExitReason, QueryLoopContext, QueryResultV1, QueryState, SessionState } from './types'
 
@@ -140,6 +145,7 @@ export type EngineState = QueryState & {
   inputDigest: string
   rules: RuleFile[]
   sessionStartRuleIds?: string[]
+  pendingCompaction?: BackgroundCompaction
   contextSnapshot?: ContextSnapshot
   provider?: LLMProvider
   system?: string
@@ -503,37 +509,102 @@ export async function* maybeCompact(
   state: ReadyEngineState,
   ctx: QueryLoopContext,
 ): AsyncGenerator<StreamEvent, 'proceed' | 'restart_loop', undefined> {
+  if (isCompactionDisabled()) {
+    await state.pendingCompaction?.cancel()
+    state.pendingCompaction = undefined
+    return 'proceed'
+  }
+  const cleared = clearOldToolResults(state.messages, state.model, {
+    ...ctx.config?.compaction.toolResultClearing,
+    enabled: state.pendingCompaction ? false : ctx.config?.compaction.toolResultClearing?.enabled,
+    snapshot: state.contextSnapshot,
+  })
+  if (cleared.clearedCount > 0) {
+    state.messages = cleared.messages
+    ctx.messages = cleared.messages
+    state.contextSnapshot = undefined
+    dbg('compact', 'Cleared old reproducible tool results', { count: cleared.clearedCount })
+  }
   const cooldownTurns = ctx.config?.compaction.cooldownTurns ?? 0
   const coolingDown =
     state.lastCompactTurn !== undefined && state.turn - state.lastCompactTurn <= cooldownTurns
+  const backgroundEnabled = ctx.config?.compaction.background?.enabled ?? true
+  const thresholdRatio = backgroundEnabled
+    ? (ctx.config?.compaction.background?.triggerRatio ?? 0.75)
+    : 1
+  const hardThreshold = shouldCompact(state.messages, state.model, state.contextSnapshot)
   if (
     state.compactCircuitOpen ||
     coolingDown ||
-    !shouldCompact(state.messages, state.model, state.contextSnapshot) ||
+    (!state.pendingCompaction &&
+      !shouldCompact(state.messages, state.model, state.contextSnapshot, thresholdRatio)) ||
     selectKeepTail(state.messages) <= 0
   ) {
     return 'proceed'
   }
 
-  const compactStart = performance.now()
+  let compactStart = state.pendingCompaction?.startedAt ?? performance.now()
   try {
-    const compactResult = await compact(state.messages, {
+    const opts = {
       systemPrompt: state.system,
+      recordEvent: false,
+      preserveTaskState: true,
       signal: ctx.abortSignal,
       snapshot: state.contextSnapshot,
-      onForkUsage: (usage) => {
+      onForkUsage: (usage: Usage) => {
         addUsage(state.usage, usage)
         if (ctx.sessionState) addUsage(ctx.sessionState.usage, usage)
       },
       minShrinkPercent: ctx.config?.compaction.minShrinkPercent ?? 0,
-    })
-    const replacement = [
-      compactResult.pinnedHead,
-      createCompactSummaryMessage(compactResult.summary),
-      ...compactResult.messagesKept,
-    ]
+    }
+    let compactResult: CompactResult
+    let replacement: CanonicalMessage[]
+    if (backgroundEnabled || state.pendingCompaction) {
+      state.pendingCompaction ??= new BackgroundCompaction(state.messages, opts)
+      const pending = state.pendingCompaction
+      compactStart = pending.startedAt
+      const outcome = await pending.poll(hardThreshold)
+      if (!outcome) return 'proceed'
+      state.pendingCompaction = undefined
+      if ('error' in outcome) throw outcome.error
+      const candidate = pending.replacement(state.messages, outcome.result)
+      if (!candidate) {
+        dbg('compact', 'Discarded stale background summary; live prefix changed')
+        return 'proceed'
+      }
+      replacement = candidate
+      compactResult = {
+        ...outcome.result,
+        preCompactTokens: contextTokensWithEstimation(state.messages, state.contextSnapshot),
+        postCompactTokens: estimateMessagesTokens(candidate),
+      }
+      if (compactResult.postCompactTokens >= compactResult.preCompactTokens)
+        throw new CompactError('Background compaction did not reduce current context')
+      if (
+        ((compactResult.preCompactTokens - compactResult.postCompactTokens) /
+          compactResult.preCompactTokens) *
+          100 <
+        opts.minShrinkPercent
+      )
+        throw new CompactError(
+          'Background compaction fell below the configured minimum shrink percentage',
+        )
+    } else {
+      compactResult = await compact(state.messages, opts)
+      replacement = [
+        compactResult.pinnedHead,
+        createCompactSummaryMessage(compactResult.summary),
+        ...compactResult.messagesKept,
+      ]
+    }
     state.messages = replacement
     ctx.messages = replacement
+    appendJournal({
+      kind: 'compact',
+      pre_tokens: compactResult.preCompactTokens,
+      post_tokens: compactResult.postCompactTokens,
+      summary_length: compactResult.summary.length,
+    })
     state.contextSnapshot = undefined
     state.compactConsecutiveFailures = 0
     state.compactBoundary = 2
@@ -1046,6 +1117,8 @@ export async function* query(
       turns: readyState.turn,
     }
   } finally {
+    await state.pendingCompaction?.cancel()
+    state.pendingCompaction = undefined
     const agentTools = sessionAgentTools.get(ctx)
     sessionAgentTools.delete(ctx)
     if (agentTools) {

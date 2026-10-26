@@ -217,7 +217,20 @@ describe('context auto-compression integration', () => {
     expect(compactRows[0]?.schema_version).toBe(2)
     expect(compactRows[0]?.pre_tokens).toBe(compactEvent.preTokens)
     expect(compactRows[0]?.post_tokens).toBe(compactEvent.postTokens)
-    expect(compactRows[0]?.summary_length).toBe(compactSummary.length)
+    const installedSummary = postCompactMessages[1]?.content
+    const installedText =
+      typeof installedSummary === 'string'
+        ? installedSummary
+        : installedSummary
+            ?.filter((block) => block.type === 'text')
+            .map((block) => block.text)
+            .join('')
+    expect(compactRows[0]?.summary_length).toBe(
+      installedText
+        ?.replace('<octo-compact-summary>\n', '')
+        .replace('\n</octo-compact-summary>', '').length,
+    )
+    expect(installedText).toContain('<octo-task-state>')
   })
 
   it('continues a mock session with the verbatim original request pinned at index zero', async () => {

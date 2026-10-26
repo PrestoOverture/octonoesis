@@ -79,6 +79,21 @@ const compactionSchema = z
   .object({
     cooldownTurns: nonNegativeIntegerSchema.default(0),
     minShrinkPercent: z.number().min(0).max(100).default(0),
+    background: z
+      .object({
+        enabled: z.boolean().default(true),
+        triggerRatio: z.number().gt(0).lt(1).default(0.75),
+      })
+      .strict()
+      .optional(),
+    toolResultClearing: z
+      .object({
+        enabled: z.boolean().default(true),
+        keepRecent: nonNegativeIntegerSchema.default(6),
+        minTokens: positiveIntegerSchema.default(1000),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 
