@@ -1,31 +1,33 @@
 import { AnthropicProvider, DEFAULT_ANTHROPIC_MODEL } from './anthropic'
-import { DEFAULT_OPENAI_MODEL, OpenAIProvider } from './openai'
+import { DEFAULT_OPENAI_MODEL, DEFAULT_SPARK_MODEL, OpenAIProvider } from './openai'
 import type { LLMProvider } from './types'
 
 export * from './types'
 export { DEFAULT_ANTHROPIC_MODEL } from './anthropic'
-export { DEFAULT_OPENAI_MODEL } from './openai'
+export { DEFAULT_OPENAI_MODEL, DEFAULT_SPARK_MODEL } from './openai'
 
 let activeProvider: LLMProvider | null = null
 let configuredModel: string | undefined
 
 /**
  * Resolves the configured provider instance based on LLM_PROVIDER.
- * Defaults to 'anthropic'.
+ * Defaults to 'spark'.
  *
  * @return The resolved LLMProvider instance.
  */
 export function getProvider(): LLMProvider {
   if (activeProvider) return activeProvider
 
-  const providerEnv = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
-  if (providerEnv === 'anthropic') {
+  const providerEnv = (process.env.LLM_PROVIDER || 'spark').toLowerCase()
+  if (providerEnv === 'spark') {
+    activeProvider = new OpenAIProvider('spark')
+  } else if (providerEnv === 'anthropic') {
     activeProvider = new AnthropicProvider()
   } else if (providerEnv === 'openai') {
     activeProvider = new OpenAIProvider()
   } else {
     throw new Error(
-      `Unsupported LLM_PROVIDER: "${process.env.LLM_PROVIDER}". Supported values are "anthropic" or "openai".`,
+      `Unsupported LLM_PROVIDER: "${process.env.LLM_PROVIDER}". Supported values are "spark", "anthropic" or "openai".`,
     )
   }
 
@@ -56,12 +58,15 @@ export function setConfiguredModel(model?: string): void {
  * @return The resolved model name.
  */
 export function getResolvedModel(): string {
-  const providerEnv = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
+  const providerEnv = (process.env.LLM_PROVIDER || 'spark').toLowerCase()
 
   if (process.env.MODEL) {
     return process.env.MODEL
   }
 
+  if (providerEnv === 'spark') {
+    return process.env.SPARK_MODEL || configuredModel || DEFAULT_SPARK_MODEL
+  }
   if (providerEnv === 'anthropic') {
     return process.env.ANTHROPIC_MODEL || configuredModel || DEFAULT_ANTHROPIC_MODEL
   }
@@ -78,7 +83,10 @@ export function getResolvedModel(): string {
  * @returns The cheapest available model ID.
  */
 export function getCheapestModel(): string {
-  const providerEnv = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
+  const providerEnv = (process.env.LLM_PROVIDER || 'spark').toLowerCase()
+  if (providerEnv === 'spark') {
+    return process.env.SPARK_MODEL || DEFAULT_SPARK_MODEL
+  }
   if (providerEnv === 'openai') {
     return DEFAULT_OPENAI_MODEL
   }

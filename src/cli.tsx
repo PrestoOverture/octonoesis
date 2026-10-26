@@ -36,7 +36,7 @@ import { cleanupTasks } from './tasks/framework.ts'
 import { App } from './ui/App'
 import { prepareScreenSequence } from './ui/screen'
 import { dbg } from './utils/debug.ts'
-import { hasAnthropicKey, hasOpenAIKey } from './utils/env.ts'
+import { hasAnthropicKey, hasOpenAIKey, hasSparkKey } from './utils/env.ts'
 import { getMemoryDir, getRepoRoot } from './utils/path.ts'
 
 if (process.argv.includes('--fork-child')) {
@@ -62,7 +62,11 @@ try {
  * Prints an error message and terminates the process with exit code 1 if the required key is missing.
  */
 function checkApiKey(): void {
-  const provider = (process.env.LLM_PROVIDER || 'anthropic').toLowerCase()
+  const provider = (process.env.LLM_PROVIDER || 'spark').toLowerCase()
+  if (provider === 'spark' && !hasSparkKey()) {
+    console.error('Error: SPARK_API_KEY is not set. Add it to your environment or .env file.')
+    process.exit(1)
+  }
   if (provider === 'anthropic' && !hasAnthropicKey()) {
     console.error(
       'Error: ANTHROPIC_API_KEY is not set.\n\n' +

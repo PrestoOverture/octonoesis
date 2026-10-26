@@ -145,8 +145,8 @@ describe('LLM Providers & Router Integration', () => {
   })
 
   describe('Routing & Configuration', () => {
-    it('resolves AnthropicProvider by default or when set', () => {
-      Reflect.deleteProperty(process.env, 'LLM_PROVIDER')
+    it('resolves AnthropicProvider when set', () => {
+      process.env.LLM_PROVIDER = 'anthropic'
       const provider = getProvider()
       expect(provider instanceof AnthropicProvider).toBe(true)
       expect(provider.name).toBe('anthropic')

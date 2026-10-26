@@ -132,7 +132,11 @@ npx octonoesis "修复 src/user.ts 里失败的测试"
 ## 快速开始
 
 ```bash
-# Anthropic（默认）
+# Spark-X2.6（默认，关闭 Thinking）
+export SPARK_API_KEY="ak-..."
+
+# ……或 Anthropic
+export LLM_PROVIDER="anthropic"
 export ANTHROPIC_API_KEY="sk-..."
 
 # ……或任何 OpenAI 兼容端点

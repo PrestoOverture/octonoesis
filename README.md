@@ -22,7 +22,7 @@ TypeScript on **Bun**, **Ink** TUI, with Noe — an eight-tendrilled mascot whos
 - Interactive TUI and one-shot CLI. Streaming markdown output. `Ctrl+C` to cancel. Retries on 429/5xx with backoff.
 - One line per tool call with a result summary — `✓ Read src/user.ts · 42 lines`, `✗ Bash bun test · exit 1` — plus the learning loop shown inline (see below). Input and status line stay pinned to the bottom; resizing reflows the whole session cleanly.
 - Permission prompt on every mutation — `[y] once / [n] no / [a] always` — with diff preview for edits.
-- Claude by default; any OpenAI-compatible endpoint via `LLM_PROVIDER=openai`.
+- Spark-X2.6 by default with thinking disabled; Claude via `LLM_PROVIDER=anthropic`, or any OpenAI-compatible endpoint via `LLM_PROVIDER=openai`.
 
 **Context & memory**
 - Auto-compaction near the context limit (forked summarizer), so 20+ turn sessions work fine.
@@ -134,7 +134,11 @@ For browser-downloaded macOS binaries, run `xattr -d com.apple.quarantine <file>
 ## Quickstart
 
 ```bash
-# Anthropic (default)
+# Spark (default; thinking disabled)
+export SPARK_API_KEY="ak-..."
+
+# Or Anthropic
+export LLM_PROVIDER="anthropic"
 export ANTHROPIC_API_KEY="sk-..."
 
 # ...or any OpenAI-compatible endpoint
