@@ -249,6 +249,7 @@ export async function runTool(
                 stdout: vr.stdout,
                 stderr: vr.stderr,
                 code: vr.exit_code,
+                ...(vr.truncated ? { truncated: true, output_log: vr.output_log } : {}),
               }),
             }
           } catch (err) {

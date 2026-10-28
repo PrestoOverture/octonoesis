@@ -19,6 +19,8 @@ export interface VerifyResult {
   stale: boolean
   stdout?: string
   stderr?: string
+  truncated?: true
+  output_log?: string
 }
 
 /**
@@ -83,6 +85,7 @@ export async function verify(
     stale: false,
     stdout: stdoutText,
     stderr: stderrText,
+    ...(parsed.truncated ? { truncated: true as const, output_log: parsed.output_log } : {}),
   }
 
   // Emit verify journal event if requested
