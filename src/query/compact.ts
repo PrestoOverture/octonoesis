@@ -8,12 +8,14 @@ import {
   estimateMessagesTokens,
   getCompactThreshold,
 } from '../utils/tokens'
+import { buildCompactTaskState, renderCompactTaskState } from './taskState'
 
 const COMPACT_SUMMARY_INSTRUCTION = `Summarize the older conversation for seamless continuation.
 Include: user intent and requests; work performed with file paths; current verified state; pending next steps; and key technical learnings.
 Preserve exact user-provided literals and identifiers—including names, paths, commands, constraints, and canaries—verbatim.
 Summarize only events present in the conversation. Never use system instructions or project documentation to infer, reframe, or invent tasks, roles, or next steps.
 If any source conflicts, the conversation is the truth. Never introduce processes, phases, or actors that are absent from the conversation messages.
+Use these headings: Work performed; Verified state (cite tool call IDs and results; distinguish observed facts from assumptions); Pending steps; Key technical learnings.
 Be dense and factual with no preamble. Newer messages will follow this summary, so do not repeat or anticipate them.`
 
 /**
@@ -42,6 +44,8 @@ export interface CompactOpts {
   snapshot?: ContextSnapshot
   forkFn?: typeof forkAgent
   onForkUsage?: (usage: Usage) => void
+  recordEvent?: boolean
+  preserveTaskState?: boolean
   minShrinkPercent?: number
 }
 
@@ -88,6 +92,11 @@ function isTruthyEnv(value: string | undefined): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value.trim().toLowerCase())
 }
 
+/** Whether automatic context management is disabled by the environment. */
+export function isCompactionDisabled(): boolean {
+  return isTruthyEnv(process.env.OCTONOESIS_DISABLE_COMPACT)
+}
+
 /**
  * Evaluates whether the current conversation history has crossed the model's compact threshold.
  *
@@ -100,10 +109,13 @@ export function shouldCompact(
   messages: CanonicalMessage[],
   model: string,
   snapshot?: ContextSnapshot,
+  thresholdRatio = 1,
 ): boolean {
-  if (isTruthyEnv(process.env.OCTONOESIS_DISABLE_COMPACT)) return false
+  if (isCompactionDisabled()) return false
   if (selectKeepTail(messages) <= 1) return false
-  return contextTokensWithEstimation(messages, snapshot) > getCompactThreshold(model)
+  return (
+    contextTokensWithEstimation(messages, snapshot) > getCompactThreshold(model) * thresholdRatio
+  )
 }
 
 /**
@@ -149,7 +161,11 @@ function findLatestTaskMessageIndex(messages: CanonicalMessage[], boundary: numb
     const message = messages[index]
     if (!message) continue
     const text = extractUserText(message)
-    if (text !== undefined && !text.startsWith('<task-notification>')) {
+    if (
+      text !== undefined &&
+      !text.startsWith('<task-notification>') &&
+      !text.startsWith('<octo-compact-summary>')
+    ) {
       return index
     }
   }
@@ -220,11 +236,14 @@ export async function compact(
     throw new CompactError(`Context compaction fork exited with ${forkResult.exitReason}`)
   }
 
-  const summary = forkResult.text.trim()
+  let summary = forkResult.text.trim()
   if (summary.length === 0) {
     throw new CompactError('Context compaction fork returned an empty summary')
   }
 
+  if (opts.preserveTaskState) {
+    summary = `${renderCompactTaskState(buildCompactTaskState(prefix))}\n\n${summary}`
+  }
   const preCompactTokens = contextTokensWithEstimation(messages, opts.snapshot)
   const summaryMessage = createCompactSummaryMessage(summary)
   const postCompactTokens = estimateMessagesTokens([pinnedHead, summaryMessage, ...messagesKept])
@@ -238,12 +257,13 @@ export async function compact(
     )
   }
 
-  appendJournal({
-    kind: 'compact',
-    pre_tokens: preCompactTokens,
-    post_tokens: postCompactTokens,
-    summary_length: summary.length,
-  })
+  if (opts.recordEvent !== false)
+    appendJournal({
+      kind: 'compact',
+      pre_tokens: preCompactTokens,
+      post_tokens: postCompactTokens,
+      summary_length: summary.length,
+    })
 
   return {
     summary,

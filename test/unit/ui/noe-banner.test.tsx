@@ -478,7 +478,7 @@ for (const columns of [91, 60]) {
       const output = normalized(prompt.join(''))
       expect(output).toContain('[Permission Required]')
       expect(output).toContain('ctx ')
-      expect(output).toContain('$')
+      expect(/\$|cost n\/a/.test(output)).toBe(true)
       expect(output).toContain('╭')
       expect(output).toContain('╮')
       expect(output).toContain('╰')

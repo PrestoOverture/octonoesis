@@ -1,7 +1,8 @@
-/** Holds optional API keys for supported LLM providers (Anthropic, OpenAI). */
+/** Holds optional API keys for supported LLM providers (Spark, Anthropic, OpenAI). */
 export interface ProviderCredentials {
   ANTHROPIC_API_KEY?: string
   OPENAI_API_KEY?: string
+  SPARK_API_KEY?: string
 }
 
 let capturedProviderCredentials: ProviderCredentials = {}
@@ -14,6 +15,7 @@ let capturedProviderCredentials: ProviderCredentials = {}
 function credentialsFrom(source: NodeJS.ProcessEnv): ProviderCredentials {
   return {
     ...(source.ANTHROPIC_API_KEY ? { ANTHROPIC_API_KEY: source.ANTHROPIC_API_KEY } : {}),
+    ...(source.SPARK_API_KEY ? { SPARK_API_KEY: source.SPARK_API_KEY } : {}),
     ...(source.OPENAI_API_KEY ? { OPENAI_API_KEY: source.OPENAI_API_KEY } : {}),
   }
 }
@@ -27,6 +29,7 @@ export function captureProviderCredentials(source: NodeJS.ProcessEnv = process.e
   capturedProviderCredentials = credentialsFrom(source)
   Reflect.deleteProperty(source, 'ANTHROPIC_API_KEY')
   Reflect.deleteProperty(source, 'OPENAI_API_KEY')
+  Reflect.deleteProperty(source, 'SPARK_API_KEY')
 }
 
 /**
@@ -93,6 +96,18 @@ export function getOpenAIKey(): string {
     )
   }
   return key
+}
+
+/** Resolves the captured Spark API key. */
+export function getSparkKey(): string {
+  const key = capturedProviderCredentials.SPARK_API_KEY
+  if (!key) throw new Error('SPARK_API_KEY is not set. Add it to your environment or .env file.')
+  return key
+}
+
+/** Checks whether Spark credentials are available. */
+export function hasSparkKey(): boolean {
+  return capturedProviderCredentials.SPARK_API_KEY !== undefined
 }
 
 captureProviderCredentials()

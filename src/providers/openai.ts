@@ -1,11 +1,13 @@
 import OpenAI from 'openai'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { dbg } from '../utils/debug'
-import { getOpenAIKey } from '../utils/env'
+import { getOpenAIKey, getSparkKey } from '../utils/env'
 import { withRetryGenerator } from '../utils/retry'
 import type { CanonicalMessage, CanonicalTool, LLMProvider, StreamEvent } from './types'
 
 export const DEFAULT_OPENAI_MODEL = 'gpt-5-nano'
+export const DEFAULT_SPARK_MODEL = 'spark-x2.6'
+export const DEFAULT_SPARK_BASE_URL = 'https://maas-api.cn-huabei-1.xf-yun.com/v2'
 
 /**
  * Translates CanonicalMessages into OpenAI ChatCompletionMessageParam structures.
@@ -59,6 +61,8 @@ export function toOpenAIMessages(messages: CanonicalMessage[]): ChatCompletionMe
 export class OpenAIProvider implements LLMProvider {
   readonly name = 'openai-compatible' as const
 
+  constructor(private readonly mode: 'openai' | 'spark' = 'openai') {}
+
   /**
    * Creates an abortable async stream of canonical events for OpenAI.
    * Maps message payloads, manages tool invocation chunk accumulation, and yields unified events.
@@ -79,8 +83,11 @@ export class OpenAIProvider implements LLMProvider {
       dynamicSystem?: string
     },
   ): AsyncIterable<StreamEvent> {
-    const apiKey = getOpenAIKey()
-    const baseURL = process.env.OPENAI_BASE_URL || undefined
+    const isSpark = this.mode === 'spark'
+    const apiKey = isSpark ? getSparkKey() : getOpenAIKey()
+    const baseURL = isSpark
+      ? process.env.SPARK_BASE_URL || DEFAULT_SPARK_BASE_URL
+      : process.env.OPENAI_BASE_URL || undefined
     const client = new OpenAI({ apiKey, baseURL })
 
     const openAIMessages = toOpenAIMessages(messages)
@@ -110,6 +117,7 @@ export class OpenAIProvider implements LLMProvider {
     const makeStream = async function* (): AsyncGenerator<StreamEvent, void, undefined> {
       const stream = await client.chat.completions.create(
         {
+          ...(isSpark ? { thinking: { type: 'disabled' } } : {}),
           model: opts.model,
           max_completion_tokens: opts.maxTokens,
           messages: openAIMessages,

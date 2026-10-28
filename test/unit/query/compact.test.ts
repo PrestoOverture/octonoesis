@@ -503,3 +503,70 @@ describe('context compaction', () => {
     expect(result.messagesKept.slice(1)).toEqual(messages.slice(3))
   })
 })
+
+it('does not rescue an old synthetic summary as the current task on repeated compaction', async () => {
+  const previous = createCompactSummaryMessage('previous summary')
+  const messages: CanonicalMessage[] = [
+    { role: 'user', content: 'Original task' },
+    previous,
+    { role: 'assistant', content: [{ type: 'text', text: 'old work '.repeat(1000) }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'more old work' }] },
+    { role: 'user', content: 'Current task in recent tail' },
+    { role: 'assistant', content: [{ type: 'text', text: 'recent work' }] },
+    { role: 'user', content: 'Continue' },
+  ]
+  const result = await compact(messages, {
+    systemPrompt: 'system',
+    preserveTaskState: true,
+    forkFn: async () => ({
+      text: 'Verified state: old work observed. Pending steps: continue current task.',
+      usage: { input_tokens: 1, output_tokens: 1 },
+      turns: 1,
+      exitReason: 'completed',
+    }),
+  })
+  expect(result.messagesKept).toEqual(messages.slice(4))
+  expect(result.summary).toContain('<octo-task-state>')
+  expect(result.pinnedHead).toEqual(messages[0])
+  expect(result.summary).not.toContain('Original task')
+  expect(result.summary).not.toContain('Current task in recent tail')
+})
+
+it('keeps tool-only UUIDs even when the summarizer omits them on consecutive passes', async () => {
+  const marker = 'RELEASE_12345678-abcd-4321-8765-123456789abc'
+  let messages: CanonicalMessage[] = [
+    { role: 'user', content: 'Finish the task' },
+    { role: 'assistant', content: [{ type: 'text', text: 'old context '.repeat(1200) }] },
+    {
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 'spec', name: 'Read', input: { path: 'spec.txt' } }],
+    },
+    { role: 'tool', tool_use_id: 'spec', content: `Exact release marker: ${marker}` },
+    { role: 'user', content: 'continue' },
+    { role: 'assistant', content: [{ type: 'text', text: 'recent' }] },
+    { role: 'user', content: 'proceed' },
+  ]
+  for (let round = 0; round < 2; round++) {
+    if (round)
+      messages.splice(2, 0, {
+        role: 'assistant',
+        content: [{ type: 'text', text: 'new irrelevant context '.repeat(1000) }],
+      })
+    const result = await compact(messages, {
+      systemPrompt: 'system',
+      preserveTaskState: true,
+      forkFn: async () => ({
+        text: 'Work remains pending. The release marker was omitted from this prose.',
+        usage: { input_tokens: 1, output_tokens: 1 },
+        turns: 1,
+        exitReason: 'completed',
+      }),
+    })
+    expect(result.summary).toContain(marker)
+    messages = [
+      result.pinnedHead,
+      createCompactSummaryMessage(result.summary),
+      ...result.messagesKept,
+    ]
+  }
+})

@@ -2,7 +2,7 @@ import { getProviderCredentialEnvironment } from './env.ts'
 
 export const SHELL_API_KEY_INHERIT_ENV = 'OCTONOESIS_INHERIT_API_KEYS'
 
-const SHELL_CREDENTIAL_KEYS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY'] as const
+const SHELL_CREDENTIAL_KEYS = ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'SPARK_API_KEY'] as const
 
 /**
  * Checks whether an environment variable string represents a truthy flag.
