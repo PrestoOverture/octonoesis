@@ -307,7 +307,11 @@ test('resize during streaming and permission preserves committed text and resolv
       yield { type: 'text_delta', text: 'committed-stream-paragraph\n\npending-stream-tail' }
       await gate
       yield { type: 'text_delta', text: '-continued' }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   const tty = await terminal([
@@ -381,7 +385,11 @@ for (const live of [false, true]) {
           name: 'anthropic',
           async *createMessageStream() {
             yield { type: 'text_delta', text: 'echo-reply' }
-            yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+            yield {
+              type: 'message_end',
+              stopReason: 'other',
+              usage: { input_tokens: 1, output_tokens: 1 },
+            }
           },
         })
         await until(() => tty.screen.visible.some((line) => line.includes('ctx ')))

@@ -139,7 +139,11 @@ describe('query failure surfaces', () => {
           name: 'Bash',
           input: { command: 'printf should-not-run' },
         }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     setProvider(provider)

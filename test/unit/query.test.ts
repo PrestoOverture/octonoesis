@@ -16,7 +16,11 @@ const provider: LLMProvider = {
     mockCalls++
     if (mockBehavior === 'completed') {
       yield { type: 'text_delta', text: 'Hello human.' }
-      yield { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 10, output_tokens: 5 },
+      }
     } else if (mockBehavior === 'fatal_error') {
       throw new Error('LLM API Error')
     } else if (mockBehavior === 'max_turns') {
@@ -26,7 +30,11 @@ const provider: LLMProvider = {
         name: 'Read',
         input: { path: 'package.json' },
       }
-      yield { type: 'message_end', usage: { input_tokens: 5, output_tokens: 5 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 5, output_tokens: 5 },
+      }
     }
   },
 }
@@ -63,6 +71,7 @@ describe('query() API Generator', () => {
     expect(events[0]).toEqual({ type: 'text_delta', text: 'Hello human.' })
     expect(events[1]).toEqual({
       type: 'message_end',
+      stopReason: 'other',
       usage: { input_tokens: 10, output_tokens: 5 },
     })
 

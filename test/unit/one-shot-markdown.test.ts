@@ -17,7 +17,11 @@ test('runQuery routes split deltas through the injectable TTY display path', asy
     name: 'anthropic',
     async *createMessageStream() {
       for (const text of deltas) yield { type: 'text_delta', text }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   }
   try {

@@ -101,7 +101,11 @@ test('80-column resumed tools shorten realpath aliases and preserve long-argumen
         yield { type: 'tool_use', id: 'live', name: 'Read', input: { path: file } }
         await pending
       } else yield { type: 'text_delta', text: 'live-finished' }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   let completion: Promise<void> | undefined

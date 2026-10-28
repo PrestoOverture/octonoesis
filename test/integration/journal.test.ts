@@ -42,7 +42,7 @@ describe('Journal Integration Test', () => {
         name: 'Read',
         input: { path: 'src/buggy.ts' },
       },
-      { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
     ]
 
     const turn2Events: ProviderStreamEvent[] = [
@@ -53,7 +53,7 @@ describe('Journal Integration Test', () => {
         name: 'Glob',
         input: { pattern: 'src/*' },
       },
-      { type: 'message_end', usage: { input_tokens: 20, output_tokens: 10 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 20, output_tokens: 10 } },
     ]
 
     const turn3Events: ProviderStreamEvent[] = [
@@ -61,7 +61,7 @@ describe('Journal Integration Test', () => {
         type: 'text_delta',
         text: 'I have successfully reviewed the directory structure.',
       },
-      { type: 'message_end', usage: { input_tokens: 30, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 30, output_tokens: 5 } },
     ]
 
     const mockProvider = new MockProvider([turn1Events, turn2Events, turn3Events])

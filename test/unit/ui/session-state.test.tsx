@@ -41,7 +41,11 @@ describe('App session observability', () => {
       name: 'anthropic',
       async *createMessageStream(): AsyncIterable<StreamEvent> {
         yield { type: 'text_delta', text: 'UI observable.' }
-        yield { type: 'message_end', usage: { input_tokens: 1_000, output_tokens: 100 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1_000, output_tokens: 100 },
+        }
       },
     }
     setProvider(provider)

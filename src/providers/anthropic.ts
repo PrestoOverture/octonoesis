@@ -283,6 +283,12 @@ export class AnthropicProvider implements LLMProvider {
         // Yield final message end event with token usage
         yield {
           type: 'message_end',
+          stopReason:
+            finalMsg.stop_reason === 'end_turn' ||
+            finalMsg.stop_reason === 'tool_use' ||
+            finalMsg.stop_reason === 'max_tokens'
+              ? finalMsg.stop_reason
+              : 'other',
           usage: toCanonicalUsage(usageRecord),
         }
       }

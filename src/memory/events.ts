@@ -90,6 +90,21 @@ export const compactEventSchema = z.object({
   summary_length: z.number(),
 })
 
+export const truncationEventSchema = z.object({
+  ...baseEventFields,
+  kind: z.literal('truncation'),
+  turn: z.number(),
+  max_output_tokens: z.number(),
+  output_tokens: z.number(),
+  dropped_tool_calls: z.array(
+    z.object({
+      id: z.string(),
+      name: z.string(),
+      reason: z.enum(['invalid_arguments', 'max_tokens']),
+    }),
+  ),
+})
+
 export const memoryWriteEventSchema = z.object({
   ...baseEventFields,
   kind: z.literal('memory_write'),
@@ -132,6 +147,7 @@ export const journalEventSchema = z.discriminatedUnion('kind', [
   verifyEventSchema,
   userEventSchema,
   compactEventSchema,
+  truncationEventSchema,
   memoryWriteEventSchema,
   skillEventSchema,
   taskEventSchema,
@@ -148,6 +164,7 @@ export const EVENT_SCHEMA_VERSIONS: Record<JournalEvent['kind'], 1 | 2> = {
   verify: 1,
   user: 1,
   compact: 2,
+  truncation: 2,
   memory_write: 2,
   skill: 2,
   task: 2,

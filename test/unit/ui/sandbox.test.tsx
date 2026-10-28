@@ -95,7 +95,11 @@ describeDarwin('App sandbox context', () => {
             type: 'text_delta',
             text: '{"tool":"cat","error_class":"PermissionError","file":"","expression":""}',
           }
-          yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+          yield {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }
           return
         }
 
@@ -107,7 +111,11 @@ describeDarwin('App sandbox context', () => {
             name: 'Bash',
             input: { command },
           }
-          yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+          yield {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }
           return
         }
 
@@ -118,7 +126,11 @@ describeDarwin('App sandbox context', () => {
             output.code !== 0 && !toolMessage.content.includes('tui-sandbox-secret')
         }
         yield { type: 'text_delta', text: 'TUI sandbox observed' }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     setProvider(provider)

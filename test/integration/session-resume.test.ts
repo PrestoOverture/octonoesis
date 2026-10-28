@@ -290,7 +290,11 @@ describe('persistent session CLI', () => {
       name: 'anthropic',
       async *createMessageStream(): AsyncIterable<StreamEvent> {
         yield { type: 'text_delta', text: 'completed despite store failure' }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     setProvider(provider)

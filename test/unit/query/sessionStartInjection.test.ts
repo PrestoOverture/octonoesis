@@ -73,7 +73,7 @@ class CapturingProvider implements LLMProvider {
   ): AsyncIterable<ProviderStreamEvent> {
     this.capturedSystem = opts.system
     yield { type: 'text_delta', text: 'Done.' }
-    yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+    yield { type: 'message_end', stopReason: 'other', usage: { input_tokens: 1, output_tokens: 1 } }
   }
 }
 

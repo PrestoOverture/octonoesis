@@ -40,6 +40,7 @@ class RecordingProvider implements LLMProvider {
       }
       yield {
         type: 'message_end',
+        stopReason: 'other',
         usage:
           this.turn === 12
             ? {
@@ -53,7 +54,11 @@ class RecordingProvider implements LLMProvider {
     }
 
     yield { type: 'text_delta', text: 'Completed after preserving FACT_ALPHA.' }
-    yield { type: 'message_end', usage: { input_tokens: 100, output_tokens: 10 } }
+    yield {
+      type: 'message_end',
+      stopReason: 'other',
+      usage: { input_tokens: 100, output_tokens: 10 },
+    }
   }
 }
 
@@ -82,12 +87,20 @@ class ScheduledProvider implements LLMProvider {
         name: 'Read',
         input: { path: 'package.json' },
       }
-      yield { type: 'message_end', usage: { input_tokens: 5_000, output_tokens: 10 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 5_000, output_tokens: 10 },
+      }
       return
     }
 
     yield { type: 'text_delta', text: 'Scheduled session complete.' }
-    yield { type: 'message_end', usage: { input_tokens: 100, output_tokens: 10 } }
+    yield {
+      type: 'message_end',
+      stopReason: 'other',
+      usage: { input_tokens: 100, output_tokens: 10 },
+    }
   }
 }
 

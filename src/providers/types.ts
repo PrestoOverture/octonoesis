@@ -15,10 +15,20 @@ export type Usage = {
   cache_read_input_tokens?: number
 }
 
+export type StopReason = 'end_turn' | 'tool_use' | 'max_tokens' | 'other'
+
 export type StreamEvent =
   | { type: 'text_delta'; text: string }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
-  | { type: 'message_end'; usage: Usage }
+  | {
+      type: 'message_end'
+      usage: Usage
+      stopReason: StopReason
+      /** OpenAI calls rejected during JSON parsing, never emitted as tool_use. */
+      invalidToolCalls?: { id: string; name: string }[]
+      /** Includes rejected calls, so truncation drops the actual final call. */
+      lastToolUseId?: string
+    }
 
 /** Canonical representation of a tool definition passed to an LLM provider. */
 export interface CanonicalTool {

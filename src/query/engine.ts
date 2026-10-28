@@ -32,6 +32,7 @@ import type {
   ContentBlock,
   LLMProvider,
   StreamEvent as ProviderStreamEvent,
+  StopReason,
   Usage,
 } from '../providers'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
@@ -174,7 +175,12 @@ export interface AssembledContext {
 }
 
 type StreamPhaseResult =
-  | { kind: 'complete'; assistantBlocks: ContentBlock[] }
+  | {
+      kind: 'complete'
+      assistantBlocks: ContentBlock[]
+      stopReason: StopReason
+      recoveryNote?: string
+    }
   | { kind: 'exit'; result: QueryResult }
 
 /**
@@ -706,12 +712,17 @@ export async function* streamFromProvider(
 
   const assistantBlocks: ContentBlock[] = []
   let finalUsage: Usage | null = null
+  let stopReason: StopReason = 'other'
+  let lastToolUseId: string | undefined
+  const droppedCalls: { id: string; name: string; reason: 'invalid_arguments' | 'max_tokens' }[] =
+    []
+  const maxOutputTokens = ctx.config?.maxOutputTokens ?? 16384
   const messagesAtStreamStart = state.messages.length
 
   try {
     const stream = state.provider.createMessageStream(context.messages, context.tools, {
       model: state.model,
-      maxTokens: 4096,
+      maxTokens: maxOutputTokens,
       signal: ctx.abortSignal || new AbortController().signal,
       system: context.system,
       dynamicSystem: context.dynamicSystem,
@@ -732,12 +743,8 @@ export async function* streamFromProvider(
           assistantBlocks.push({ type: 'text', text: event.text })
         }
       } else if (event.type === 'tool_use') {
-        yield {
-          type: 'tool_use',
-          id: event.id,
-          name: event.name,
-          input: event.input,
-        }
+        lastToolUseId = event.id
+        yield event
         assistantBlocks.push({
           type: 'tool_use',
           id: event.id,
@@ -746,6 +753,11 @@ export async function* streamFromProvider(
         })
       } else if (event.type === 'message_end') {
         finalUsage = event.usage
+        stopReason = event.stopReason
+        lastToolUseId = event.lastToolUseId ?? lastToolUseId
+        for (const call of event.invalidToolCalls ?? []) {
+          droppedCalls.push({ ...call, reason: 'invalid_arguments' })
+        }
         state.contextSnapshot = {
           tokens: totalTokensFromUsage(event.usage),
           coveredCount: messagesAtStreamStart + 1,
@@ -771,12 +783,58 @@ export async function* streamFromProvider(
   }
 
   const usage = finalUsage || { input_tokens: 0, output_tokens: 0 }
+  if (stopReason === 'max_tokens' && lastToolUseId !== undefined) {
+    const lastToolIndex = assistantBlocks.findIndex(
+      (block) => block.type === 'tool_use' && block.id === lastToolUseId,
+    )
+    const lastTool = assistantBlocks[lastToolIndex]
+    if (lastTool?.type === 'tool_use') {
+      assistantBlocks.splice(lastToolIndex, 1)
+      droppedCalls.push({ id: lastTool.id, name: lastTool.name, reason: 'max_tokens' })
+      yield {
+        type: 'tool_done',
+        id: lastTool.id,
+        name: lastTool.name,
+        status: 'error',
+        summary: 'output truncated; not executed',
+      }
+    }
+  }
+  let recoveryNote: string | undefined
+  if (stopReason === 'max_tokens' || droppedCalls.length > 0) {
+    const dropped = droppedCalls
+      .map(
+        ({ id, name, reason }) =>
+          `Tool call ${name} (${id}) was dropped and NOT executed${reason === 'invalid_arguments' ? ' because its arguments failed JSON.parse' : ''}.`,
+      )
+      .join(' ')
+    recoveryNote = [
+      stopReason === 'max_tokens' ? `Your output was cut at ${maxOutputTokens} tokens.` : '',
+      dropped,
+      droppedCalls.length > 0
+        ? 'Split large content: Write a skeleton, then Edit in chunks. Retry dropped work with complete JSON arguments.'
+        : 'Continue exactly where you stopped.',
+    ]
+      .filter(Boolean)
+      .join(' ')
+  }
+  if (stopReason === 'max_tokens') {
+    appendJournal({
+      kind: 'truncation',
+      turn: state.turn,
+      max_output_tokens: maxOutputTokens,
+      output_tokens: usage.output_tokens,
+      dropped_tool_calls: droppedCalls,
+    })
+  }
   addUsage(state.usage, usage)
-  yield { type: 'message_end', usage }
+  yield { type: 'message_end', usage, stopReason }
   const sessionStateEvent = recordSessionTurn(state, ctx, usage)
   if (state.emitSessionState) yield sessionStateEvent
-  state.messages.push({ role: 'assistant', content: assistantBlocks })
-  return { kind: 'complete', assistantBlocks }
+  if (assistantBlocks.length > 0) {
+    state.messages.push({ role: 'assistant', content: assistantBlocks })
+  }
+  return { kind: 'complete', assistantBlocks, stopReason, recoveryNote }
 }
 
 /**
@@ -1055,6 +1113,7 @@ export async function* query(
       dbg('query', 'Failed to display session-start rules', error)
     }
 
+    let consecutiveTruncations = 0
     while (readyState.turn < ctx.config.maxTurns) {
       if (ctx.abortSignal?.aborted) {
         exitReason = 'user_cancel'
@@ -1080,6 +1139,8 @@ export async function* query(
         exitReason = streamResult.result.exit_reason
         return streamResult.result
       }
+      consecutiveTruncations =
+        streamResult.stopReason === 'max_tokens' ? consecutiveTruncations + 1 : 0
 
       const hasToolUse = streamResult.assistantBlocks.some((block) => block.type === 'tool_use')
       if (hasToolUse) {
@@ -1087,7 +1148,21 @@ export async function* query(
         if (toolResult.restartLoop) continue
       }
 
-      const stop = shouldStop(streamResult.assistantBlocks)
+      // Append after surviving tool results so recovery never interrupts call/result pairing.
+      if (streamResult.recoveryNote) {
+        readyState.messages.push({ role: 'user', content: streamResult.recoveryNote })
+      }
+      if (consecutiveTruncations >= 3) {
+        exitReason = 'fatal_error'
+        return {
+          exit_reason: 'fatal_error',
+          usage: readyState.usage,
+          turns: readyState.turn,
+          error: 'Query stopped after 3 consecutive truncation recoveries (max_tokens).',
+        }
+      }
+
+      const stop = !streamResult.recoveryNote && shouldStop(streamResult.assistantBlocks)
       if (stop) {
         await executeStopHooks(readyState, ctx)
         const assistantText = streamResult.assistantBlocks

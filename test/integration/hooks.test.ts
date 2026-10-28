@@ -105,7 +105,11 @@ describe('config-driven lifecycle hooks', () => {
             last.content.some((block) => block.type === 'tool_result' && block.is_error === true)
           yield { type: 'text_delta', text: 'finished after denial' }
         }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     setProvider(provider)
@@ -180,7 +184,11 @@ describe('config-driven lifecycle hooks', () => {
         } else {
           yield { type: 'text_delta', text: 'bash and post hook finished' }
         }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     setProvider(provider)
@@ -229,11 +237,19 @@ describe('config-driven lifecycle hooks', () => {
             name: 'Read',
             input: { path: 'package.json' },
           }
-          yield { type: 'message_end', usage: { input_tokens: 5_000, output_tokens: 10 } }
+          yield {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 5_000, output_tokens: 10 },
+          }
           return
         }
         yield { type: 'text_delta', text: 'done' }
-        yield { type: 'message_end', usage: { input_tokens: 10, output_tokens: 2 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 10, output_tokens: 2 },
+        }
       },
     }
     setProvider(provider)
@@ -286,7 +302,11 @@ describe('config-driven lifecycle hooks', () => {
         name: 'anthropic',
         async *createMessageStream(): AsyncIterable<StreamEvent> {
           yield { type: 'text_delta', text: 'normal completion' }
-          yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+          yield {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }
         },
       }
       setProvider(provider)

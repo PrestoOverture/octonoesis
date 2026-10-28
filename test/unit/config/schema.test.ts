@@ -35,6 +35,7 @@ describe('Octonoesis config schema', () => {
     const expected: OctonoesisConfig = {
       ui: { animation: 'on' },
       maxTurns: 50,
+      maxOutputTokens: 16384,
       sandbox: { enabled: false },
       mcpServers: {},
       hooks: [],
@@ -81,6 +82,14 @@ describe('Octonoesis config schema', () => {
   it('rejects non-positive, fractional, and wrong-typed maxTurns values', () => {
     for (const maxTurns of [0, -1, 1.5, '50']) {
       expectConfigError({ maxTurns }, 'maxTurns', 'expected positive integer')
+    }
+  })
+
+  it('validates maxOutputTokens as a positive integer with a 16384 default', () => {
+    expect(parseConfig({}).maxOutputTokens).toBe(16384)
+    expect(parseConfig({ maxOutputTokens: 8192 }).maxOutputTokens).toBe(8192)
+    for (const maxOutputTokens of [0, -1, 1.5, '8192']) {
+      expectConfigError({ maxOutputTokens }, 'maxOutputTokens', 'expected positive integer')
     }
   })
 

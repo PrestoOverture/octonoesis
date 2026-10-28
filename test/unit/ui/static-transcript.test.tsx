@@ -67,7 +67,11 @@ test('long replies and ten tools never clear the fake TTY', async () => {
         yield { type: 'text_delta', text: 'oracle-finished' }
         finished = true
       }
-      yield { type: 'message_end', usage: { input_tokens: 10, output_tokens: 10 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 10, output_tokens: 10 },
+      }
     },
   })
   await fs.writeFile(path.join(directory, 'fixture.txt'), 'fixture')
@@ -178,7 +182,11 @@ test('compaction shrinks model history while resumed history, task notices and t
         })
         yield { type: 'tool_use', id: 'read-new', name: 'Read', input: { path: 'fixture.txt' } }
       } else yield { type: 'text_delta', text: `after-compact-reply-${calls}\n\n` }
-      yield { type: 'message_end', usage: { input_tokens: 10, output_tokens: 10 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 10, output_tokens: 10 },
+      }
     },
   })
   await fs.writeFile(path.join(directory, 'fixture.txt'), 'fixture')
@@ -290,7 +298,11 @@ test('an unclosed 200-line fence and a tall todo panel stay bounded, then commit
       pending = true
       await gate
       yield { type: 'text_delta', text: '```\n\n' }
-      yield { type: 'message_end', usage: { input_tokens: 10, output_tokens: 10 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 10, output_tokens: 10 },
+      }
       finished = true
     },
   })

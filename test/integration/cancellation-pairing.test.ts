@@ -54,11 +54,15 @@ class PairingProvider implements LLMProvider {
     if (this.calls === 1) {
       yield { type: 'tool_use', id: 'abort-first', name: 'AbortQuery', input: {} }
       yield { type: 'tool_use', id: 'must-not-run', name: 'MustNotRun', input: {} }
-      yield { type: 'message_end', usage: { input_tokens: 3, output_tokens: 2 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 3, output_tokens: 2 },
+      }
       return
     }
     yield { type: 'text_delta', text: 'Continued successfully.' }
-    yield { type: 'message_end', usage: { input_tokens: 2, output_tokens: 1 } }
+    yield { type: 'message_end', stopReason: 'other', usage: { input_tokens: 2, output_tokens: 1 } }
   }
 }
 
@@ -75,11 +79,15 @@ class PermissionPairingProvider implements LLMProvider {
     if (this.calls === 1) {
       yield { type: 'tool_use', id: 'permission-first', name: 'NeedsPermission', input: {} }
       yield { type: 'tool_use', id: 'permission-second', name: 'PermissionMustNotRun', input: {} }
-      yield { type: 'message_end', usage: { input_tokens: 3, output_tokens: 2 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 3, output_tokens: 2 },
+      }
       return
     }
     yield { type: 'text_delta', text: 'Continued after permission cancellation.' }
-    yield { type: 'message_end', usage: { input_tokens: 2, output_tokens: 1 } }
+    yield { type: 'message_end', stopReason: 'other', usage: { input_tokens: 2, output_tokens: 1 } }
   }
 }
 

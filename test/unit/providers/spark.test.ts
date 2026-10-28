@@ -113,7 +113,7 @@ test('default and explicit Spark requests disable thinking and normalize streami
       expect(events).toEqual([
         { type: 'text_delta', text: 'OK' },
         { type: 'tool_use', id: 'call_1', name: 'probe', input: { ok: true } },
-        { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+        { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
       ])
     }
     expect(requests.length).toBe(2)

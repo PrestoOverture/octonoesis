@@ -120,7 +120,11 @@ test('breathes for two seconds, commits once, spinner counts seconds and disappe
     async *createMessageStream() {
       await gate
       yield { type: 'text_delta', text: 'reply-done' }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   try {
@@ -235,7 +239,11 @@ test('permission prompt hides the generating spinner without clears', async () =
     name: 'anthropic',
     async *createMessageStream() {
       await gate
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   try {
@@ -392,7 +400,11 @@ test('conversation resize reprints committed text and cancels reset on unmount',
         text: `committed-resize-reply\n\n${Array.from({ length: 60 }, (_, index) => `streaming-resize-${index}`).join('\n')}`,
       }
       await gate
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   try {
@@ -444,7 +456,11 @@ for (const columns of [91, 60]) {
       async *createMessageStream() {
         yield { type: 'text_delta', text: '终端显示宽度必须正确。'.repeat(80) }
         await gate
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     })
     const check = (chunks: string[]) => {

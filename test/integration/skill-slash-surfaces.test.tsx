@@ -76,7 +76,11 @@ describe('skill slash call sites', () => {
         system = options.system ?? ''
         toolNames = tools.map((tool) => tool.name)
         yield { type: 'text_delta', text: 'ok' }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     setProvider(provider)
@@ -100,7 +104,11 @@ describe('skill slash call sites', () => {
         system = options.system ?? ''
         toolNames = tools.map((tool) => tool.name)
         yield { type: 'text_delta', text: 'ok' }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     setProvider(provider)

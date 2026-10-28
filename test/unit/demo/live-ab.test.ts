@@ -302,7 +302,11 @@ describe('live-ab runSession fixFile old-value validation', () => {
       name: 'anthropic',
       createMessageStream: async function* () {
         yield { type: 'text_delta', text }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
   }
@@ -503,7 +507,11 @@ describe('live-ab seeded transfer mode skips distillation', () => {
           throw new Error('distillation prompt reached the provider in seeded transfer mode')
         }
         yield { type: 'text_delta', text: solverEditText }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
   }
@@ -567,11 +575,19 @@ describe('live-ab seeded transfer mode skips distillation', () => {
         if (firstUserText(messages).includes(DISTILL_MARKER)) {
           distillCalled = true
           yield { type: 'text_delta', text: distillResponseJson }
-          yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+          yield {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }
           return
         }
         yield { type: 'text_delta', text: solverEditText }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     })
 

@@ -164,12 +164,12 @@ function providerEventsForSession(session: ActiveSession): StreamEvent[] {
           name: 'Read',
           input: { path: `src/missing-${session.fixture.id}.ts` },
         },
-        { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+        { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
       ]
     }
     return [
       { type: 'text_delta', text: `Done with ${session.fixture.id}.` },
-      { type: 'message_end', usage: { input_tokens: 5, output_tokens: 3 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 5, output_tokens: 3 } },
     ]
   }
 
@@ -178,12 +178,12 @@ function providerEventsForSession(session: ActiveSession): StreamEvent[] {
       return [
         { type: 'text_delta', text: `Running denied command for ${session.fixture.id}.` },
         { type: 'tool_use', id: `${prefix}-bash-1`, name: 'Bash', input: { command: COMMAND } },
-        { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+        { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
       ]
     }
     return [
       { type: 'text_delta', text: `Done with ${session.fixture.id}.` },
-      { type: 'message_end', usage: { input_tokens: 5, output_tokens: 3 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 5, output_tokens: 3 } },
     ]
   }
 
@@ -197,7 +197,7 @@ function providerEventsForSession(session: ActiveSession): StreamEvent[] {
           name: 'Bash',
           input: { command: COMMAND },
         },
-        { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+        { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
       ]
     }
     if (session.turn === 3) {
@@ -213,7 +213,7 @@ function providerEventsForSession(session: ActiveSession): StreamEvent[] {
     return [
       { type: 'text_delta', text: `Running ${session.fixture.id}.` },
       { type: 'tool_use', id: `${prefix}-bash-1`, name: 'Bash', input: { command: COMMAND } },
-      { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
     ]
   }
 
@@ -251,7 +251,7 @@ function readEditEvents(session: ActiveSession, prefix: string): StreamEvent[] {
         new_string: session.fixture.fix.new,
       },
     },
-    { type: 'message_end', usage: { input_tokens: 20, output_tokens: 10 } },
+    { type: 'message_end', stopReason: 'other', usage: { input_tokens: 20, output_tokens: 10 } },
   ]
 }
 
@@ -264,14 +264,14 @@ function verifyEvents(session: ActiveSession, prefix: string): StreamEvent[] {
       name: 'Bash',
       input: { command: COMMAND },
     },
-    { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+    { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
   ]
 }
 
 function doneEvents(session: ActiveSession): StreamEvent[] {
   return [
     { type: 'text_delta', text: `Done with ${session.fixture.id}.` },
-    { type: 'message_end', usage: { input_tokens: 5, output_tokens: 3 } },
+    { type: 'message_end', stopReason: 'other', usage: { input_tokens: 5, output_tokens: 3 } },
   ]
 }
 
@@ -287,7 +287,11 @@ function createMockProvider(): LLMProvider {
           throw new Error('Extractor requested without an active fixture')
         }
         yield { type: 'text_delta', text: JSON.stringify(extractor) }
-        yield { type: 'message_end', usage: { input_tokens: 5, output_tokens: 5 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 5, output_tokens: 5 },
+        }
         return
       }
 
@@ -311,7 +315,11 @@ function createMockProvider(): LLMProvider {
             advice: `Rule for ${fixture.id}: apply the fixture-specific fix in ${fixture.file}.`,
           }),
         }
-        yield { type: 'message_end', usage: { input_tokens: 5, output_tokens: 5 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 5, output_tokens: 5 },
+        }
         return
       }
 

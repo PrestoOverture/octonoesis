@@ -179,11 +179,19 @@ describe('multi-agent real child integration', () => {
       scriptedEvents: [
         [
           { type: 'tool_use', id: 'read-engine', name: 'Read', input: { path: 'canary.txt' } },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
         [
           { type: 'text_delta', text: 'Child found {{tool_result}}' },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
       ],
     })
@@ -212,7 +220,11 @@ describe('multi-agent real child integration', () => {
           )
           yield { type: 'text_delta', text: 'Parent received result.' }
         }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     setProvider(provider)
@@ -238,11 +250,19 @@ describe('multi-agent real child integration', () => {
       scriptedEvents: [
         [
           { type: 'tool_use', id: 'read-1', name: 'Read', input: { path: 'canary.txt' } },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
         [
           { type: 'text_delta', text: 'Grounded: {{tool_result}}' },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
       ],
     })
@@ -286,11 +306,19 @@ describe('multi-agent real child integration', () => {
       scriptedEvents: [
         [
           { type: 'tool_use', id: 'bash-1', name: 'Bash', input: { command: 'touch escaped' } },
-          { type: 'message_end', usage: { input_tokens: 0, output_tokens: 0 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 0, output_tokens: 0 },
+          },
         ],
         [
           { type: 'text_delta', text: 'refused={{tool_is_error}}' },
-          { type: 'message_end', usage: { input_tokens: 0, output_tokens: 0 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 0, output_tokens: 0 },
+          },
         ],
       ],
     })
@@ -320,11 +348,19 @@ describe('multi-agent real child integration', () => {
       scriptedEvents: [
         [
           { type: 'tool_use', id: 'read-bg', name: 'Read', input: { path: 'canary.txt' } },
-          { type: 'message_end', usage: { input_tokens: 2, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 2, output_tokens: 1 },
+          },
         ],
         [
           { type: 'text_delta', text: 'Background: {{tool_result}}' },
-          { type: 'message_end', usage: { input_tokens: 3, output_tokens: 2 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 3, output_tokens: 2 },
+          },
         ],
       ],
     })
@@ -420,11 +456,19 @@ describe('multi-agent real child integration', () => {
       scriptedEvents: [
         [
           { type: 'tool_use', id: 'glob-1', name: 'Glob', input: { pattern: '*.txt' } },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
         [
           { type: 'text_delta', text: 'latest={{latest_user}}' },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
       ],
     })
@@ -473,7 +517,11 @@ describe('multi-agent real child integration', () => {
         } else {
           yield { type: 'text_delta', text: 'Agent launched.' }
         }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     })
     registerPromptHandler(async () => 'allow_once')

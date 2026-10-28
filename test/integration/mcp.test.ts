@@ -53,7 +53,7 @@ class McpRoundTripProvider implements LLMProvider {
       this.toolResult = JSON.stringify(result)
       yield { type: 'text_delta', text: 'MCP completed.' }
     }
-    yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+    yield { type: 'message_end', stopReason: 'other', usage: { input_tokens: 1, output_tokens: 1 } }
   }
 }
 
@@ -67,7 +67,7 @@ class FinalOnlyProvider implements LLMProvider {
   ): AsyncIterable<StreamEvent> {
     this.firstTools = tools
     yield { type: 'text_delta', text: 'Session continued.' }
-    yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+    yield { type: 'message_end', stopReason: 'other', usage: { input_tokens: 1, output_tokens: 1 } }
   }
 }
 

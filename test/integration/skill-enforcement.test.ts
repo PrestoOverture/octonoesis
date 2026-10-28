@@ -32,11 +32,11 @@ async function refused(requestedName: string, preparedTools: CanonicalTool[]): P
     scriptedEvents: [
       [
         { type: 'tool_use', id: 'smuggled', name: requestedName, input: {} },
-        { type: 'message_end', usage: { input_tokens: 0, output_tokens: 0 } },
+        { type: 'message_end', stopReason: 'other', usage: { input_tokens: 0, output_tokens: 0 } },
       ],
       [
         { type: 'text_delta', text: '{{tool_is_error}} {{tool_result}}' },
-        { type: 'message_end', usage: { input_tokens: 0, output_tokens: 0 } },
+        { type: 'message_end', stopReason: 'other', usage: { input_tokens: 0, output_tokens: 0 } },
       ],
     ],
   })

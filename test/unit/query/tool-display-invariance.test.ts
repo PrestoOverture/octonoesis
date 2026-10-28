@@ -36,7 +36,11 @@ test('Read and failing Bash preserve main canonical messages and journal tool ev
     async *createMessageStream() {
       if (turn++ === 0) yield* calls
       else yield { type: 'text_delta', text: 'finished' }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   const ctx: QueryLoopContext = {
