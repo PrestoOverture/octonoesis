@@ -11,6 +11,32 @@ import type { QueryLoopContext } from '../query/types'
 import type { Tool, ToolResult } from './Tool'
 import { getTool } from './registry'
 
+/** Retry shallow model-supplied scalar strings once; preserve the original failure on rejection. */
+export function safeParseToolInput(tool: Tool, input: unknown) {
+  const original = tool.inputSchema.safeParse(input)
+  if (original.success || typeof input !== 'object' || input === null || Array.isArray(input)) {
+    return original
+  }
+  const coerced = Object.fromEntries(
+    Object.entries(input).map(([key, value]) => [
+      key,
+      typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value)
+        ? Number(value)
+        : value === 'true'
+          ? true
+          : value === 'false'
+            ? false
+            : value,
+    ]),
+  )
+  try {
+    const retry = tool.inputSchema.safeParse(coerced)
+    return retry.success ? retry : original
+  } catch {
+    return original
+  }
+}
+
 /**
  * Checks if a command matches common verification tool patterns (e.g. test, lint, check, compile).
  * @param command The shell command to check.
@@ -167,7 +193,7 @@ export async function runTool(
     // 2. Validate input shape via Zod
     let validatedInput: unknown
     try {
-      const parseResult = tool.inputSchema.safeParse(rawInput)
+      const parseResult = safeParseToolInput(tool, rawInput)
       if (!parseResult.success) {
         const errorMsg = parseResult.error.issues
           .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
