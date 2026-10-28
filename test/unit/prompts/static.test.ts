@@ -9,6 +9,9 @@ test('static prompt is byte-identical across multiple invocations', () => {
   expect(run1).toContain('You are Octonoesis')
   expect(run1).toContain('## Doing Tasks & Philosophy')
   expect(run1).toContain('## Using Your Tools')
+  expect(run1).toContain(
+    'Act through tool calls directly instead of announcing what you are about to do.',
+  )
   expect(run1).toContain('## Safety Rules')
   expect(run1).toContain('## Tone and Style')
   expect(run1).toContain('## Available Tools')
