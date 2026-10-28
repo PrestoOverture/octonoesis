@@ -241,7 +241,7 @@ test('text-only truncation appends a continue note and resumes on the next turn'
   const note = provider.histories[1]?.at(-1)
   expect(note?.role).toBe('user')
   expect(note?.content).toBe(
-    'Your output was cut at 256 tokens. Continue exactly where you stopped.',
+    'Your output was cut at 256 tokens. If you were producing file content, do NOT continue it as text — file content belongs only in tool calls: Write a skeleton or the first chunk, then add the rest with Edit in chunks small enough to fit in one response. Otherwise continue exactly where you stopped.',
   )
   expect(
     (await journal()).filter((row) => row.kind === 'truncation')[0]?.dropped_tool_calls,

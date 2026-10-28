@@ -225,7 +225,9 @@ test('a successful retry still goes through max-output-token truncation recovery
   expect(result.turns).toBe(2)
   expect(result.usage).toEqual({ input_tokens: 10, output_tokens: 14 })
   expect(JSON.stringify(ctx.messages)).not.toContain('stale')
-  expect(JSON.stringify(provider.histories[2])).toContain('Continue exactly where you stopped.')
+  expect(JSON.stringify(provider.histories[2])).toContain(
+    'Otherwise continue exactly where you stopped.',
+  )
   expect(events.filter((event) => event.type === 'stream_retry').length).toBe(1)
   expect((await journal()).filter((event) => event.kind === 'truncation').length).toBe(1)
 })
