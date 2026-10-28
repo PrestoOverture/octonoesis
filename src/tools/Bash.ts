@@ -14,6 +14,13 @@ export const activeSubprocesses = new Set<unknown>()
 // Input validation schema using Zod
 const BashInputSchema = z.object({
   command: z.string().min(1, 'command is required'),
+  timeout_ms: z
+    .number()
+    .int()
+    .positive()
+    .max(600_000)
+    .optional()
+    .describe('Foreground timeout in milliseconds (default 120000, maximum 600000).'),
   run_in_background: z
     .boolean()
     .optional()
@@ -166,12 +173,13 @@ class BashTool implements Tool<BashInput, string> {
         ctx.abortSignal.addEventListener('abort', handleAbort)
       }
 
-      // 3. Set a 120-second hard execution timeout
+      // 3. Set the requested hard execution timeout
+      const timeoutMs = input.timeout_ms ?? 120_000
       timeoutId = setTimeout(() => {
         timedOut = true
         cleanup()
         signalProcessGroup(proc)
-      }, 120_000)
+      }, timeoutMs)
 
       // 4. Spawn process using Bun.spawn
       proc = Bun.spawn({
@@ -207,7 +215,7 @@ class BashTool implements Tool<BashInput, string> {
       if (timedOut) {
         return {
           ok: false,
-          error: 'timeout: Command execution exceeded the 120-second timeout limit and was killed.',
+          error: `timeout: Command execution exceeded the ${timeoutMs}ms timeout limit and was killed.`,
         }
       }
       if (aborted) {

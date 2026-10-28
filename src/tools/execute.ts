@@ -2,13 +2,13 @@ import crypto from 'node:crypto'
 import { defaultCachedExtractor } from '../memory/fingerprint/cache'
 import type { Fingerprint } from '../memory/fingerprint/extract'
 import { scrub } from '../memory/fingerprint/scrub'
-import { appendJournal } from '../memory/journal'
+import { appendJournal, createJournalBuffer } from '../memory/journal'
 import { type VerifyResult, verify } from '../memory/verifier'
 import { requestPermission } from '../permissions/confirm'
 import { preToolUseHook } from '../permissions/hooks'
 import { getResolvedModel } from '../providers/index'
 import type { QueryLoopContext } from '../query/types'
-import type { ToolResult } from './Tool'
+import type { Tool, ToolResult } from './Tool'
 import { getTool } from './registry'
 
 /**
@@ -152,6 +152,7 @@ export async function runTool(
   name: string,
   rawInput: unknown,
   ctx: QueryLoopContext,
+  beforeExecute?: (tool: Tool, input: unknown) => Promise<void>,
 ): Promise<ToolResult> {
   const startTime = performance.now()
   const inputDigest = crypto.createHash('sha256').update(JSON.stringify(rawInput)).digest('hex')
@@ -200,6 +201,11 @@ export async function runTool(
       }
     }
 
+    await beforeExecute?.(tool, validatedInput)
+    if (ctx.abortSignal?.aborted) {
+      return { ok: false, error: 'cancelled: Tool execution cancelled by user.' }
+    }
+
     // 4. Permission Decision Gate
     const isReadOnly = tool.isReadOnly(validatedInput)
     if (!isReadOnly) {
@@ -236,7 +242,11 @@ export async function runTool(
         let toolResult: ToolResult
         let verifyResult: VerifyResult & { isVerificationRun: boolean }
 
-        if (isVerificationRun && !ctx.sandbox?.enabled) {
+        if (
+          isVerificationRun &&
+          !ctx.sandbox?.enabled &&
+          (validatedInput as { timeout_ms?: number }).timeout_ms === undefined
+        ) {
           try {
             const vr = await verify(command, ctx.repoRoot, ctx.abortSignal, true)
             verifyResult = {
@@ -310,7 +320,27 @@ export async function runTool(
 
         return toolResult
       }
-      return await tool.call(validatedInput, ctx)
+      const execution = tool.call(validatedInput, ctx)
+      const signal = ctx.abortSignal
+      if (!beforeExecute || !signal) return await execution
+      return await new Promise<ToolResult>((resolve, reject) => {
+        const cancel = () => {
+          signal.removeEventListener('abort', cancel)
+          resolve({ ok: false, error: 'cancelled: Tool execution cancelled by user.' })
+        }
+        signal.addEventListener('abort', cancel, { once: true })
+        execution.then(
+          (result) => {
+            signal.removeEventListener('abort', cancel)
+            resolve(result)
+          },
+          (error) => {
+            signal.removeEventListener('abort', cancel)
+            reject(error)
+          },
+        )
+        if (signal.aborted) cancel()
+      })
     } catch (err) {
       return {
         ok: false,
@@ -371,4 +401,53 @@ export async function runTool(
   })
 
   return result
+}
+
+/** Prepare one pipeline, suspending before permission/execution until the engine starts it. */
+export async function prepareToolExecution(name: string, input: unknown, ctx: QueryLoopContext) {
+  const journal = createJournalBuffer()
+  let start!: () => void
+  const gate = new Promise<void>((resolve) => {
+    start = resolve
+  })
+  let prepared!: () => void
+  const ready = new Promise<void>((resolve) => {
+    prepared = resolve
+  })
+  let concurrencySafe = false
+  const result = journal
+    .run(() =>
+      runTool(name, input, ctx, async (tool, validatedInput) => {
+        // A prompt is always a barrier, even if the tool otherwise advertises safety.
+        try {
+          concurrencySafe =
+            tool.isConcurrencySafe(validatedInput) && tool.isReadOnly(validatedInput)
+        } catch {
+          concurrencySafe = false
+        }
+        prepared()
+        await gate
+      }),
+    )
+    .then(
+      (value) => {
+        prepared() // Invalid inputs and denied pre-hooks never reach beforeExecute.
+        return value
+      },
+      (error) => {
+        prepared()
+        return { ok: false as const, error: `tool_execution_error: ${String(error)}` }
+      },
+    )
+  await ready
+  return {
+    concurrencySafe,
+    start,
+    async finish(): Promise<ToolResult> {
+      start()
+      const value = await result
+      journal.flush()
+      return value
+    },
+  }
 }
