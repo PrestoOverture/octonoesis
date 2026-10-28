@@ -11,6 +11,23 @@ import { assertInsideRepo } from '../utils/path'
 const allowlist = new Set<string>()
 const MAX_BUFFERED_PERMISSION_LINES = 32
 
+export type PermissionMode = 'ask' | 'accept-edits' | 'bypass'
+let permissionMode: PermissionMode = 'ask'
+let promptOutput: NodeJS.WriteStream = process.stdout
+
+/** Configures the one-shot permission boundary; JSON callers keep stdout machine-readable. */
+export function configureOneShotPermissions(
+  mode: PermissionMode = 'ask',
+  output: NodeJS.WriteStream = process.stdout,
+): void {
+  resetFallbackPromptState()
+  permissionMode = mode
+  promptOutput = output
+  if (mode === 'bypass') {
+    process.stderr.write('Warning: --permission-mode bypass auto-approves all tool permissions.\n')
+  }
+}
+
 /**
  * Computes a unique exact-input hash signature for a tool call.
  * @param toolName The name of the tool.
@@ -80,7 +97,7 @@ function pauseFallbackPrompt(state: FallbackPromptState): void {
 function createFallbackPromptState(): FallbackPromptState {
   const promptInterface = readline.createInterface({
     input: fallbackPromptInput,
-    output: process.stdout,
+    output: promptOutput,
   })
   const state: FallbackPromptState = {
     input: fallbackPromptInput,
@@ -145,12 +162,12 @@ async function readFallbackAnswer(prompt: string): Promise<string | null> {
   const state = getFallbackPromptState()
   const buffered = state.bufferedLines.shift()
   if (buffered !== undefined) {
-    process.stdout.write(prompt)
+    promptOutput.write(prompt)
     pauseFallbackPrompt(state)
     return buffered
   }
   if (state.eof) {
-    process.stdout.write(prompt)
+    promptOutput.write(prompt)
     return null
   }
 
@@ -293,6 +310,14 @@ export async function requestPermission(
     }
   }
 
+  if (
+    permissionMode === 'bypass' ||
+    (permissionMode === 'accept-edits' && (toolName === 'Write' || toolName === 'Edit'))
+  ) {
+    appendJournal({ kind: 'permission', decision: 'allow_once', key })
+    return 'allow_once'
+  }
+
   // If this exact parameters signature was already approved as 'always allow'
   if (allowlist.has(key)) {
     return 'allow_always'
@@ -319,10 +344,10 @@ export async function requestPermission(
   }
 
   // Interactive console CLI fallback for verification
-  console.log(`\n⚠️  [Permission Request] Tool: ${toolName}`)
-  console.log(`Parameters: ${JSON.stringify(input, null, 2)}`)
+  promptOutput.write(`\n⚠️  [Permission Request] Tool: ${toolName}\n`)
+  promptOutput.write(`Parameters: ${JSON.stringify(input, null, 2)}\n`)
   if (preview) {
-    console.log(createPatch(preview.path, preview.old_string, preview.new_string))
+    promptOutput.write(`${createPatch(preview.path, preview.old_string, preview.new_string)}\n`)
   }
   const prompted = await raceWithAbort(
     readFallbackAnswer('Allow execution? [y] Yes once / [n] No / [a] Always for this input: '),

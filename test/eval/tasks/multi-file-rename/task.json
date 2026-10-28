@@ -1,0 +1,5 @@
+{
+  "prompt": "Rename the User domain to Customer across src/: user.ts becomes customer.ts, User becomes Customer, name becomes displayName, formatUser becomes formatCustomer, and userLabel becomes customerLabel. Update imports and the public barrel. Labels must read Customer <id>: <displayName>. Remove the old user.ts module.",
+  "check": "bun test",
+  "timeout_s": 120
+}

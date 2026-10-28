@@ -3,8 +3,10 @@ import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { PassThrough } from 'node:stream'
+import { parseConfig } from '../../../src/config/schema'
 import {
   clearAllowlist,
+  configureOneShotPermissions,
   getPermissionKey,
   registerPromptHandler,
   requestPermission,
@@ -66,14 +68,39 @@ describe('Permissions confirm', () => {
     expect(decision).toBe('deny')
   })
 
+  for (const mode of ['ask', 'accept-edits', 'bypass'] as const) {
+    test(`explicit deny patterns win in ${mode} mode`, async () => {
+      let promptCount = 0
+      registerPromptHandler(async () => {
+        promptCount++
+        return 'allow_once'
+      })
+      configureOneShotPermissions(mode)
+      try {
+        const ctx = {
+          repoRoot: process.cwd(),
+          config: parseConfig({ permissions: { denyPatterns: ['Bash(rm *)', 'Edit', 'Write'] } }),
+        }
+        expect(await requestPermission('Bash', { command: 'rm -rf x' }, ctx)).toBe('deny')
+        expect(await requestPermission('Edit', { path: 'main.ts' }, ctx)).toBe('deny')
+        expect(await requestPermission('Write', { path: 'main.ts' }, ctx)).toBe('deny')
+        expect(promptCount).toBe(0)
+      } finally {
+        configureOneShotPermissions()
+        unregisterPromptHandler()
+      }
+    })
+  }
+
   test('the fallback overwrite prompt prints an old-to-new diff', async () => {
     const repoRoot = await realpath(await mkdtemp(join(tmpdir(), 'write-permission-')))
     const input = new PassThrough()
-    const originalLog = console.log
-    const output: string[] = []
-    console.log = (...args: unknown[]) => {
-      output.push(args.join(' '))
-    }
+    const capture = new PassThrough()
+    let output = ''
+    capture.on('data', (chunk) => {
+      output += chunk.toString()
+    })
+    configureOneShotPermissions('ask', capture as unknown as NodeJS.WriteStream)
     try {
       await writeFile(join(repoRoot, 'main.ts'), 'old content\n')
       setPermissionInputStreamForTests(input)
@@ -85,15 +112,16 @@ describe('Permissions confirm', () => {
           { repoRoot },
         ),
       ).toBe('deny')
-      const printed = output.join('\n')
+      const printed = output
       expect(printed).toContain('Tool: Write')
       expect(printed).toContain('@@')
       expect(printed).toContain('-old content')
       expect(printed).toContain('+new content')
     } finally {
-      console.log = originalLog
+      configureOneShotPermissions()
       setPermissionInputStreamForTests()
       input.destroy()
+      capture.destroy()
       await rm(repoRoot, { recursive: true, force: true })
     }
   })

@@ -1,0 +1,13 @@
+--- a/src/names.ts
++++ b/src/names.ts
+@@ -2,9 +2,5 @@
+   ids: number[],
+   lookup: (id: number) => Promise<string>,
+ ): Promise<string[]> {
+-  const names: string[] = []
+-  ids.forEach(async (id) => {
+-    names.push(await lookup(id))
+-  })
+-  return names
++  return Promise.all(ids.map(lookup))
+ }

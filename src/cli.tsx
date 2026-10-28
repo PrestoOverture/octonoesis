@@ -2,7 +2,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import { render } from 'ink'
 import React from 'react'
 import { version } from '../package.json'
@@ -10,6 +10,7 @@ import { getConfigTrustWarning, loadConfig } from './config/load.ts'
 import type { OctonoesisConfig } from './config/schema.ts'
 import { appendExperimentRecord, readExperiments } from './experiments/registry.ts'
 import type { ExperimentRecord } from './experiments/schema.ts'
+import { runJsonQuery } from './headless.ts'
 import {
   formatMemoryUnavailableNotice,
   initializeMemoryAvailability,
@@ -17,6 +18,7 @@ import {
 import { flushJournal, formatJournalFailureNotice } from './memory/journal.ts'
 import { rebuildRules } from './memory/rules/rebuild.ts'
 import { getRulesDir } from './memory/rules/store.ts'
+import { configureOneShotPermissions } from './permissions/confirm.ts'
 import { claimProcessSignals } from './providers/fork.ts'
 import { getResolvedModel, setConfiguredModel } from './providers/index.ts'
 import { type ToolContext, runQuery } from './query'
@@ -287,9 +289,23 @@ program
   .option('-c, --continue', 'Resume the most recent saved session for this repository')
   .option('--resume <sessionId>', 'Resume a specific saved session')
   .option('--save-session', 'Persist this one-shot session for later resume')
+  .addOption(
+    new Option('--output-format <format>', 'One-shot output format')
+      .choices(['text', 'json'])
+      .default('text'),
+  )
+  .addOption(
+    new Option('--permission-mode <mode>', 'One-shot tool permission policy')
+      .choices(['ask', 'accept-edits', 'bypass'])
+      .default('ask'),
+  )
   .argument('[prompt]', 'One-shot prompt to send to the model')
   .action(async (prompt?: string) => {
     const options = program.opts()
+    if (!prompt && (options.outputFormat === 'json' || options.permissionMode !== 'ask')) {
+      console.error('Error: --output-format json and --permission-mode require a one-shot prompt.')
+      process.exit(1)
+    }
     const memoryDir = getMemoryDir()
     await initializeMemoryAvailability(memoryDir)
     let resumedSession: StoredSession | undefined
@@ -434,6 +450,31 @@ program
       }
 
       try {
+        configureOneShotPermissions(
+          options.permissionMode,
+          options.outputFormat === 'json' ? process.stderr : process.stdout,
+        )
+        if (options.outputFormat === 'json') {
+          const sessionId = crypto.randomUUID()
+          await runJsonQuery(
+            await rewriteSkillSlashCommand(prompt, startupRepoRoot),
+            {
+              repoRoot: startupRepoRoot,
+              memoryDir,
+              messages: structuredClone(resumedSession?.messages ?? []),
+              persistSession:
+                resumedSession !== undefined ||
+                options.continue === true ||
+                options.saveSession === true,
+              sessionId,
+              sessionState: createSessionState(sessionId, getResolvedModel()),
+              sandbox,
+              config: startupConfig,
+            },
+            controller.signal,
+          )
+          return
+        }
         await runQuery(
           await rewriteSkillSlashCommand(prompt, startupRepoRoot),
           sandbox,
@@ -456,6 +497,8 @@ program
         } else {
           throw error
         }
+      } finally {
+        configureOneShotPermissions()
       }
     } finally {
       if (signalExitCode !== undefined) process.exit(signalExitCode)
