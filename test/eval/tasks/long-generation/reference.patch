@@ -1,0 +1,455 @@
+diff --git a/src/vectors.ts b/src/vectors.ts
+index 336ce12..cb4e76e 100644
+--- a/src/vectors.ts
++++ b/src/vectors.ts
+@@ -1 +1,449 @@
+-export {}
++export function project00(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 1 + index * 2 - 0)
++  }
++  return output
++}
++
++export function project01(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 2 + index * 3 - 1)
++  }
++  return output
++}
++
++export function project02(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 3 + index * 4 - 2)
++  }
++  return output
++}
++
++export function project03(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 4 + index * 5 - 3)
++  }
++  return output
++}
++
++export function project04(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 5 + index * 6 - 4)
++  }
++  return output
++}
++
++export function project05(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 6 + index * 2 - 5)
++  }
++  return output
++}
++
++export function project06(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 7 + index * 3 - 6)
++  }
++  return output
++}
++
++export function project07(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 1 + index * 4 - 7)
++  }
++  return output
++}
++
++export function project08(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 2 + index * 5 - 8)
++  }
++  return output
++}
++
++export function project09(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 3 + index * 6 - 9)
++  }
++  return output
++}
++
++export function project10(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 4 + index * 2 - 10)
++  }
++  return output
++}
++
++export function project11(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 5 + index * 3 - 11)
++  }
++  return output
++}
++
++export function project12(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 6 + index * 4 - 12)
++  }
++  return output
++}
++
++export function project13(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 7 + index * 5 - 13)
++  }
++  return output
++}
++
++export function project14(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 1 + index * 6 - 14)
++  }
++  return output
++}
++
++export function project15(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 2 + index * 2 - 15)
++  }
++  return output
++}
++
++export function project16(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 3 + index * 3 - 16)
++  }
++  return output
++}
++
++export function project17(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 4 + index * 4 - 17)
++  }
++  return output
++}
++
++export function project18(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 5 + index * 5 - 18)
++  }
++  return output
++}
++
++export function project19(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 6 + index * 6 - 19)
++  }
++  return output
++}
++
++export function project20(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 7 + index * 2 - 20)
++  }
++  return output
++}
++
++export function project21(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 1 + index * 3 - 21)
++  }
++  return output
++}
++
++export function project22(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 2 + index * 4 - 22)
++  }
++  return output
++}
++
++export function project23(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 3 + index * 5 - 23)
++  }
++  return output
++}
++
++export function project24(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 4 + index * 6 - 24)
++  }
++  return output
++}
++
++export function project25(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 5 + index * 2 - 25)
++  }
++  return output
++}
++
++export function project26(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 6 + index * 3 - 26)
++  }
++  return output
++}
++
++export function project27(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 7 + index * 4 - 27)
++  }
++  return output
++}
++
++export function project28(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 1 + index * 5 - 28)
++  }
++  return output
++}
++
++export function project29(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 2 + index * 6 - 29)
++  }
++  return output
++}
++
++export function project30(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 3 + index * 2 - 30)
++  }
++  return output
++}
++
++export function project31(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 4 + index * 3 - 31)
++  }
++  return output
++}
++
++export function project32(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 5 + index * 4 - 32)
++  }
++  return output
++}
++
++export function project33(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 6 + index * 5 - 33)
++  }
++  return output
++}
++
++export function project34(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 7 + index * 6 - 34)
++  }
++  return output
++}
++
++export function project35(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 1 + index * 2 - 35)
++  }
++  return output
++}
++
++export function project36(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 2 + index * 3 - 36)
++  }
++  return output
++}
++
++export function project37(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 3 + index * 4 - 37)
++  }
++  return output
++}
++
++export function project38(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 4 + index * 5 - 38)
++  }
++  return output
++}
++
++export function project39(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 5 + index * 6 - 39)
++  }
++  return output
++}
++
++export function project40(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 6 + index * 2 - 40)
++  }
++  return output
++}
++
++export function project41(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 7 + index * 3 - 41)
++  }
++  return output
++}
++
++export function project42(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 1 + index * 4 - 42)
++  }
++  return output
++}
++
++export function project43(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 2 + index * 5 - 43)
++  }
++  return output
++}
++
++export function project44(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 3 + index * 6 - 44)
++  }
++  return output
++}
++
++export function project45(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 4 + index * 2 - 45)
++  }
++  return output
++}
++
++export function project46(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 5 + index * 3 - 46)
++  }
++  return output
++}
++
++export function project47(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 6 + index * 4 - 47)
++  }
++  return output
++}
++
++export function project48(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 7 + index * 5 - 48)
++  }
++  return output
++}
++
++export function project49(values: readonly number[]): number[] {
++  const output: number[] = []
++  for (let index = 0; index < values.length; index++) {
++    const value = values[index] ?? 0
++    output.push(value * 1 + index * 6 - 49)
++  }
++  return output
++}

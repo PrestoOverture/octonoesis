@@ -1,0 +1,13 @@
+diff --git a/src/tariffs.ts b/src/tariffs.ts
+index 0fccc62..558d5b5 100644
+--- a/src/tariffs.ts
++++ b/src/tariffs.ts
+@@ -2598,7 +2598,7 @@ export const tariffs = [
+ 
+ export function invoice(codes: number[], discount: number): number {
+   const subtotal = codes.reduce((sum, code) => sum + (tariffs.find(row => row.code === code)?.cents ?? 0), 0)
+-  return Math.round(subtotal * (1 + discount))
++  return Math.round(subtotal * (1 - discount))
+ }
+ // Reserved generated slot 0
+ // Reserved generated slot 1

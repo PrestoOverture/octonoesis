@@ -1,0 +1,70 @@
+diff --git a/contract.test.ts b/contract.test.ts
+index 197bd8a..de9a680 100644
+--- a/contract.test.ts
++++ b/contract.test.ts
+@@ -1,16 +1,13 @@
+ import { expect, test } from 'bun:test'
+-import * as api from './src/format'
++import { renderUser } from './src/format'
+ import { view0 } from './src/view0'
+ import { view1 } from './src/view1'
+ import { view2 } from './src/view2'
+ import { view3 } from './src/view3'
+ 
+ test('contract', () => {
+-  expect('renderUser' in api).toBe(true)
+-  const render = Reflect.get(api, 'renderUser')
+-  expect(render(' Ada ')).toBe('Ada')
+-  expect(render(' Ada ', { uppercase: false })).toBe('Ada')
+-  expect(render(' Ada ', { uppercase: true })).toBe('ADA')
++  expect(renderUser(' Ada ')).toBe('Ada')
++  expect(renderUser(' Ada ', { uppercase: true })).toBe('ADA')
+   expect(view0(' Ada ')).toBe('ADA')
+   expect(view1(' Ada ')).toBe('ADA')
+   expect(view2(' Ada ')).toBe('ADA')
+diff --git a/src/format.ts b/src/format.ts
+index 6869106..1d13081 100644
+--- a/src/format.ts
++++ b/src/format.ts
+@@ -1 +1,4 @@
+-export function formatUser(name: string): string { return name.trim() }
++export function renderUser(name: string, options: { uppercase?: boolean } = {}): string {
++  const value = name.trim()
++  return options.uppercase ? value.toUpperCase() : value
++}
+diff --git a/src/view0.ts b/src/view0.ts
+index 9bb0a73..6a6dad6 100644
+--- a/src/view0.ts
++++ b/src/view0.ts
+@@ -1,2 +1,2 @@
+-import { formatUser } from './format'
+-export const view0 = (name: string) => formatUser(name)
++import { renderUser } from './format'
++export const view0 = (name: string) => renderUser(name, { uppercase: true })
+diff --git a/src/view1.ts b/src/view1.ts
+index 99decef..0cfa442 100644
+--- a/src/view1.ts
++++ b/src/view1.ts
+@@ -1,2 +1,2 @@
+-import { formatUser } from './format'
+-export const view1 = (name: string) => formatUser(name)
++import { renderUser } from './format'
++export const view1 = (name: string) => renderUser(name, { uppercase: true })
+diff --git a/src/view2.ts b/src/view2.ts
+index ba91a62..ebfc7be 100644
+--- a/src/view2.ts
++++ b/src/view2.ts
+@@ -1,2 +1,2 @@
+-import { formatUser } from './format'
+-export const view2 = (name: string) => formatUser(name)
++import { renderUser } from './format'
++export const view2 = (name: string) => renderUser(name, { uppercase: true })
+diff --git a/src/view3.ts b/src/view3.ts
+index 31c7fa1..905e2fb 100644
+--- a/src/view3.ts
++++ b/src/view3.ts
+@@ -1,2 +1,2 @@
+-import { formatUser } from './format'
+-export const view3 = (name: string) => formatUser(name)
++import { renderUser } from './format'
++export const view3 = (name: string) => renderUser(name, { uppercase: true })

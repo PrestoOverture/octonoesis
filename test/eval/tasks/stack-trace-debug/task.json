@@ -1,0 +1,5 @@
+{
+  "prompt": "Error: invalid cents\n    at price (src/price.ts:2:42)\n    at receipt (src/receipt.ts:2:99)\n    at checkout (src/checkout.ts:3:10)\n    at <anonymous> (checkout.test.ts:4:10)",
+  "check": "bun test",
+  "timeout_s": 240
+}

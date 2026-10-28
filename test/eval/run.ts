@@ -152,7 +152,7 @@ async function evaluate(
     }
     if (cli.timed_out) result.error = `CLI timed out after ${task.timeout_s}s`
     // Check even when the agent failed: a partial attempt can still solve a task.
-    const checkEnv = { ...env }
+    const checkEnv = { ...env, EVAL_TASK_DIR: path.join(import.meta.dir, 'tasks', id) }
     for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'SPARK_API_KEY']) {
       Reflect.deleteProperty(checkEnv, key)
     }
