@@ -242,13 +242,15 @@ export async function runTool(
         let toolResult: ToolResult
         let verifyResult: VerifyResult & { isVerificationRun: boolean }
 
-        if (
-          isVerificationRun &&
-          !ctx.sandbox?.enabled &&
-          (validatedInput as { timeout_ms?: number }).timeout_ms === undefined
-        ) {
+        if (isVerificationRun && !ctx.sandbox?.enabled) {
           try {
-            const vr = await verify(command, ctx.repoRoot, ctx.abortSignal, true)
+            const vr = await verify(
+              command,
+              ctx.repoRoot,
+              ctx.abortSignal,
+              true,
+              (validatedInput as { timeout_ms?: number }).timeout_ms,
+            )
             verifyResult = {
               ...vr,
               isVerificationRun,

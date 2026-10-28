@@ -31,6 +31,7 @@ export interface VerifyResult {
  * @param repoRoot The absolute path of the repository root.
  * @param signal Optional abort signal for cancellation.
  * @param isVerificationRun Whether this is a verification run.
+ * @param timeoutMs Optional Bash execution timeout in milliseconds.
  * @returns A promise resolving to the VerifyResult.
  */
 export async function verify(
@@ -38,6 +39,7 @@ export async function verify(
   repoRoot: string,
   signal?: AbortSignal,
   isVerificationRun = true,
+  timeoutMs?: number,
 ): Promise<VerifyResult> {
   const hookResult = await preToolUseHook('Bash', { command }, { repoRoot, abortSignal: signal })
   if (hookResult.action === 'deny') {
@@ -51,7 +53,7 @@ export async function verify(
       : command
 
   const result = await bashTool.call(
-    { command: effectiveCommand },
+    { command: effectiveCommand, timeout_ms: timeoutMs },
     { repoRoot, abortSignal: signal },
   )
   if (!result.ok) {
