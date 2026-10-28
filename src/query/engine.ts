@@ -52,6 +52,7 @@ import { SendMessageTool } from '../tools/SendMessageTool'
 import { SkillTool } from '../tools/SkillTool'
 import { todoWriteTool } from '../tools/TodoWrite'
 import type { ToolContext } from '../tools/Tool'
+import { webFetchTool } from '../tools/WebFetch'
 import { writeTool } from '../tools/Write'
 import { runTool } from '../tools/execute'
 import { getAllTools, registerTool, unregisterTool } from '../tools/registry'
@@ -96,6 +97,7 @@ registerTool(writeTool)
 registerTool(editTool)
 registerTool(grepTool)
 registerTool(todoWriteTool)
+registerTool(webFetchTool)
 
 const sessionAgentTools = new WeakMap<QueryLoopContext, [AgentTool, SendMessageTool]>()
 

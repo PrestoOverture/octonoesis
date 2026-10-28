@@ -18,7 +18,13 @@ const MAX_BUFFERED_PERMISSION_LINES = 32
  * @returns The generated permission key string.
  */
 export function getPermissionKey(toolName: string, input: unknown): string {
-  const serialized = JSON.stringify(input)
+  let serialized = JSON.stringify(input)
+  // Web approval is scoped to a host for this session, independent of path or output limit.
+  if (toolName === 'WebFetch' && typeof input === 'object' && input !== null && 'url' in input) {
+    serialized = JSON.stringify({
+      host: new URL(String(input.url)).hostname.toLowerCase().replace(/\.$/, ''),
+    })
+  }
   const hash = crypto.createHash('sha256').update(serialized).digest('hex')
   return `${toolName}:${hash.slice(0, 8)}`
 }
