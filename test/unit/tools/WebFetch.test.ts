@@ -223,6 +223,35 @@ describe('WebFetch', () => {
     expect(error(await run({ url: url('/binary') }))).toContain('binary_content')
   })
 
+  it('classifies non-public ranges and embedded IPv4 addresses', () => {
+    const cases: Array<[string, boolean]> = [
+      ['100.64.0.1', true],
+      ['198.18.0.1', true],
+      ['224.0.0.1', true],
+      ['240.0.0.1', true],
+      ['255.255.255.255', true],
+      ['192.0.0.1', true],
+      ['192.0.2.1', true],
+      ['198.51.100.1', true],
+      ['203.0.113.1', true],
+      ['ff02::1', true],
+      ['2001:db8::1', true],
+      ['64:ff9b::7f00:1', true],
+      ['64:ff9b:1:7f00:0:100::', true],
+      ['64:ff9b:1::7f00:1', true],
+      ['2002:7f00:1::', true],
+      ['::127.0.0.1', true],
+      ['::ffff:100.64.0.1', true],
+      ['8.8.8.8', false],
+      ['2606:4700::1111', false],
+      ['64:ff9b::808:808', false],
+      ['64:ff9b:1:808:8:800::', false],
+      ['2002:808:808::', false],
+      ['::8.8.8.8', false],
+    ]
+    expect(cases.map(([address]) => [address, isPrivateAddress(address)])).toEqual(cases)
+  })
+
   it('refuses literal localhost, loopback, link-local, RFC1918, ULA and metadata targets', async () => {
     registerTool(new WebFetchTool({ resolve: async () => ['93.184.216.34'] }))
     for (const host of [

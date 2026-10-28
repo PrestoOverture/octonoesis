@@ -33,10 +33,18 @@ const privateAddresses = new BlockList()
 for (const [address, prefix] of [
   ['0.0.0.0', 8],
   ['10.0.0.0', 8],
+  ['100.64.0.0', 10],
   ['127.0.0.0', 8],
   ['169.254.0.0', 16],
   ['172.16.0.0', 12],
+  ['192.0.0.0', 24],
+  ['192.0.2.0', 24],
   ['192.168.0.0', 16],
+  ['198.18.0.0', 15],
+  ['198.51.100.0', 24],
+  ['203.0.113.0', 24],
+  ['224.0.0.0', 4],
+  ['240.0.0.0', 4],
 ] as const) {
   privateAddresses.addSubnet(address, prefix, 'ipv4')
 }
@@ -44,16 +52,45 @@ privateAddresses.addAddress('100.100.100.200', 'ipv4') // Alibaba metadata
 for (const [address, prefix] of [
   ['::', 128],
   ['::1', 128],
+  ['2001:db8::', 32],
   ['fc00::', 7],
   ['fe80::', 10],
+  ['ff00::', 8],
 ] as const) {
   privateAddresses.addSubnet(address, prefix, 'ipv6')
 }
 
-/** Includes IPv4-mapped IPv6 addresses; invalid DNS answers fail closed. */
+/** Includes IPv4 embedded in IPv6 transition addresses; invalid DNS answers fail closed. */
 export function isPrivateAddress(address: string): boolean {
   const family = isIP(address)
-  return family === 0 || privateAddresses.check(address, family === 6 ? 'ipv6' : 'ipv4')
+  if (family === 0 || privateAddresses.check(address, family === 6 ? 'ipv6' : 'ipv4')) return true
+  if (family !== 6) return false
+
+  // URL canonicalization converts dotted IPv4 tails to hex before expanding ::.
+  const canonical = new URL(`http://[${address.split('%')[0]}]/`).hostname.slice(1, -1)
+  const [head = '', tail] = canonical.split('::')
+  const leading = head ? head.split(':') : []
+  const trailing = tail ? tail.split(':') : []
+  const words =
+    tail === undefined
+      ? leading
+      : [...leading, ...Array<string>(8 - leading.length - trailing.length).fill('0'), ...trailing]
+  const hex = words.map((word) => word.padStart(4, '0')).join('')
+  let embedded: string
+  if (hex.startsWith('000000000000000000000000') || hex.startsWith('0064ff9b0000000000000000')) {
+    embedded = hex.slice(24) // IPv4-compatible ::/96 or NAT64 64:ff9b::/96
+  } else if (hex.startsWith('0064ff9b0001')) {
+    // RFC 6052 /48: IPv4 occupies bits 48..63 and 72..87, skipping the reserved byte.
+    embedded = hex.slice(12, 16) + hex.slice(18, 22)
+  } else if (hex.startsWith('2002')) {
+    embedded = hex.slice(4, 12) // 6to4 embeds IPv4 immediately after 2002::/16.
+  } else {
+    return false
+  }
+  const ipv4 = [0, 2, 4, 6]
+    .map((offset) => Number.parseInt(embedded.slice(offset, offset + 2), 16))
+    .join('.')
+  return privateAddresses.check(ipv4, 'ipv4')
 }
 
 interface WebFetchOptions {
