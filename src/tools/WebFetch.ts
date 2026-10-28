@@ -65,7 +65,13 @@ export function isPrivateAddress(address: string): boolean {
   const family = isIP(address)
   if (family === 0 || privateAddresses.check(address, family === 6 ? 'ipv6' : 'ipv4')) return true
   if (family !== 6) return false
+  const ipv4 = embeddedIPv4(address)
+  return ipv4 !== undefined && privateAddresses.check(ipv4, 'ipv4')
+}
 
+function embeddedIPv4(address: string): string | undefined {
+  if (isIP(address) === 4) return address
+  if (isIP(address) !== 6) return undefined
   // URL canonicalization converts dotted IPv4 tails to hex before expanding ::.
   const canonical = new URL(`http://[${address.split('%')[0]}]/`).hostname.slice(1, -1)
   const [head = '', tail] = canonical.split('::')
@@ -77,21 +83,28 @@ export function isPrivateAddress(address: string): boolean {
       : [...leading, ...Array<string>(8 - leading.length - trailing.length).fill('0'), ...trailing]
   const hex = words.map((word) => word.padStart(4, '0')).join('')
   let embedded: string
-  if (hex.startsWith('000000000000000000000000') || hex.startsWith('0064ff9b0000000000000000')) {
-    embedded = hex.slice(24) // IPv4-compatible ::/96 or NAT64 64:ff9b::/96
+  if (
+    hex.startsWith('000000000000000000000000') || // IPv4-compatible
+    hex.startsWith('00000000000000000000ffff') || // IPv4-mapped
+    hex.startsWith('0000000000000000ffff0000') || // IPv4-translated
+    hex.startsWith('0064ff9b0000000000000000') // NAT64 /96
+  ) {
+    embedded = hex.slice(24)
   } else if (hex.startsWith('0064ff9b0001')) {
     // RFC 6052 /48: IPv4 occupies bits 48..63 and 72..87, skipping the reserved byte.
     embedded = hex.slice(12, 16) + hex.slice(18, 22)
   } else if (hex.startsWith('2002')) {
     embedded = hex.slice(4, 12) // 6to4 embeds IPv4 immediately after 2002::/16.
   } else {
-    return false
+    return undefined
   }
-  const ipv4 = [0, 2, 4, 6]
+  return [0, 2, 4, 6]
     .map((offset) => Number.parseInt(embedded.slice(offset, offset + 2), 16))
     .join('.')
-  return privateAddresses.check(ipv4, 'ipv4')
 }
+
+const fakeIpAddresses = new BlockList()
+fakeIpAddresses.addSubnet('198.18.0.0', 15, 'ipv4')
 
 interface WebFetchOptions {
   resolve?: (hostname: string) => Promise<string[]>
@@ -276,11 +289,20 @@ export class WebFetchTool implements Tool<WebFetchInput, string> {
         if (addresses.length === 0 || addresses.some((address) => !isIP(address))) {
           throw new Error('dns_error: Host did not resolve to an IP address.')
         }
+        // Fake-IP DNS proxies route this pool through a TUN and resolve the real destination
+        // upstream. For hostname-only answers entirely in the pool, trust that proxy: the
+        // local SSRF check cannot inspect the real target. Literals and mixed answers stay blocked.
+        const fakeIpHost =
+          !isIP(hostname) &&
+          addresses.every((address) => {
+            const ipv4 = embeddedIPv4(address)
+            return ipv4 !== undefined && fakeIpAddresses.check(ipv4, 'ipv4')
+          })
         if (
           !ctx.config?.webFetch?.allowPrivateNetwork &&
           (hostname === 'localhost' ||
             hostname.endsWith('.localhost') ||
-            addresses.some((address) => privateCheck(address, hostname)))
+            (!fakeIpHost && addresses.some((address) => privateCheck(address, hostname))))
         ) {
           throw new Error(`private_network: Refusing private or metadata target ${hostname}.`)
         }

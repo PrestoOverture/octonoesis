@@ -28,6 +28,7 @@ let originalTools: Tool[]
 let requests: string[]
 let prompts: unknown[]
 let fetchSpy: ReturnType<typeof spyOn>
+let realFetch: typeof globalThis.fetch
 const fixtureHost = 'fixture.test'
 const resolveFixture = async () => ['127.0.0.1']
 const fixturePrivateCheck = (address: string, hostname: string) =>
@@ -127,7 +128,7 @@ beforeEach(async () => {
       return new Response('plain text')
     },
   })
-  const realFetch = globalThis.fetch
+  realFetch = globalThis.fetch
   fetchSpy = spyOn(globalThis, 'fetch').mockImplementation(
     (target: RequestInfo | URL, options?: RequestInit) => {
       const destination = new URL(target instanceof Request ? target.url : String(target))
@@ -242,14 +243,71 @@ describe('WebFetch', () => {
       ['2002:7f00:1::', true],
       ['::127.0.0.1', true],
       ['::ffff:100.64.0.1', true],
+      ['::ffff:0:a00:1', true],
+      ['::ffff:0:c612:80', true],
       ['8.8.8.8', false],
       ['2606:4700::1111', false],
       ['64:ff9b::808:808', false],
       ['64:ff9b:1:808:8:800::', false],
       ['2002:808:808::', false],
       ['::8.8.8.8', false],
+      ['::ffff:0:808:808', false],
     ]
     expect(cases.map(([address]) => [address, isPrivateAddress(address)])).toEqual(cases)
+  })
+
+  it('allows hostname-only fake-IP answers and their IPv6 embeddings with host approval', async () => {
+    const addresses = [
+      '198.18.0.128',
+      '::ffff:c612:80',
+      '::ffff:0:c612:80',
+      '64:ff9b::c612:80',
+      '64:ff9b:1:c612:0:8000::',
+      '2002:c612:80::',
+      '::c612:80',
+    ]
+    let pinned = ''
+    fetchSpy.mockImplementation((target: URL, options?: RequestInit) => {
+      const destination = new URL(target)
+      expect(destination.hostname).toBe(pinned)
+      expect(destination.port).toBe(String(server.port))
+      destination.hostname = '127.0.0.1'
+      return realFetch(destination, options)
+    })
+    registerPromptHandler(async (_name, input) => {
+      prompts.push(input)
+      return 'allow_always'
+    })
+    for (const address of addresses) {
+      pinned = new URL(`http://${address.includes(':') ? `[${address}]` : address}/`).hostname
+      registerTool(new WebFetchTool({ resolve: async () => [address] }))
+      expect(value(await run({ url: url() }))).toContain('plain text')
+    }
+    pinned = '198.18.0.128'
+    registerTool(new WebFetchTool({ resolve: async () => ['198.18.0.128', '::ffff:0:c612:80'] }))
+    expect(value(await run({ url: url() }))).toContain('plain text')
+    expect(prompts.length).toBe(1)
+    expect(requests.length).toBe(addresses.length + 1)
+  })
+
+  it('keeps fake-IP literals, localhost names, and mixed private answers blocked', async () => {
+    registerTool(new WebFetchTool({ resolve: async () => ['198.18.0.128'] }))
+    for (const hostname of ['198.18.0.5', '[::ffff:0:c612:80]', 'localhost', 'sub.localhost']) {
+      expect(error(await run({ url: url('/', hostname) }))).toContain('private_network')
+    }
+    for (const other of ['10.0.0.1', '::ffff:0:a00:1', '8.8.8.8']) {
+      registerTool(new WebFetchTool({ resolve: async () => ['198.18.0.128', other] }))
+      expect(error(await run({ url: url() }))).toContain('private_network')
+    }
+    expect(requests.length).toBe(0)
+    expect(prompts.length).toBe(0)
+  })
+
+  it('honors denial for hostname-only fake-IP answers', async () => {
+    registerTool(new WebFetchTool({ resolve: async () => ['198.18.0.128'] }))
+    registerPromptHandler(async () => 'deny')
+    expect(error(await run({ url: url() }))).toContain('permission_denied')
+    expect(requests.length).toBe(0)
   })
 
   it('refuses literal localhost, loopback, link-local, RFC1918, ULA and metadata targets', async () => {
