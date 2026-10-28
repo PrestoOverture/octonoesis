@@ -1,5 +1,4 @@
 import { readFile, writeFile } from 'node:fs/promises'
-import { diffLines } from 'diff'
 import z from 'zod'
 import { checkFileState, recordFileRead } from '../state/fileState'
 import { assertInsideRepo } from '../utils/path'
@@ -10,13 +9,15 @@ const EditInputSchema = z.object({
   path: z.string().min(1, 'path is required'),
   old_string: z.string(),
   new_string: z.string(),
+  replace_all: z.boolean().optional(),
 })
 
 type EditInput = z.infer<typeof EditInputSchema>
 
 class EditTool implements Tool<EditInput, string> {
   name = 'Edit'
-  description = 'Replace a unique occurrence of old_string with new_string in a file.'
+  description =
+    'Replace old_string with new_string in a file Read this session and unchanged since. By default old_string must match uniquely; set replace_all to true to replace every occurrence.'
   inputSchema = EditInputSchema
 
   /**
@@ -38,9 +39,9 @@ class EditTool implements Tool<EditInput, string> {
   }
 
   /**
-   * Replaces a unique occurrence of `old_string` with `new_string` in the target file.
-   * Enforces repository boundary containment, read-before-edit staleness checks, uniqueness of target text,
-   * and a maximum 200-line diff limit. Updates file state cache upon successful write.
+   * Replaces one unique occurrence, or all occurrences when replace_all is true.
+   * Enforces repository containment and read-before-edit staleness checks.
+   * Updates file state cache upon successful write; the permission UI bounds diff previews.
    *
    * @param input - Contains file path, old string to find, and new replacement string.
    * @param ctx - Tool execution context containing repository root and file state cache.
@@ -80,7 +81,7 @@ class EditTool implements Tool<EditInput, string> {
         error: 'edit_error: The specified old_string was not found in the file.',
       }
     }
-    if (occurrences > 1) {
+    if (occurrences > 1 && !input.replace_all) {
       return {
         ok: false,
         error:
@@ -88,24 +89,10 @@ class EditTool implements Tool<EditInput, string> {
       }
     }
 
-    // 6. Diff constraint: diff <= 200 lines
-    const changes = diffLines(input.old_string, input.new_string)
-    let lineChanges = 0
-    for (const change of changes) {
-      if (change.added || change.removed) {
-        lineChanges += change.count ?? change.value.split(/\r?\n/).length
-      }
-    }
-
-    if (lineChanges > 200) {
-      return {
-        ok: false,
-        error: `diff_too_large: The proposed edit changes ${lineChanges} lines, which exceeds the maximum limit of 200 lines.`,
-      }
-    }
-
-    // 7. Perform replacement and write file
-    const updatedContent = content.replace(input.old_string, input.new_string)
+    // Replace all matches literally, preserving the existing single-replacement behavior.
+    const updatedContent = input.replace_all
+      ? parts.join(input.new_string)
+      : content.replace(input.old_string, input.new_string)
     try {
       await writeFile(realTargetPath, updatedContent, 'utf-8')
 

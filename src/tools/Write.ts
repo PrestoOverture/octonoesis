@@ -1,6 +1,8 @@
 import { realpath, stat, writeFile } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
 import z from 'zod'
+import { checkFileState, recordFileRead } from '../state/fileState'
+import { assertInsideRepo } from '../utils/path'
 import type { Tool, ToolContext, ToolResult } from './Tool'
 
 // Zod schema defining the input argument shape
@@ -13,7 +15,8 @@ type WriteInput = z.infer<typeof WriteInputSchema>
 
 class WriteTool implements Tool<WriteInput, string> {
   name = 'Write'
-  description = 'Create a new file with the specified content. Fails if the file already exists.'
+  description =
+    'Create a new file, or overwrite an existing file only if it was Read in this session and has not changed since. Overwrites require permission with an old-to-new diff preview.'
   inputSchema = WriteInputSchema
 
   /**
@@ -35,9 +38,9 @@ class WriteTool implements Tool<WriteInput, string> {
   }
 
   /**
-   * Creates a new file with the specified content.
-   * Enforces repository boundary containment, checks that the target file does not already exist,
-   * and verifies that the parent directory exists within the repository root.
+   * Creates a file or overwrites an unchanged file Read in this session.
+   * Enforces repository containment and validates the parent directory.
+   * Refreshes the file state cache after an overwrite.
    *
    * @param input - Contains target file path and file content string.
    * @param ctx - Tool execution context containing repository root.
@@ -53,14 +56,36 @@ class WriteTool implements Tool<WriteInput, string> {
       return { ok: false, error: 'path_outside_repo: Resolved path escapes the repository root.' }
     }
 
-    // 3. Existence Check: Fails if the file already exists
+    // Existing files use the same path and file-state guards as Edit.
+    let exists = false
+    let realTargetPath = targetPath
     try {
       await stat(targetPath)
-      return { ok: false, error: `file_exists: File already exists at "${input.path}".` }
+      exists = true
     } catch (err) {
       // Expect error if the file doesn't exist
       if ((err as { code?: string }).code !== 'ENOENT') {
         return { ok: false, error: `stat_error: ${(err as Error).message}` }
+      }
+    }
+
+    if (exists) {
+      const guard = await assertInsideRepo(input.path, ctx.repoRoot)
+      if (!guard.ok) return guard
+      realTargetPath = guard.realPath
+      const stateStatus = await checkFileState(ctx, realTargetPath)
+      if (stateStatus === 'must_read_first') {
+        return {
+          ok: false,
+          error: 'must_read_first: Write overwrite attempted before a cached Read.',
+        }
+      }
+      if (stateStatus === 'file_changed_since_read') {
+        return {
+          ok: false,
+          error:
+            'file_changed_since_read: File was modified since it was last read. Please re-read the file.',
+        }
       }
     }
 
@@ -90,8 +115,12 @@ class WriteTool implements Tool<WriteInput, string> {
 
     // 5. Write the file content to disk
     try {
-      await writeFile(targetPath, input.content, 'utf-8')
-      return { ok: true, value: `File successfully created at "${input.path}".` }
+      await writeFile(realTargetPath, input.content, 'utf-8')
+      if (exists) recordFileRead(ctx, realTargetPath, input.content)
+      return {
+        ok: true,
+        value: `File successfully ${exists ? 'overwritten' : 'created'} at "${input.path}".`,
+      }
     } catch (err) {
       return { ok: false, error: `write_error: ${(err as Error).message}` }
     }
