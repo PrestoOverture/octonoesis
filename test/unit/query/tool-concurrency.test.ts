@@ -347,7 +347,11 @@ test('Bash fingerprints, rule injection, and verification stay ordered between c
           expression: 'broken',
         }),
       }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'end_turn' as const,
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   mockTool('ConcurrentRead', async ({ id, delay }) => {
