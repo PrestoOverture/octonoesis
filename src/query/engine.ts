@@ -823,8 +823,27 @@ export async function* executeTools(
     (block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use',
   )
 
+  const { prepareToolExecution } = await import('../tools/execute')
+  type PreparedTool = Awaited<ReturnType<typeof prepareToolExecution>>
+  const pending = new Map<number, PreparedTool>()
+  let nextTool = 0
+  const canBatch = (call: (typeof toolUses)[number]): boolean => {
+    try {
+      const tool = getAllTools().find((tool) => tool.name === call.name)
+      const input = tool?.inputSchema.safeParse(call.input)
+      return (
+        tool !== undefined &&
+        input?.success === true &&
+        tool.isConcurrencySafe(input.data) &&
+        tool.isReadOnly(input.data)
+      )
+    } catch {
+      return false
+    }
+  }
+
   for (const [toolIndex, toolUse] of toolUses.entries()) {
-    if (ctx.abortSignal?.aborted) {
+    if (ctx.abortSignal?.aborted && !pending.has(toolIndex)) {
       recordCancellation(state)
       for (const cancelledToolUse of toolUses.slice(toolIndex)) {
         const cancellationMessage = 'Tool execution cancelled by user.'
@@ -856,11 +875,29 @@ export async function* executeTools(
       break
     }
 
+    // Prepare in call order, starting at most ten safe read-only calls. A barrier
+    // remains suspended until all preceding results and post-tool hooks commit.
+    if (!pending.has(toolIndex)) {
+      while (nextTool < toolUses.length && pending.size < 10 && !ctx.abortSignal?.aborted) {
+        const next = toolUses[nextTool]
+        if (!next || !canBatch(next)) break
+        const prepared = await prepareToolExecution(next.name, next.input, ctx)
+        pending.set(nextTool++, prepared)
+        if (!prepared.concurrencySafe) break
+        prepared.start()
+      }
+    }
+
     dbg('query', 'tool call detected', { tool: toolUse.name, input: toolUse.input })
 
     let toolResultContent: string
     let isError = false
-    const toolResult = await runTool(toolUse.name, toolUse.input, ctx)
+    const prepared = pending.get(toolIndex)
+    const toolResult = prepared
+      ? await prepared.finish()
+      : await runTool(toolUse.name, toolUse.input, ctx)
+    pending.delete(toolIndex)
+    if (!prepared) nextTool = toolIndex + 1
 
     if (toolResult.ok) {
       toolResultContent =

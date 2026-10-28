@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks'
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { appendJsonl } from '../utils/appendJsonl'
@@ -78,6 +79,22 @@ export function getSessionId(): string | null {
 // Distributive Omit preserves discriminated union kind structure in TS compiler
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never
 
+// Concurrent tool pipelines collect writes locally; the engine releases each call's
+// complete journal sequence before its post-tool hooks and the next call's events.
+const deferredWrites = new AsyncLocalStorage<Array<() => void>>()
+
+export function createJournalBuffer() {
+  const writes: Array<() => void> = []
+  return {
+    run<T>(fn: () => T): T {
+      return deferredWrites.run(writes, fn)
+    },
+    flush(): void {
+      for (const write of writes.splice(0)) write()
+    },
+  }
+}
+
 /**
  * Appends a journal event to the log file asynchronously and in order.
  * @param event The journal event payload (omits metadata ts/session_id but allows optional overrides).
@@ -85,50 +102,56 @@ type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K>
 export function appendJournal(
   event: DistributiveOmit<JournalEvent, 'ts' | 'session_id'> & { ts?: string; session_id?: string },
 ): void {
-  const ts = event.ts || new Date().toISOString()
+  const ts = event.ts
   const session_id = event.session_id || activeSessionId || 'no-session'
   const schema_version = event.schema_version ?? EVENT_SCHEMA_VERSIONS[event.kind]
-  const fullEvent = { ts, session_id, ...event, schema_version }
-
-  const line = `${JSON.stringify(fullEvent)}\n`
+  const fullEvent = { session_id, ...event, schema_version }
 
   // Capture target directory and path synchronously at call time to prevent environment variables leaking across async tests
   const memoryDir = getMemoryDir()
   const journalPath = path.join(memoryDir, 'journal.jsonl')
 
   // Queue to preserve chronological append order on disk
-  writeQueue = writeQueue.then(async () => {
-    const resolvedPath = path.resolve(journalPath)
-    let positions = sessionPositions.get(resolvedPath)
-    if (!positions) {
-      positions = new Map()
-      sessionPositions.set(resolvedPath, positions)
-    }
-    let attempts = captureAttempts.get(resolvedPath)
-    if (!attempts) {
-      attempts = new Set()
-      captureAttempts.set(resolvedPath, attempts)
-    }
-    if (session_id !== 'no-session' && !attempts.has(session_id)) {
-      attempts.add(session_id)
-      try {
-        positions.set(session_id, await captureJournalPosition(journalPath))
-      } catch {
-        // Capture failure must not prevent or count as a failed journal write.
+  const enqueue = () => {
+    // Timestamp generated events when they become visible, keeping the committed
+    // per-call sequence chronological even when execution completed out of order.
+    const line = `${JSON.stringify({ ...fullEvent, ts: ts || new Date().toISOString() })}\n`
+    writeQueue = writeQueue.then(async () => {
+      const resolvedPath = path.resolve(journalPath)
+      let positions = sessionPositions.get(resolvedPath)
+      if (!positions) {
+        positions = new Map()
+        sessionPositions.set(resolvedPath, positions)
       }
-    }
-    try {
-      await fs.mkdir(memoryDir, { recursive: true })
-      await appendJsonl(journalPath, line)
-    } catch (err) {
-      journalWriteFailureCount++
-      lastJournalWriteFailureCode =
-        typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : 'UNKNOWN'
-      const warning = `⚠ Journal write failed: ${journalPath} (${lastJournalWriteFailureCode})`
-      if (journalWriteFailureCount === 1) console.error(warning)
-      else dbg('journal', warning)
-    }
-  })
+      let attempts = captureAttempts.get(resolvedPath)
+      if (!attempts) {
+        attempts = new Set()
+        captureAttempts.set(resolvedPath, attempts)
+      }
+      if (session_id !== 'no-session' && !attempts.has(session_id)) {
+        attempts.add(session_id)
+        try {
+          positions.set(session_id, await captureJournalPosition(journalPath))
+        } catch {
+          // Capture failure must not prevent or count as a failed journal write.
+        }
+      }
+      try {
+        await fs.mkdir(memoryDir, { recursive: true })
+        await appendJsonl(journalPath, line)
+      } catch (err) {
+        journalWriteFailureCount++
+        lastJournalWriteFailureCode =
+          typeof err === 'object' && err !== null && 'code' in err ? String(err.code) : 'UNKNOWN'
+        const warning = `⚠ Journal write failed: ${journalPath} (${lastJournalWriteFailureCode})`
+        if (journalWriteFailureCount === 1) console.error(warning)
+        else dbg('journal', warning)
+      }
+    })
+  }
+  const buffer = deferredWrites.getStore()
+  if (buffer) buffer.push(enqueue)
+  else enqueue()
 }
 
 /**
