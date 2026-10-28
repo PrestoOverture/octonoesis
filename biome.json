@@ -9,6 +9,8 @@
       ".claude/**",
       ".octonoesis/**",
       "docs/**",
+      "test/eval/tasks/**",
+      "test/eval/results/**",
       "test/demo/seed-rules/**",
       "test/demo/seed-rules-selfloop/**"
     ]

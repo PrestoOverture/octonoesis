@@ -1,0 +1,38 @@
+--- a/src/user.ts
++++ /dev/null
+@@ -1,8 +0,0 @@
+-export interface User {
+-  id: string
+-  name: string
+-}
+-
+-export function formatUser(user: User): string {
+-  return `${user.id}: ${user.name}`
+-}
+--- /dev/null
++++ b/src/customer.ts
+@@ -0,0 +1,8 @@
++export interface Customer {
++  id: string
++  displayName: string
++}
++
++export function formatCustomer(customer: Customer): string {
++  return `${customer.id}: ${customer.displayName}`
++}
+--- a/src/label.ts
++++ b/src/label.ts
+@@ -1,5 +1,5 @@
+-import { type User, formatUser } from './user'
++import { type Customer, formatCustomer } from './customer'
+ 
+-export function userLabel(user: User): string {
+-  return `User ${formatUser(user)}`
++export function customerLabel(customer: Customer): string {
++  return `Customer ${formatCustomer(customer)}`
+ }
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -1 +1 @@
+-export { userLabel } from './label'
++export { customerLabel } from './label'
