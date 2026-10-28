@@ -1,6 +1,15 @@
 import { describe, expect, mock, test } from 'bun:test'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { render } from 'ink-testing-library'
 import React from 'react'
+import {
+  clearAllowlist,
+  registerPromptHandler,
+  requestPermission,
+  unregisterPromptHandler,
+} from '../../../src/permissions/confirm'
 import { ConfirmDialog } from '../../../src/ui/ConfirmDialog'
 
 // ConfirmDialog renders its body only after useBoxMetrics measures the box, which can
@@ -95,7 +104,42 @@ describe('ConfirmDialog TUI Component', async () => {
     expect(frame).toContain('+const x = 2;')
   })
 
-  test('does not render diff preview when tool is Write', async () => {
+  test('renders the overwrite permission diff from existing content to Write content', async () => {
+    const repoRoot = await realpath(await mkdtemp(join(tmpdir(), 'write-dialog-')))
+    let unmount: (() => void) | undefined
+    clearAllowlist()
+    try {
+      await writeFile(join(repoRoot, 'main.ts'), 'const x = 1;\n')
+      registerPromptHandler(async (toolName, input) => {
+        const rendered = render(
+          <ConfirmDialog toolName={toolName} input={input} onResolve={() => {}} />,
+        )
+        unmount = rendered.unmount
+        const frame = await measuredFrame(rendered.lastFrame)
+        expect(frame).toContain('Write')
+        expect(frame).toContain('File: main.ts')
+        expect(frame).toContain('@@')
+        expect(frame).toContain('-const x = 1;')
+        expect(frame).toContain('+const x = 2;')
+        expect(frame).toContain('Yes once')
+        return 'deny'
+      })
+      expect(
+        await requestPermission(
+          'Write',
+          { path: 'main.ts', content: 'const x = 2;\n' },
+          { repoRoot },
+        ),
+      ).toBe('deny')
+    } finally {
+      unmount?.()
+      unregisterPromptHandler()
+      clearAllowlist()
+      await rm(repoRoot, { recursive: true, force: true })
+    }
+  })
+
+  test('does not render diff preview for a new Write file', async () => {
     const onResolve = mock(() => {})
     const writeInput = {
       path: 'src/main.ts',

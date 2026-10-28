@@ -36,7 +36,7 @@ describe('Performance Latency Verification', () => {
   it('verifies first token latency with mock provider is <= 3s', async () => {
     const turnEvents: ProviderStreamEvent[] = [
       { type: 'text_delta', text: 'Hello world' },
-      { type: 'message_end', usage: { input_tokens: 5, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 5, output_tokens: 5 } },
     ]
 
     const mockProvider = new MockProvider([turnEvents])

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
 import { isActiveConfigTrusted, loadConfig } from '../config/load'
 import type { OctonoesisConfig } from '../config/schema'
 import { assignArm, filterRulesForArm, recordAssignment } from '../experiments/assignment'
@@ -32,6 +33,7 @@ import type {
   ContentBlock,
   LLMProvider,
   StreamEvent as ProviderStreamEvent,
+  StopReason,
   Usage,
 } from '../providers'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
@@ -56,6 +58,7 @@ import { getAllTools, registerTool, unregisterTool } from '../tools/registry'
 import { createMarkdownStream } from '../ui/markdown'
 import { estimateCost } from '../utils/cost'
 import { dbg } from '../utils/debug'
+import { isRetriableError } from '../utils/errors'
 import {
   LockTimeoutError,
   RULES_LOCK_OPTIONS,
@@ -110,6 +113,7 @@ export type StreamEvent =
   | LearningEvent
   | ProviderStreamEvent
   | { type: 'task_notice'; text: string }
+  | { type: 'stream_retry'; attempt: number; reason: string }
   | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error'; summary?: string }
   | { type: 'compact'; preTokens: number; postTokens: number; durationMs: number }
   | { type: 'session_state'; sessionState: SessionState; priced: boolean }
@@ -174,7 +178,12 @@ export interface AssembledContext {
 }
 
 type StreamPhaseResult =
-  | { kind: 'complete'; assistantBlocks: ContentBlock[] }
+  | {
+      kind: 'complete'
+      assistantBlocks: ContentBlock[]
+      stopReason: StopReason
+      recoveryNote?: string
+    }
   | { kind: 'exit'; result: QueryResult }
 
 /**
@@ -706,50 +715,78 @@ export async function* streamFromProvider(
 
   const assistantBlocks: ContentBlock[] = []
   let finalUsage: Usage | null = null
+  let stopReason: StopReason = 'other'
+  let lastToolUseId: string | undefined
+  const droppedCalls: { id: string; name: string; reason: 'invalid_arguments' | 'max_tokens' }[] =
+    []
+  const maxOutputTokens = ctx.config?.maxOutputTokens ?? 16384
   const messagesAtStreamStart = state.messages.length
 
   try {
-    const stream = state.provider.createMessageStream(context.messages, context.tools, {
-      model: state.model,
-      maxTokens: 4096,
-      signal: ctx.abortSignal || new AbortController().signal,
-      system: context.system,
-      dynamicSystem: context.dynamicSystem,
-    })
-
-    for await (const event of stream) {
-      if (ctx.abortSignal?.aborted) {
-        recordCancellation(state)
-        return { kind: 'exit', result: cancellationResult(state) }
-      }
-
-      if (event.type === 'text_delta') {
-        yield { type: 'text_delta', text: event.text }
-        const lastBlock = assistantBlocks[assistantBlocks.length - 1]
-        if (lastBlock?.type === 'text') {
-          lastBlock.text += event.text
-        } else {
-          assistantBlocks.push({ type: 'text', text: event.text })
-        }
-      } else if (event.type === 'tool_use') {
-        yield {
-          type: 'tool_use',
-          id: event.id,
-          name: event.name,
-          input: event.input,
-        }
-        assistantBlocks.push({
-          type: 'tool_use',
-          id: event.id,
-          name: event.name,
-          input: event.input,
+    let attempt = 0
+    while (true) {
+      assistantBlocks.length = 0
+      finalUsage = null
+      stopReason = 'other'
+      lastToolUseId = undefined
+      droppedCalls.length = 0
+      let receivedEvent = false
+      try {
+        const stream = state.provider.createMessageStream(context.messages, context.tools, {
+          model: state.model,
+          maxTokens: maxOutputTokens,
+          signal: ctx.abortSignal || new AbortController().signal,
+          system: context.system,
+          dynamicSystem: context.dynamicSystem,
         })
-      } else if (event.type === 'message_end') {
-        finalUsage = event.usage
-        state.contextSnapshot = {
-          tokens: totalTokensFromUsage(event.usage),
-          coveredCount: messagesAtStreamStart + 1,
+
+        for await (const event of stream) {
+          receivedEvent = true
+          if (ctx.abortSignal?.aborted) {
+            recordCancellation(state)
+            return { kind: 'exit', result: cancellationResult(state) }
+          }
+
+          if (event.type === 'text_delta') {
+            yield { type: 'text_delta', text: event.text }
+            const lastBlock = assistantBlocks[assistantBlocks.length - 1]
+            if (lastBlock?.type === 'text') {
+              lastBlock.text += event.text
+            } else {
+              assistantBlocks.push({ type: 'text', text: event.text })
+            }
+          } else if (event.type === 'tool_use') {
+            lastToolUseId = event.id
+            yield event
+            assistantBlocks.push({
+              type: 'tool_use',
+              id: event.id,
+              name: event.name,
+              input: event.input,
+            })
+          } else if (event.type === 'message_end') {
+            finalUsage = event.usage
+            stopReason = event.stopReason
+            lastToolUseId = event.lastToolUseId ?? lastToolUseId
+            for (const call of event.invalidToolCalls ?? []) {
+              droppedCalls.push({ ...call, reason: 'invalid_arguments' })
+            }
+          }
         }
+        break
+      } catch (error) {
+        if (
+          ctx.abortSignal?.aborted ||
+          !receivedEvent ||
+          !isRetriableError(error) ||
+          attempt >= 2
+        ) {
+          throw error
+        }
+        attempt++
+        const reason = error instanceof Error ? error.message : String(error)
+        yield { type: 'stream_retry', attempt, reason }
+        await delay(500 * 2 ** (attempt - 1), undefined, { signal: ctx.abortSignal })
       }
     }
   } catch (error) {
@@ -770,13 +807,65 @@ export async function* streamFromProvider(
     }
   }
 
+  if (finalUsage) {
+    state.contextSnapshot = {
+      tokens: totalTokensFromUsage(finalUsage),
+      coveredCount: messagesAtStreamStart + 1,
+    }
+  }
   const usage = finalUsage || { input_tokens: 0, output_tokens: 0 }
+  if (stopReason === 'max_tokens' && lastToolUseId !== undefined) {
+    const lastToolIndex = assistantBlocks.findIndex(
+      (block) => block.type === 'tool_use' && block.id === lastToolUseId,
+    )
+    const lastTool = assistantBlocks[lastToolIndex]
+    if (lastTool?.type === 'tool_use') {
+      assistantBlocks.splice(lastToolIndex, 1)
+      droppedCalls.push({ id: lastTool.id, name: lastTool.name, reason: 'max_tokens' })
+      yield {
+        type: 'tool_done',
+        id: lastTool.id,
+        name: lastTool.name,
+        status: 'error',
+        summary: 'output truncated; not executed',
+      }
+    }
+  }
+  let recoveryNote: string | undefined
+  if (stopReason === 'max_tokens' || droppedCalls.length > 0) {
+    const dropped = droppedCalls
+      .map(
+        ({ id, name, reason }) =>
+          `Tool call ${name} (${id}) was dropped and NOT executed${reason === 'invalid_arguments' ? ' because its arguments failed JSON.parse' : ''}.`,
+      )
+      .join(' ')
+    recoveryNote = [
+      stopReason === 'max_tokens' ? `Your output was cut at ${maxOutputTokens} tokens.` : '',
+      dropped,
+      droppedCalls.length > 0
+        ? 'Split large content: Write a skeleton, then Edit in chunks. Retry dropped work with complete JSON arguments.'
+        : 'If you were producing file content, do NOT continue it as text — file content belongs only in tool calls: Write a skeleton or the first chunk, then add the rest with Edit in chunks small enough to fit in one response. Otherwise continue exactly where you stopped.',
+    ]
+      .filter(Boolean)
+      .join(' ')
+  }
+  if (stopReason === 'max_tokens') {
+    appendJournal({
+      kind: 'truncation',
+      turn: state.turn,
+      max_output_tokens: maxOutputTokens,
+      output_tokens: usage.output_tokens,
+      dropped_tool_calls: droppedCalls,
+    })
+  }
   addUsage(state.usage, usage)
-  yield { type: 'message_end', usage }
+  yield { type: 'message_end', usage, stopReason }
   const sessionStateEvent = recordSessionTurn(state, ctx, usage)
   if (state.emitSessionState) yield sessionStateEvent
-  state.messages.push({ role: 'assistant', content: assistantBlocks })
-  return { kind: 'complete', assistantBlocks }
+  if (assistantBlocks.length > 0) {
+    state.messages.push({ role: 'assistant', content: assistantBlocks })
+  }
+  return { kind: 'complete', assistantBlocks, stopReason, recoveryNote }
 }
 
 /**
@@ -823,8 +912,27 @@ export async function* executeTools(
     (block): block is Extract<ContentBlock, { type: 'tool_use' }> => block.type === 'tool_use',
   )
 
+  const { prepareToolExecution } = await import('../tools/execute')
+  type PreparedTool = Awaited<ReturnType<typeof prepareToolExecution>>
+  const pending = new Map<number, PreparedTool>()
+  let nextTool = 0
+  const canBatch = (call: (typeof toolUses)[number]): boolean => {
+    try {
+      const tool = getAllTools().find((tool) => tool.name === call.name)
+      const input = tool?.inputSchema.safeParse(call.input)
+      return (
+        tool !== undefined &&
+        input?.success === true &&
+        tool.isConcurrencySafe(input.data) &&
+        tool.isReadOnly(input.data)
+      )
+    } catch {
+      return false
+    }
+  }
+
   for (const [toolIndex, toolUse] of toolUses.entries()) {
-    if (ctx.abortSignal?.aborted) {
+    if (ctx.abortSignal?.aborted && !pending.has(toolIndex)) {
       recordCancellation(state)
       for (const cancelledToolUse of toolUses.slice(toolIndex)) {
         const cancellationMessage = 'Tool execution cancelled by user.'
@@ -856,11 +964,29 @@ export async function* executeTools(
       break
     }
 
+    // Prepare in call order, starting at most ten safe read-only calls. A barrier
+    // remains suspended until all preceding results and post-tool hooks commit.
+    if (!pending.has(toolIndex)) {
+      while (nextTool < toolUses.length && pending.size < 10 && !ctx.abortSignal?.aborted) {
+        const next = toolUses[nextTool]
+        if (!next || !canBatch(next)) break
+        const prepared = await prepareToolExecution(next.name, next.input, ctx)
+        pending.set(nextTool++, prepared)
+        if (!prepared.concurrencySafe) break
+        prepared.start()
+      }
+    }
+
     dbg('query', 'tool call detected', { tool: toolUse.name, input: toolUse.input })
 
     let toolResultContent: string
     let isError = false
-    const toolResult = await runTool(toolUse.name, toolUse.input, ctx)
+    const prepared = pending.get(toolIndex)
+    const toolResult = prepared
+      ? await prepared.finish()
+      : await runTool(toolUse.name, toolUse.input, ctx)
+    pending.delete(toolIndex)
+    if (!prepared) nextTool = toolIndex + 1
 
     if (toolResult.ok) {
       toolResultContent =
@@ -1055,6 +1181,7 @@ export async function* query(
       dbg('query', 'Failed to display session-start rules', error)
     }
 
+    let consecutiveTruncations = 0
     while (readyState.turn < ctx.config.maxTurns) {
       if (ctx.abortSignal?.aborted) {
         exitReason = 'user_cancel'
@@ -1080,6 +1207,8 @@ export async function* query(
         exitReason = streamResult.result.exit_reason
         return streamResult.result
       }
+      consecutiveTruncations =
+        streamResult.stopReason === 'max_tokens' ? consecutiveTruncations + 1 : 0
 
       const hasToolUse = streamResult.assistantBlocks.some((block) => block.type === 'tool_use')
       if (hasToolUse) {
@@ -1087,7 +1216,21 @@ export async function* query(
         if (toolResult.restartLoop) continue
       }
 
-      const stop = shouldStop(streamResult.assistantBlocks)
+      // Append after surviving tool results so recovery never interrupts call/result pairing.
+      if (streamResult.recoveryNote) {
+        readyState.messages.push({ role: 'user', content: streamResult.recoveryNote })
+      }
+      if (consecutiveTruncations >= 3) {
+        exitReason = 'fatal_error'
+        return {
+          exit_reason: 'fatal_error',
+          usage: readyState.usage,
+          turns: readyState.turn,
+          error: 'Query stopped after 3 consecutive truncation recoveries (max_tokens).',
+        }
+      }
+
+      const stop = !streamResult.recoveryNote && shouldStop(streamResult.assistantBlocks)
       if (stop) {
         await executeStopHooks(readyState, ctx)
         const assistantText = streamResult.assistantBlocks
@@ -1271,6 +1414,9 @@ export async function runQuery(
       const event = step.value
       if (event.type === 'text_delta') {
         textOutput.write(event.text)
+      } else if (event.type === 'stream_retry') {
+        textOutput.flush()
+        process.stderr.write(`↻ connection lost, retrying (${event.attempt}/2)\n`)
       } else if (event.type === 'tool_use') {
         textOutput.flush()
         let inputStr = ''

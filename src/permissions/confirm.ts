@@ -1,8 +1,11 @@
 import crypto from 'node:crypto'
+import { readFile } from 'node:fs/promises'
 import readline from 'node:readline'
+import { createPatch } from 'diff'
 import { isActiveConfigTrusted } from '../config/load'
 import { appendJournal } from '../memory/journal'
 import type { QueryLoopContext } from '../query/types'
+import { assertInsideRepo } from '../utils/path'
 
 // In-memory allowlist of approved exact commands for this session
 const allowlist = new Set<string>()
@@ -239,6 +242,22 @@ export function unregisterPromptHandler(): void {
   activePromptHandler = null
 }
 
+/** Adds an overwrite diff for display only; previewing never updates the Read cache. */
+async function writePreview(input: unknown, ctx?: QueryLoopContext) {
+  if (!ctx || typeof input !== 'object' || input === null) return undefined
+  const value = input as { path?: unknown; content?: unknown }
+  if (typeof value.path !== 'string' || typeof value.content !== 'string') return undefined
+  const guard = await assertInsideRepo(value.path, ctx.repoRoot)
+  if (!guard.ok) return undefined
+  try {
+    const oldText = await readFile(guard.realPath, 'utf-8')
+    return { ...value, path: value.path, old_string: oldText, new_string: value.content }
+  } catch {
+    // Missing/unreadable targets retain the normal prompt and tool error handling.
+    return undefined
+  }
+}
+
 /**
  * Requests permission from the user to execute a non-read-only tool.
  * @param toolName The name of the tool requesting permission.
@@ -279,10 +298,12 @@ export async function requestPermission(
     return 'allow_always'
   }
 
+  const preview = toolName === 'Write' ? await writePreview(input, ctx) : undefined
+
   // Delegate to active UI handler if registered (e.g. Ink TUI)
   if (activePromptHandler) {
     const prompted = await raceWithAbort(
-      activePromptHandler(toolName, input, ctx?.abortSignal),
+      activePromptHandler(toolName, preview ?? input, ctx?.abortSignal),
       ctx?.abortSignal,
     )
     const decision = prompted === PERMISSION_ABORTED ? 'deny' : prompted
@@ -300,6 +321,9 @@ export async function requestPermission(
   // Interactive console CLI fallback for verification
   console.log(`\n⚠️  [Permission Request] Tool: ${toolName}`)
   console.log(`Parameters: ${JSON.stringify(input, null, 2)}`)
+  if (preview) {
+    console.log(createPatch(preview.path, preview.old_string, preview.new_string))
+  }
   const prompted = await raceWithAbort(
     readFallbackAnswer('Allow execution? [y] Yes once / [n] No / [a] Always for this input: '),
     ctx?.abortSignal,

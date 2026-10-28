@@ -406,7 +406,11 @@ describeDarwin('macOS sandbox escape policy', () => {
         providerTurn++
         if (providerTurn === 1) {
           yield { type: 'tool_use', id: 'sandbox-bash', name: 'Bash', input: { command } }
-          yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+          yield {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          }
           return
         }
 
@@ -417,7 +421,11 @@ describeDarwin('macOS sandbox escape policy', () => {
           expect(toolMessage.content).not.toContain('escaped')
         }
         yield { type: 'text_delta', text: 'sandbox observed' }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     const originalWrite = process.stdout.write

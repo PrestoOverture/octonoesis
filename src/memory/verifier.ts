@@ -19,6 +19,8 @@ export interface VerifyResult {
   stale: boolean
   stdout?: string
   stderr?: string
+  truncated?: true
+  output_log?: string
 }
 
 /**
@@ -29,6 +31,7 @@ export interface VerifyResult {
  * @param repoRoot The absolute path of the repository root.
  * @param signal Optional abort signal for cancellation.
  * @param isVerificationRun Whether this is a verification run.
+ * @param timeoutMs Optional Bash execution timeout in milliseconds.
  * @returns A promise resolving to the VerifyResult.
  */
 export async function verify(
@@ -36,6 +39,7 @@ export async function verify(
   repoRoot: string,
   signal?: AbortSignal,
   isVerificationRun = true,
+  timeoutMs?: number,
 ): Promise<VerifyResult> {
   const hookResult = await preToolUseHook('Bash', { command }, { repoRoot, abortSignal: signal })
   if (hookResult.action === 'deny') {
@@ -49,7 +53,7 @@ export async function verify(
       : command
 
   const result = await bashTool.call(
-    { command: effectiveCommand },
+    { command: effectiveCommand, timeout_ms: timeoutMs },
     { repoRoot, abortSignal: signal },
   )
   if (!result.ok) {
@@ -83,6 +87,7 @@ export async function verify(
     stale: false,
     stdout: stdoutText,
     stderr: stderrText,
+    ...(parsed.truncated ? { truncated: true as const, output_log: parsed.output_log } : {}),
   }
 
   // Emit verify journal event if requested

@@ -1,11 +1,10 @@
 import type { CanonicalMessage, StreamEvent } from '../query'
 import { type RepoRoots, primaryArg, summarizeToolResult } from '../query/toolSummary'
 import type { BannerSnapshot } from './StartupBanner'
-import { stableMarkdownLength } from './markdown'
 
 export type DisplayItem =
   | ({ kind: 'banner' } & BannerSnapshot)
-  | { kind: 'resume' | 'user' | 'task_notice'; text: string; spacer?: boolean }
+  | { kind: 'resume' | 'user' | 'task_notice' | 'stream_retry'; text: string; spacer?: boolean }
   | { kind: 'assistant' | 'stats' | 'failure'; text: string; verbatim: boolean; header: boolean }
   | {
       kind: 'tool'
@@ -65,25 +64,25 @@ export function transcriptReducer(
       // Append, never prepend: <Static> renders items.slice(renderedCount), so reordering
       // committed items would duplicate one and drop another.
       return append(state, { kind: 'banner', ...event.snapshot })
-    case 'text_delta': {
-      const pending = state.pending + event.text
-      const length = stableMarkdownLength(pending)
-      if (!length) return { ...state, pending }
+    // Keep the entire provider reply removable until the stream completes. Static
+    // entries cannot be retracted if a later chunk fails and the turn is retried.
+    case 'text_delta':
+      return { ...state, pending: state.pending + event.text }
+    case 'message_end':
+      return flush(state)
+    case 'stream_retry':
       return {
         ...append(state, {
-          kind: 'assistant',
-          text: pending.slice(0, length),
-          verbatim: false,
-          header: state.header,
+          kind: 'stream_retry',
+          text: `↻ connection lost, retrying (${event.attempt}/2)`,
         }),
-        pending: pending.slice(length),
-        header: false,
+        pending: '',
+        running: [],
+        header: true,
       }
-    }
     case 'tool_use':
       return {
-        ...flush(state),
-        header: true,
+        ...state,
         running: [
           ...state.running,
           { id: event.id, name: event.name, args: primaryArg(event.name, event.input, repoRoots) },
@@ -93,7 +92,13 @@ export function transcriptReducer(
       const tool = state.running.find((tool) => tool.id === event.id)
       if (!tool) return state
       return {
-        ...append(state, { kind: 'tool', ...tool, status: event.status, summary: event.summary }),
+        ...append(flush(state), {
+          kind: 'tool',
+          ...tool,
+          status: event.status,
+          summary: event.summary,
+        }),
+        header: true,
         running: state.running.filter((tool) => tool.id !== event.id),
       }
     }

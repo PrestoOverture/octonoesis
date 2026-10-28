@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, test } from 'bun:test'
+import { mkdtemp, realpath, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { PassThrough } from 'node:stream'
 import {
   clearAllowlist,
   getPermissionKey,
   registerPromptHandler,
   requestPermission,
+  setPermissionInputStreamForTests,
   unregisterPromptHandler,
 } from '../../../src/permissions/confirm'
 
@@ -59,6 +64,38 @@ describe('Permissions confirm', () => {
 
     const decision = await requestPermission('Bash', { command: 'bun test' })
     expect(decision).toBe('deny')
+  })
+
+  test('the fallback overwrite prompt prints an old-to-new diff', async () => {
+    const repoRoot = await realpath(await mkdtemp(join(tmpdir(), 'write-permission-')))
+    const input = new PassThrough()
+    const originalLog = console.log
+    const output: string[] = []
+    console.log = (...args: unknown[]) => {
+      output.push(args.join(' '))
+    }
+    try {
+      await writeFile(join(repoRoot, 'main.ts'), 'old content\n')
+      setPermissionInputStreamForTests(input)
+      input.end('n\n')
+      expect(
+        await requestPermission(
+          'Write',
+          { path: 'main.ts', content: 'new content\n' },
+          { repoRoot },
+        ),
+      ).toBe('deny')
+      const printed = output.join('\n')
+      expect(printed).toContain('Tool: Write')
+      expect(printed).toContain('@@')
+      expect(printed).toContain('-old content')
+      expect(printed).toContain('+new content')
+    } finally {
+      console.log = originalLog
+      setPermissionInputStreamForTests()
+      input.destroy()
+      await rm(repoRoot, { recursive: true, force: true })
+    }
   })
 
   test('resolves a pending delegated prompt as deny when the query is aborted', async () => {

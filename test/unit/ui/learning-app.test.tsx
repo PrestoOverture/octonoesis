@@ -55,7 +55,11 @@ test('App consumes learning events and OB-8 reprints them at the new width', asy
     name: 'anthropic',
     async *createMessageStream() {
       yield { type: 'text_delta', text: 'Done learning turn.' }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   let completion: Promise<void> | undefined

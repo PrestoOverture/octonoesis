@@ -30,6 +30,7 @@ class TwoTurnProvider implements LLMProvider {
       yield { type: 'tool_use', id: 'observe-read', name: 'Read', input: { path: 'package.json' } }
       yield {
         type: 'message_end',
+        stopReason: 'other',
         usage: {
           input_tokens: 50_000,
           output_tokens: 5_000,
@@ -41,7 +42,11 @@ class TwoTurnProvider implements LLMProvider {
     }
 
     yield { type: 'text_delta', text: 'Observed.' }
-    yield { type: 'message_end', usage: { input_tokens: 90_000, output_tokens: 8_000 } }
+    yield {
+      type: 'message_end',
+      stopReason: 'other',
+      usage: { input_tokens: 90_000, output_tokens: 8_000 },
+    }
   }
 }
 
@@ -54,6 +59,7 @@ class FinalOnlyProvider implements LLMProvider {
     yield { type: 'text_delta', text: `Done ${this.call}.` }
     yield {
       type: 'message_end',
+      stopReason: 'other',
       usage: { input_tokens: this.call * 1_000, output_tokens: this.call * 100 },
     }
   }
@@ -72,11 +78,19 @@ class CompactingProvider implements LLMProvider {
         name: 'Read',
         input: { path: 'package.json' },
       }
-      yield { type: 'message_end', usage: { input_tokens: 5_000, output_tokens: 10 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 5_000, output_tokens: 10 },
+      }
       return
     }
     yield { type: 'text_delta', text: 'Compacted.' }
-    yield { type: 'message_end', usage: { input_tokens: 100, output_tokens: 10 } }
+    yield {
+      type: 'message_end',
+      stopReason: 'other',
+      usage: { input_tokens: 100, output_tokens: 10 },
+    }
   }
 }
 

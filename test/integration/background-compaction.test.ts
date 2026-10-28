@@ -120,7 +120,11 @@ for (const finishEarly of [false, true])
           assertPairedHistory(messages)
           yield { type: 'text_delta', text: 'APPENDED_FACT_99 preserved' }
         }
-        yield { type: 'message_end', usage: { input_tokens: 2000, output_tokens: 10 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 2000, output_tokens: 10 },
+        }
       },
     }
     setProvider(provider)
@@ -166,7 +170,11 @@ test('waits for the pending summary at the hard threshold before sending another
       calls++
       expect(JSON.stringify(messages)).toContain('<octo-compact-summary>')
       yield { type: 'text_delta', text: 'Done' }
-      yield { type: 'message_end', usage: { input_tokens: 100, output_tokens: 2 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 100, output_tokens: 2 },
+      }
     },
   })
   const messages = source()
@@ -197,7 +205,11 @@ test('supports a foreground-only configuration and rejects invalid early trigger
     async *createMessageStream() {
       expect(child.started).toBe(false)
       yield { type: 'text_delta', text: 'Done' }
-      yield { type: 'message_end', usage: { input_tokens: 100, output_tokens: 2 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 100, output_tokens: 2 },
+      }
     },
   })
   const run = query('Finish', {
@@ -223,7 +235,11 @@ test('aborting an active query reaps its pending summary and leaves no applied c
     async *createMessageStream() {
       expect(child.started).toBe(true)
       yield { type: 'text_delta', text: 'Working' }
-      yield { type: 'message_end', usage: { input_tokens: 2000, output_tokens: 2 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 2000, output_tokens: 2 },
+      }
     },
   })
   const run = query(

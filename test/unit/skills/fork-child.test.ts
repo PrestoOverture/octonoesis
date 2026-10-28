@@ -16,7 +16,11 @@ describe('skill fork child loop', () => {
         } else {
           yield { type: 'text_delta', text: 'done' }
         }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     const prepared: PreparedFork = {
@@ -58,7 +62,11 @@ describe('skill fork child loop', () => {
               : ''
           yield { type: 'text_delta', text: 'handled' }
         }
-        yield { type: 'message_end', usage: { input_tokens: 0, output_tokens: 0 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 0, output_tokens: 0 },
+        }
       },
     }
     const prepared: PreparedFork = {

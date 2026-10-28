@@ -86,7 +86,11 @@ it('completes runQuery with unavailable memory and prints each notice once', asy
     name: 'anthropic',
     async *createMessageStream() {
       yield { type: 'text_delta', text: 'Done.' }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   const originalError = console.error
@@ -200,7 +204,11 @@ it('starts the TUI and accepts a prompt when history and session storage are unu
     async *createMessageStream() {
       calls++
       yield { type: 'text_delta', text: 'TUI task completed' }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   await initializeMemoryAvailability(dir)
@@ -277,7 +285,11 @@ test('verification', () => {
             yield { type: 'text_delta', text: 'Done.' }
           }
         }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     })
     clearAllowlist()

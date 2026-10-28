@@ -62,7 +62,7 @@ describe('Episode Integration Loop', () => {
         name: 'Bash',
         input: { command: "echo 'TypeError: null pointer in src/temp.ts:2' >&2 && exit 1" },
       },
-      { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
     ]
 
     const turn2Events: ProviderStreamEvent[] = [
@@ -73,7 +73,7 @@ describe('Episode Integration Loop', () => {
         name: 'Read',
         input: { path: 'src/temp.ts' },
       },
-      { type: 'message_end', usage: { input_tokens: 20, output_tokens: 10 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 20, output_tokens: 10 } },
     ]
 
     const turn3Events: ProviderStreamEvent[] = [
@@ -88,7 +88,7 @@ describe('Episode Integration Loop', () => {
           new_string: 'fixed content',
         },
       },
-      { type: 'message_end', usage: { input_tokens: 30, output_tokens: 15 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 30, output_tokens: 15 } },
     ]
 
     const turn4Events: ProviderStreamEvent[] = [
@@ -99,12 +99,12 @@ describe('Episode Integration Loop', () => {
         name: 'Bash',
         input: { command: 'exit 0' },
       },
-      { type: 'message_end', usage: { input_tokens: 40, output_tokens: 20 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 40, output_tokens: 20 } },
     ]
 
     const turn5Events: ProviderStreamEvent[] = [
       { type: 'text_delta', text: 'Perfect. The error is resolved.' },
-      { type: 'message_end', usage: { input_tokens: 50, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 50, output_tokens: 5 } },
     ]
 
     // Custom Mock Provider for playback
@@ -142,6 +142,7 @@ describe('Episode Integration Loop', () => {
           }
           yield {
             type: 'message_end',
+            stopReason: 'other',
             usage: { input_tokens: 5, output_tokens: 5 },
           }
           return
@@ -163,6 +164,7 @@ describe('Episode Integration Loop', () => {
           }
           yield {
             type: 'message_end',
+            stopReason: 'other',
             usage: { input_tokens: 5, output_tokens: 5 },
           }
           return

@@ -48,6 +48,11 @@ test('long replies and ten tools never clear the fake TTY', async () => {
   })
   let turn = 0
   let finished = false
+  let streamed = false
+  let release = () => {}
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
   setProvider({
     name: 'anthropic',
     async *createMessageStream() {
@@ -56,6 +61,8 @@ test('long replies and ten tools never clear the fake TTY', async () => {
           yield { type: 'text_delta', text: `oracle-line-${String(line).padStart(3, '0')}\n\n` }
           await delay(4)
         }
+        streamed = true
+        await gate
         for (let tool = 0; tool < 10; tool++)
           yield {
             type: 'tool_use',
@@ -67,7 +74,11 @@ test('long replies and ten tools never clear the fake TTY', async () => {
         yield { type: 'text_delta', text: 'oracle-finished' }
         finished = true
       }
-      yield { type: 'message_end', usage: { input_tokens: 10, output_tokens: 10 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 10, output_tokens: 10 },
+      }
     },
   })
   await fs.writeFile(path.join(directory, 'fixture.txt'), 'fixture')
@@ -87,17 +98,24 @@ test('long replies and ten tools never clear the fake TTY', async () => {
     stdin.write('run oracle')
     await delay(30)
     stdin.write('\r')
+    for (let i = 0; i < 300 && !(streamed && output.includes('oracle-line-199')); i++)
+      await delay(20)
+    expect(streamed).toBe(true)
+    expect(output).toContain('oracle-line-199')
+    const beforeCommit = output.length
+    release()
     for (let i = 0; i < 300 && !finished; i++) await delay(20)
     expect(finished).toBe(true)
     await delay(100)
     view.unmount()
     expect(output).not.toContain('\x1b[2J')
     expect(output).not.toContain('\x1b[3J')
-    expect(output.split('oracle-line-000').length - 1).toBe(1)
-    expect(output.split('oracle-line-199').length - 1).toBe(1)
+    expect(output.slice(beforeCommit).split('oracle-line-000').length - 1).toBe(1)
+    expect(output.slice(beforeCommit).split('oracle-line-199').length - 1).toBe(1)
     expect(output.split('✓ Read').length - 1).toBe(10)
     expect(turn).toBe(2)
   } finally {
+    release()
     view.unmount()
     setProvider(null)
     for (const [key, value] of Object.entries(originals)) restoreEnv(key, value)
@@ -178,7 +196,11 @@ test('compaction shrinks model history while resumed history, task notices and t
         })
         yield { type: 'tool_use', id: 'read-new', name: 'Read', input: { path: 'fixture.txt' } }
       } else yield { type: 'text_delta', text: `after-compact-reply-${calls}\n\n` }
-      yield { type: 'message_end', usage: { input_tokens: 10, output_tokens: 10 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 10, output_tokens: 10 },
+      }
     },
   })
   await fs.writeFile(path.join(directory, 'fixture.txt'), 'fixture')
@@ -290,7 +312,11 @@ test('an unclosed 200-line fence and a tall todo panel stay bounded, then commit
       pending = true
       await gate
       yield { type: 'text_delta', text: '```\n\n' }
-      yield { type: 'message_end', usage: { input_tokens: 10, output_tokens: 10 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 10, output_tokens: 10 },
+      }
       finished = true
     },
   })

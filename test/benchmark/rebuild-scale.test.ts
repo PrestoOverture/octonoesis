@@ -136,7 +136,11 @@ function createMockProvider(): LLMProvider {
           advice: `Scale test advice for ${signature}`,
         }),
       }
-      yield { type: 'message_end', usage: { input_tokens: 5, output_tokens: 5 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 5, output_tokens: 5 },
+      }
     },
   }
 }

@@ -112,7 +112,11 @@ describe('background task engine integration', () => {
         } else {
           yield { type: 'text_delta', text: 'Observed background completion.' }
         }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     setProvider(provider)
@@ -177,7 +181,11 @@ describe('background task engine integration', () => {
         } else {
           yield { type: 'text_delta', text: 'Task launched.' }
         }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     })
 
@@ -194,7 +202,11 @@ describe('background task engine integration', () => {
       async *createMessageStream(messages: CanonicalMessage[]): AsyncIterable<StreamEvent> {
         firstMessages ??= structuredClone(messages)
         yield { type: 'text_delta', text: 'Handled prior task.' }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     })
     const secondResult = await collectQuery(query('What finished?', ctx))
@@ -237,7 +249,11 @@ describe('background task engine integration', () => {
           await new Promise((resolve) => setTimeout(resolve, 50))
           yield { type: 'text_delta', text: 'must be cancelled' }
         }
-        yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     })
 

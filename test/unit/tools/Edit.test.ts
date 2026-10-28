@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
-import { unlink, writeFile } from 'node:fs/promises'
+import { readFile, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { getRepoRoot } from '../../../src/query'
 import { editTool } from '../../../src/tools/Edit'
@@ -7,11 +7,12 @@ import { readTool } from '../../../src/tools/Read'
 
 describe('Edit tool', () => {
   const repoRoot = getRepoRoot()
-  const ctx = { repoRoot }
+  let ctx = { repoRoot }
   const testFileName = 'test-edit-tool-tmp.txt'
   const testFilePath = join(repoRoot, testFileName)
 
   beforeEach(async () => {
+    ctx = { repoRoot }
     // Write initial test content
     await writeFile(testFilePath, 'initial file content\nline two\nline three', 'utf-8')
   })
@@ -100,19 +101,58 @@ describe('Edit tool', () => {
     }
   })
 
-  it('rejects if diff exceeds 200 lines', async () => {
+  it('allows a 300-changed-line Edit', async () => {
+    const oldContent = `${Array.from({ length: 150 }, (_, i) => `old ${i}`).join('\n')}\n`
+    const newContent = `${Array.from({ length: 150 }, (_, i) => `new ${i}`).join('\n')}\n`
+    await writeFile(testFilePath, oldContent)
     await readTool.call({ path: testFileName }, ctx)
-
-    // Construct a large replacement (> 200 lines)
-    const largeReplacement = Array.from({ length: 205 }, (_, i) => `line ${i}`).join('\n')
-
-    const editResult = await editTool.call(
-      { path: testFileName, old_string: 'line two', new_string: largeReplacement },
+    const result = await editTool.call(
+      { path: testFileName, old_string: oldContent, new_string: newContent },
       ctx,
     )
-    expect(editResult.ok).toBe(false)
-    if (!editResult.ok) {
-      expect(editResult.error).toContain('diff_too_large')
-    }
+    expect(result.ok).toBe(true)
+    expect(await readFile(testFilePath, 'utf-8')).toBe(newContent)
+  })
+
+  it('replace_all replaces all three occurrences with literal replacement text', async () => {
+    await writeFile(testFilePath, 'duplicate\nduplicate\nduplicate')
+    await readTool.call({ path: testFileName }, ctx)
+    const input = editTool.inputSchema.parse({
+      path: testFileName,
+      old_string: 'duplicate',
+      new_string: '$& updated',
+      replace_all: true,
+    })
+    const result = await editTool.call(input, ctx)
+    expect(result.ok).toBe(true)
+    expect(await readFile(testFilePath, 'utf-8')).toBe('$& updated\n$& updated\n$& updated')
+  })
+
+  it('replace_all false still rejects multiple matches', async () => {
+    await writeFile(testFilePath, 'duplicate duplicate duplicate')
+    await readTool.call({ path: testFileName }, ctx)
+    const input = editTool.inputSchema.parse({
+      path: testFileName,
+      old_string: 'duplicate',
+      new_string: 'updated',
+      replace_all: false,
+    })
+    const result = await editTool.call(input, ctx)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('Multiple occurrences')
+    expect(await readFile(testFilePath, 'utf-8')).toBe('duplicate duplicate duplicate')
+  })
+
+  it('replace_all still rejects missing old_string', async () => {
+    await readTool.call({ path: testFileName }, ctx)
+    const input = editTool.inputSchema.parse({
+      path: testFileName,
+      old_string: 'missing',
+      new_string: 'updated',
+      replace_all: true,
+    })
+    const result = await editTool.call(input, ctx)
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.error).toContain('not found')
   })
 })

@@ -142,12 +142,13 @@ describe('query engine', () => {
     const provider = new ScriptedProvider([
       [
         { type: 'tool_use', id: 'read-1', name: 'Read', input: { path: 'package.json' } },
-        { type: 'message_end', usage: { input_tokens: 3, output_tokens: 2 } },
+        { type: 'message_end', stopReason: 'other', usage: { input_tokens: 3, output_tokens: 2 } },
       ],
       [
         { type: 'tool_use', id: 'read-2', name: 'Read', input: { path: 'package.json' } },
         {
           type: 'message_end',
+          stopReason: 'other',
           usage: { input_tokens: 3, output_tokens: 1, cache_read_input_tokens: 2 },
         },
       ],
@@ -199,11 +200,19 @@ describe('query engine', () => {
     const provider = new ScriptedProvider([
       [
         { type: 'tool_use', id: 'read-high', name: 'Read', input: { path: 'package.json' } },
-        { type: 'message_end', usage: { input_tokens: 50_000, output_tokens: 2 } },
+        {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 50_000, output_tokens: 2 },
+        },
       ],
       [
         { type: 'text_delta', text: 'Finished without an implicit budget.' },
-        { type: 'message_end', usage: { input_tokens: 20_000, output_tokens: 1 } },
+        {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 20_000, output_tokens: 1 },
+        },
       ],
     ])
     setProvider(provider)
@@ -227,7 +236,11 @@ describe('query engine', () => {
       new ScriptedProvider([
         [
           { type: 'text_delta', text: 'This response finishes the task.' },
-          { type: 'message_end', usage: { input_tokens: 5, output_tokens: 2 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 5, output_tokens: 2 },
+          },
         ],
       ]),
     )

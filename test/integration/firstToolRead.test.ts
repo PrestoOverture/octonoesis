@@ -26,6 +26,7 @@ describe('Phase 2 - End-to-End tool_use Loop', () => {
           }
           yield {
             type: 'message_end',
+            stopReason: 'other',
             usage: { input_tokens: 10, output_tokens: 5 },
           }
         } else if (callCount === 2) {
@@ -39,6 +40,7 @@ describe('Phase 2 - End-to-End tool_use Loop', () => {
           yield { type: 'text_delta', text: 'It is named octonoesis.' }
           yield {
             type: 'message_end',
+            stopReason: 'other',
             usage: { input_tokens: 20, output_tokens: 10 },
           }
         }

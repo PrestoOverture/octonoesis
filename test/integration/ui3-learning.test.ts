@@ -56,7 +56,11 @@ function replyProvider() {
     name: 'anthropic',
     async *createMessageStream() {
       yield { type: 'text_delta', text: 'Done.' }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
 }
@@ -175,7 +179,11 @@ test('distillation yields persisted candidate before completion and reports late
             })
           : 'Done.',
       }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   const ctx = {
