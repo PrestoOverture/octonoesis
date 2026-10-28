@@ -844,7 +844,7 @@ export async function* streamFromProvider(
       dropped,
       droppedCalls.length > 0
         ? 'Split large content: Write a skeleton, then Edit in chunks. Retry dropped work with complete JSON arguments.'
-        : 'Continue exactly where you stopped.',
+        : 'If you were producing file content, do NOT continue it as text — file content belongs only in tool calls: Write a skeleton or the first chunk, then add the rest with Edit in chunks small enough to fit in one response. Otherwise continue exactly where you stopped.',
     ]
       .filter(Boolean)
       .join(' ')
