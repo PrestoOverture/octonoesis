@@ -54,7 +54,7 @@ import { todoWriteTool } from '../tools/TodoWrite'
 import type { ToolContext } from '../tools/Tool'
 import { webFetchTool } from '../tools/WebFetch'
 import { writeTool } from '../tools/Write'
-import { runTool } from '../tools/execute'
+import { runTool, safeParseToolInput } from '../tools/execute'
 import { getAllTools, registerTool, unregisterTool } from '../tools/registry'
 import { createMarkdownStream } from '../ui/markdown'
 import { estimateCost } from '../utils/cost'
@@ -921,7 +921,7 @@ export async function* executeTools(
   const canBatch = (call: (typeof toolUses)[number]): boolean => {
     try {
       const tool = getAllTools().find((tool) => tool.name === call.name)
-      const input = tool?.inputSchema.safeParse(call.input)
+      const input = tool ? safeParseToolInput(tool, call.input) : undefined
       return (
         tool !== undefined &&
         input?.success === true &&
