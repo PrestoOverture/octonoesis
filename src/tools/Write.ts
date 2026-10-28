@@ -1,6 +1,7 @@
-import { realpath, stat, writeFile } from 'node:fs/promises'
+import { realpath, stat } from 'node:fs/promises'
 import { dirname, resolve, sep } from 'node:path'
 import z from 'zod'
+import { writeWithCheckpoint } from '../state/fileHistory'
 import { checkFileState, recordFileRead } from '../state/fileState'
 import { assertInsideRepo } from '../utils/path'
 import type { Tool, ToolContext, ToolResult } from './Tool'
@@ -115,7 +116,7 @@ class WriteTool implements Tool<WriteInput, string> {
 
     // 5. Write the file content to disk
     try {
-      await writeFile(realTargetPath, input.content, 'utf-8')
+      await writeWithCheckpoint(ctx, 'Write', realTargetPath, input.content)
       if (exists) recordFileRead(ctx, realTargetPath, input.content)
       return {
         ok: true,

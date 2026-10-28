@@ -1,5 +1,6 @@
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile } from 'node:fs/promises'
 import z from 'zod'
+import { writeWithCheckpoint } from '../state/fileHistory'
 import { checkFileState, recordFileRead } from '../state/fileState'
 import { assertInsideRepo } from '../utils/path'
 import type { Tool, ToolContext, ToolResult } from './Tool'
@@ -94,7 +95,7 @@ class EditTool implements Tool<EditInput, string> {
       ? parts.join(input.new_string)
       : content.replace(input.old_string, input.new_string)
     try {
-      await writeFile(realTargetPath, updatedContent, 'utf-8')
+      await writeWithCheckpoint(ctx, 'Edit', realTargetPath, updatedContent)
 
       // Update cached hash to enable consecutive edits without manual re-reading
       recordFileRead(ctx, realTargetPath, updatedContent)
