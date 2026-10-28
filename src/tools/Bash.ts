@@ -8,6 +8,7 @@ import { taskOutputLogPath } from '../tasks/framework'
 import { startLocalShellTask } from '../tasks/localShell'
 import { shellChildEnv } from '../utils/childEnv'
 import type { Tool, ToolContext, ToolResult } from './Tool'
+import { captureOutput } from './boundedCapture'
 export const activeSubprocesses = new Set<unknown>()
 
 // Input validation schema using Zod
@@ -184,9 +185,19 @@ class BashTool implements Tool<BashInput, string> {
       activeSubprocesses.add(proc)
 
       // 5. Stream and wait for stdout and stderr to complete
-      const [stdoutText, stderrText, exitCode] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
+      const [captured, exitCode] = await Promise.all([
+        captureOutput(proc.stdout, proc.stderr, ctx.repoRoot, async (stderrText) => {
+          if (
+            sandbox &&
+            (await proc.exited) !== 0 &&
+            /operation not permitted|deny/i.test(stderrText) &&
+            !stderrText.includes('[octonoesis-sandbox]')
+          ) {
+            const separator = stderrText.length > 0 && !stderrText.endsWith('\n') ? '\n' : ''
+            return `${separator}[octonoesis-sandbox] This failure may be a sandbox denial rather than a code bug.\n`
+          }
+          return ''
+        }),
         proc.exited,
       ])
 
@@ -204,25 +215,11 @@ class BashTool implements Tool<BashInput, string> {
       }
 
       // 7. Format structured output back to the model as a JSON string
-      let returnedStderr = stderrText
-      if (
-        sandbox &&
-        exitCode !== 0 &&
-        /operation not permitted|deny/i.test(stderrText) &&
-        !stderrText.includes('[octonoesis-sandbox]')
-      ) {
-        const separator = stderrText.length > 0 && !stderrText.endsWith('\n') ? '\n' : ''
-        returnedStderr = `${stderrText}${separator}[octonoesis-sandbox] This failure may be a sandbox denial rather than a code bug.\n`
-      }
-
-      const resultObj = {
-        code: exitCode,
-        stdout: stdoutText,
-        stderr: returnedStderr,
-      }
+      const resultObj = { code: exitCode, ...captured }
 
       return { ok: true, value: JSON.stringify(resultObj) }
     } catch (err) {
+      signalProcessGroup(proc)
       cleanup()
       return { ok: false, error: `execution_error: ${(err as Error).message}` }
     }

@@ -7,6 +7,13 @@ import type { Tool, ToolContext, ToolResult } from './Tool'
 // Zod schema defining the input argument shape
 const ReadInputSchema = z.object({
   path: z.string().min(1, 'path is required'),
+  offset: z.number().int().positive().optional().describe('1-based starting line (default: 1).'),
+  limit: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe('Maximum lines to return (default: 2000).'),
 })
 
 type ReadInput = z.infer<typeof ReadInputSchema>
@@ -48,15 +55,47 @@ class ReadTool implements Tool<ReadInput, string> {
 
     const realTargetPath = guard.realPath
     try {
-      const content = await fsReadFile(realTargetPath, 'utf-8')
+      const bytes = await fsReadFile(realTargetPath)
+      if (bytes.subarray(0, 8192).includes(0)) {
+        return { ok: false, error: 'binary_file: File contains a NUL byte in the first 8KB.' }
+      }
+      const content = bytes.toString('utf-8')
 
       // Record the file state cache in the context
       recordFileRead(ctx, realTargetPath, content)
 
-      // 5. Line Numbering: Prefix every line with a 1-indexed line number and tab
       const lines = content.split(/\r?\n/)
-      const numberedContent = lines.map((line, index) => `${index + 1}\t${line}`).join('\n')
-      return { ok: true, value: numberedContent }
+      const start = Math.min((input.offset ?? 1) - 1, lines.length)
+      const end = Math.min(start + (input.limit ?? 2000), lines.length)
+      let cut = start > 0 || end < lines.length
+      let output = ''
+      let last = start
+      for (let index = start; index < end; index++) {
+        const line = lines[index] ?? ''
+        if (line.length > 2000) cut = true
+        const row = `${index + 1}\t${line.slice(0, 2000)}`
+        const separator = output ? '\n' : ''
+        // Reserve footer space when this row would leave any content undisplayed.
+        const footer = `\n[lines ${start + 1}-${index + 1} of ${lines.length}; use offset to read more]`
+        const needsFooter =
+          cut || index + 1 < lines.length || output.length + separator.length + row.length > 100_000
+        const budget = 100_000 - (needsFooter ? footer.length : 0)
+        const available = budget - output.length - separator.length
+        if (available < row.length) {
+          if (available > `${index + 1}\t`.length) {
+            output += separator + row.slice(0, available)
+            last = index + 1
+          }
+          cut = true
+          break
+        }
+        output += separator + row
+        last = index + 1
+      }
+      if (cut) {
+        output += `${output ? '\n' : ''}[lines ${start + 1}-${last} of ${lines.length}; use offset to read more]`
+      }
+      return { ok: true, value: output }
     } catch (err) {
       return { ok: false, error: `read_error: ${(err as Error).message}` }
     }
