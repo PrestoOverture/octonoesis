@@ -36,6 +36,7 @@ describe('Octonoesis config schema', () => {
       ui: { animation: 'on' },
       maxTurns: 50,
       maxOutputTokens: 16384,
+      intentNudge: true,
       sandbox: { enabled: false },
       mcpServers: {},
       hooks: [],
@@ -53,6 +54,15 @@ describe('Octonoesis config schema', () => {
 
   it('rejects unknown top-level keys with their exact path', () => {
     expectConfigError({ sanbox: { enabled: false } }, 'sanbox')
+  })
+
+  it('defaults intentNudge to true and accepts only booleans', () => {
+    expect(parseConfig({}).intentNudge).toBe(true)
+    expect(parseConfig({ intentNudge: true }).intentNudge).toBe(true)
+    expect(parseConfig({ intentNudge: false }).intentNudge).toBe(false)
+    for (const intentNudge of ['false', 0, null]) {
+      expectConfigError({ intentNudge }, 'intentNudge')
+    }
   })
 
   it('rejects unknown keys at every nested object boundary', () => {

@@ -106,6 +106,7 @@ export const octonoesisConfigSchema = z
     model: z.string().optional(),
     maxTurns: positiveIntegerSchema.default(50),
     maxOutputTokens: positiveIntegerSchema.default(16384),
+    intentNudge: z.boolean().default(true),
     sandbox: sandboxSchema.default({ enabled: false }),
     mcpServers: z.record(z.string(), mcpServerSchema).default({}),
     hooks: z.array(hookSchema).default([]),

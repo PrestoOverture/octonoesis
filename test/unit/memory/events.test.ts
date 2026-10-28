@@ -249,6 +249,7 @@ describe('Journal Event Schema', () => {
       user: 1,
       compact: 2,
       truncation: 2,
+      intent_nudge: 2,
       memory_write: 2,
       skill: 2,
       task: 2,
