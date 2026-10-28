@@ -10,7 +10,7 @@ import { render } from 'ink'
 import React from 'react'
 import { parseConfig } from '../../../src/config/schema'
 import { requestPermission } from '../../../src/permissions/confirm'
-import { setProvider } from '../../../src/providers'
+import { type CanonicalMessage, setProvider } from '../../../src/providers'
 import { getTodos, setTodos } from '../../../src/state/todos'
 import { App } from '../../../src/ui/App'
 import { bannerLayout, version } from '../../../src/ui/banner'
@@ -31,6 +31,7 @@ async function terminal(
     tty?: boolean
     animation?: 'off' | 'on'
     resume?: boolean
+    messages?: CanonicalMessage[]
     levelZero?: boolean
     noColor?: boolean
     envOff?: boolean
@@ -72,7 +73,9 @@ async function terminal(
         repoRoot: directory,
         memoryDir: directory,
         config: parseConfig({ ui: { animation: options.animation ?? 'on' } }),
-        messages: options.resume ? [{ role: 'user', content: 'resumed-history' }] : [],
+        messages:
+          options.messages ??
+          (options.resume ? [{ role: 'user', content: 'resumed-history' }] : []),
       }}
     />,
     {
@@ -387,7 +390,9 @@ test('resize bursts clear once, then redraw a full frame', async () => {
 test('conversation resize reprints committed text and cancels reset on unmount', async () => {
   const previousTodos = getTodos()
   setTodos([])
-  const tty = await terminal()
+  const tty = await terminal({
+    messages: [{ role: 'assistant', content: [{ type: 'text', text: 'committed-resize-reply' }] }],
+  })
   let release = () => {}
   const gate = new Promise<void>((resolve) => {
     release = resolve
@@ -397,7 +402,7 @@ test('conversation resize reprints committed text and cancels reset on unmount',
     async *createMessageStream() {
       yield {
         type: 'text_delta',
-        text: `committed-resize-reply\n\n${Array.from({ length: 60 }, (_, index) => `streaming-resize-${index}`).join('\n')}`,
+        text: `uncommitted-resize-reply\n\n${Array.from({ length: 60 }, (_, index) => `streaming-resize-${index}`).join('\n')}`,
       }
       await gate
       yield {
@@ -412,7 +417,7 @@ test('conversation resize reprints committed text and cancels reset on unmount',
     tty.stdin.write('resize conversation')
     await delay(40)
     tty.stdin.write('\r')
-    await delay(250)
+    await waitFor(() => tty.chunks.join('').includes('streaming-resize-59'))
     const start = tty.chunks.length
     tty.stdout.rows = 20
     tty.stdout.columns = 45

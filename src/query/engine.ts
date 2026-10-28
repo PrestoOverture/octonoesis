@@ -1,4 +1,5 @@
 import crypto from 'node:crypto'
+import { setTimeout as delay } from 'node:timers/promises'
 import { isActiveConfigTrusted, loadConfig } from '../config/load'
 import type { OctonoesisConfig } from '../config/schema'
 import { assignArm, filterRulesForArm, recordAssignment } from '../experiments/assignment'
@@ -57,6 +58,7 @@ import { getAllTools, registerTool, unregisterTool } from '../tools/registry'
 import { createMarkdownStream } from '../ui/markdown'
 import { estimateCost } from '../utils/cost'
 import { dbg } from '../utils/debug'
+import { isRetriableError } from '../utils/errors'
 import {
   LockTimeoutError,
   RULES_LOCK_OPTIONS,
@@ -111,6 +113,7 @@ export type StreamEvent =
   | LearningEvent
   | ProviderStreamEvent
   | { type: 'task_notice'; text: string }
+  | { type: 'stream_retry'; attempt: number; reason: string }
   | { type: 'tool_done'; id: string; name: string; status: 'done' | 'error'; summary?: string }
   | { type: 'compact'; preTokens: number; postTokens: number; durationMs: number }
   | { type: 'session_state'; sessionState: SessionState; priced: boolean }
@@ -720,48 +723,70 @@ export async function* streamFromProvider(
   const messagesAtStreamStart = state.messages.length
 
   try {
-    const stream = state.provider.createMessageStream(context.messages, context.tools, {
-      model: state.model,
-      maxTokens: maxOutputTokens,
-      signal: ctx.abortSignal || new AbortController().signal,
-      system: context.system,
-      dynamicSystem: context.dynamicSystem,
-    })
-
-    for await (const event of stream) {
-      if (ctx.abortSignal?.aborted) {
-        recordCancellation(state)
-        return { kind: 'exit', result: cancellationResult(state) }
-      }
-
-      if (event.type === 'text_delta') {
-        yield { type: 'text_delta', text: event.text }
-        const lastBlock = assistantBlocks[assistantBlocks.length - 1]
-        if (lastBlock?.type === 'text') {
-          lastBlock.text += event.text
-        } else {
-          assistantBlocks.push({ type: 'text', text: event.text })
-        }
-      } else if (event.type === 'tool_use') {
-        lastToolUseId = event.id
-        yield event
-        assistantBlocks.push({
-          type: 'tool_use',
-          id: event.id,
-          name: event.name,
-          input: event.input,
+    let attempt = 0
+    while (true) {
+      assistantBlocks.length = 0
+      finalUsage = null
+      stopReason = 'other'
+      lastToolUseId = undefined
+      droppedCalls.length = 0
+      let receivedEvent = false
+      try {
+        const stream = state.provider.createMessageStream(context.messages, context.tools, {
+          model: state.model,
+          maxTokens: maxOutputTokens,
+          signal: ctx.abortSignal || new AbortController().signal,
+          system: context.system,
+          dynamicSystem: context.dynamicSystem,
         })
-      } else if (event.type === 'message_end') {
-        finalUsage = event.usage
-        stopReason = event.stopReason
-        lastToolUseId = event.lastToolUseId ?? lastToolUseId
-        for (const call of event.invalidToolCalls ?? []) {
-          droppedCalls.push({ ...call, reason: 'invalid_arguments' })
+
+        for await (const event of stream) {
+          receivedEvent = true
+          if (ctx.abortSignal?.aborted) {
+            recordCancellation(state)
+            return { kind: 'exit', result: cancellationResult(state) }
+          }
+
+          if (event.type === 'text_delta') {
+            yield { type: 'text_delta', text: event.text }
+            const lastBlock = assistantBlocks[assistantBlocks.length - 1]
+            if (lastBlock?.type === 'text') {
+              lastBlock.text += event.text
+            } else {
+              assistantBlocks.push({ type: 'text', text: event.text })
+            }
+          } else if (event.type === 'tool_use') {
+            lastToolUseId = event.id
+            yield event
+            assistantBlocks.push({
+              type: 'tool_use',
+              id: event.id,
+              name: event.name,
+              input: event.input,
+            })
+          } else if (event.type === 'message_end') {
+            finalUsage = event.usage
+            stopReason = event.stopReason
+            lastToolUseId = event.lastToolUseId ?? lastToolUseId
+            for (const call of event.invalidToolCalls ?? []) {
+              droppedCalls.push({ ...call, reason: 'invalid_arguments' })
+            }
+          }
         }
-        state.contextSnapshot = {
-          tokens: totalTokensFromUsage(event.usage),
-          coveredCount: messagesAtStreamStart + 1,
+        break
+      } catch (error) {
+        if (
+          ctx.abortSignal?.aborted ||
+          !receivedEvent ||
+          !isRetriableError(error) ||
+          attempt >= 2
+        ) {
+          throw error
         }
+        attempt++
+        const reason = error instanceof Error ? error.message : String(error)
+        yield { type: 'stream_retry', attempt, reason }
+        await delay(500 * 2 ** (attempt - 1), undefined, { signal: ctx.abortSignal })
       }
     }
   } catch (error) {
@@ -782,6 +807,12 @@ export async function* streamFromProvider(
     }
   }
 
+  if (finalUsage) {
+    state.contextSnapshot = {
+      tokens: totalTokensFromUsage(finalUsage),
+      coveredCount: messagesAtStreamStart + 1,
+    }
+  }
   const usage = finalUsage || { input_tokens: 0, output_tokens: 0 }
   if (stopReason === 'max_tokens' && lastToolUseId !== undefined) {
     const lastToolIndex = assistantBlocks.findIndex(
@@ -1346,6 +1377,9 @@ export async function runQuery(
       const event = step.value
       if (event.type === 'text_delta') {
         textOutput.write(event.text)
+      } else if (event.type === 'stream_retry') {
+        textOutput.flush()
+        process.stderr.write(`↻ connection lost, retrying (${event.attempt}/2)\n`)
       } else if (event.type === 'tool_use') {
         textOutput.flush()
         let inputStr = ''

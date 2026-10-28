@@ -32,7 +32,7 @@ test('split markdown, three same-name tools, notices and end form an immutable d
     expect(JSON.stringify(previous)).toBe(serialized)
     expect(state.transcript.length >= previous.transcript.length).toBe(true)
     previous.transcript.forEach((item, index) => expect(state.transcript[index]).toBe(item))
-    if (event.type === 'tool_use') expect(state.pending).toBe('')
+    if (event.type === 'tool_use') expect(state.pending).toBe('**hello**\n\nnext `token`')
     if (event.type === 'tool_done' && event.id === '2')
       expect(state.running.map((tool) => tool.id)).toEqual(['1', '3'])
   }
@@ -40,8 +40,7 @@ test('split markdown, three same-name tools, notices and end form an immutable d
   expect(state.running).toEqual([])
   expect(state.transcript).toEqual([
     { kind: 'user', text: 'go', spacer: true },
-    { kind: 'assistant', text: '**hello**\n\n', verbatim: false, header: true },
-    { kind: 'assistant', text: 'next `token`', verbatim: false, header: false },
+    { kind: 'assistant', text: '**hello**\n\nnext `token`', verbatim: false, header: true },
     { kind: 'tool', id: '2', name: 'Read', args: '2.txt', status: 'error' },
     { kind: 'tool', id: '1', name: 'Read', args: '1.txt', status: 'done' },
     { kind: 'tool', id: '3', name: 'Read', args: '3.txt', status: 'done' },
@@ -90,25 +89,53 @@ test('seeding copies history into display items; shrinking model history cannot 
   expect(state.transcript.find((item) => item.kind === 'tool')?.status).toBe('error')
 })
 
-test('unclosed fences stay pending and flush intact at tool boundaries and end', () => {
+test('unclosed fences stay pending through tool previews and flush intact on completion and end', () => {
   const fence = `\`\`\`ts\n${'const value = 1\n'.repeat(200)}`
   let state = transcriptReducer(seedTranscript(), { type: 'text_delta', text: fence })
   expect(state.transcript).toEqual([])
   expect(state.pending).toBe(fence)
   state = transcriptReducer(state, { type: 'tool_use', id: 'a', name: 'Read', input: {} })
+  expect(state.pending).toBe(fence)
+  expect(state.transcript).toEqual([])
+  state = transcriptReducer(state, {
+    type: 'message_end',
+    stopReason: 'tool_use',
+    usage: { input_tokens: 1, output_tokens: 1 },
+  })
   expect(state.transcript[0]).toEqual({
     kind: 'assistant',
     text: fence,
     verbatim: false,
     header: true,
   })
+  state = transcriptReducer(state, { type: 'tool_done', id: 'a', name: 'Read', status: 'done' })
   state = transcriptReducer(state, { type: 'text_delta', text: fence })
   state = transcriptReducer(state, { type: 'end' })
-  expect(state.transcript[1]).toEqual({
+  expect(state.transcript[2]).toEqual({
     kind: 'assistant',
     text: fence,
     verbatim: false,
     header: true,
   })
   expect(state.pending).toBe('')
+})
+
+test('retry discards complete paragraphs and tool previews while retaining previous turns', () => {
+  let state = seedTranscript([
+    { role: 'assistant', content: [{ type: 'text', text: 'previous reply' }] },
+  ])
+  state = transcriptReducer(state, { type: 'text_delta', text: 'stale paragraph\n\nstale tail' })
+  state = transcriptReducer(state, { type: 'tool_use', id: 'stale', name: 'Read', input: {} })
+  state = transcriptReducer(state, { type: 'stream_retry', attempt: 2, reason: 'reset' })
+  expect(JSON.stringify(state)).not.toContain('stale')
+  expect(JSON.stringify(state)).toContain('previous reply')
+  expect(JSON.stringify(state)).toContain('↻ connection lost, retrying (2/2)')
+  state = transcriptReducer(state, { type: 'text_delta', text: 'replacement' })
+  state = transcriptReducer(state, {
+    type: 'message_end',
+    stopReason: 'end_turn',
+    usage: { input_tokens: 1, output_tokens: 1 },
+  })
+  expect(state.pending).toBe('')
+  expect(JSON.stringify(state.transcript)).toContain('replacement')
 })
