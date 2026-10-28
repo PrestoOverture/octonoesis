@@ -230,6 +230,26 @@ program
   })
 
 program
+  .command('rewind')
+  .description('List file checkpoints or restore files to before a recorded change')
+  .option('--list', 'List recent file history sessions for this repository')
+  .option('--session <id>', 'Select a session (default: most recent for this repository)')
+  .option('--to <seq>', 'Restore files touched at or after this change number')
+  .option('--yes', 'Skip restore confirmation')
+  .option('--force', 'Restore even when files changed after the session')
+  .action(async (options) => {
+    try {
+      const { runRewind } = await import('./state/rewind.ts')
+      await runRewind(options, startupRepoRoot, getMemoryDir())
+    } catch (error) {
+      console.error(
+        `Error rewinding files: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      process.exit(1)
+    }
+  })
+
+program
   .command('experiments')
   .description('List preregistered experiments, or register one with --register <jsonFile>')
   .option('--register <jsonFile>', 'Register a new experiment from a JSON file')
