@@ -410,7 +410,11 @@ describe('fork process protocol', () => {
         yield { type: 'text_delta', text: 'partial ' }
         yield { type: 'text_delta', text: 'answer' }
         yield { type: 'tool_use', id: 'unexpected-1', name: 'Read', input: {} }
-        yield { type: 'message_end', usage: { input_tokens: 12, output_tokens: 4 } }
+        yield {
+          type: 'message_end',
+          stopReason: 'other',
+          usage: { input_tokens: 12, output_tokens: 4 },
+        }
       },
     }
     const prepared = withForkDepth('0', () => prepareForkInput(baseOptions()))

@@ -135,16 +135,28 @@ describe('repository-local skill CLI rehearsal', () => {
       scriptedEvents: [
         [
           { type: 'tool_use', id: 'read-canary', name: 'Read', input: { path: 'canary.txt' } },
-          { type: 'message_end', usage: { input_tokens: 2, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 2, output_tokens: 1 },
+          },
         ],
         [
           { type: 'text_delta', text: 'READ-SEEN {{tool_result}}' },
           { type: 'tool_use', id: 'try-bash', name: 'Bash', input: { command: 'pwd' } },
-          { type: 'message_end', usage: { input_tokens: 3, output_tokens: 2 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 3, output_tokens: 2 },
+          },
         ],
         [
           { type: 'text_delta', text: ' BLOCKED={{tool_is_error}} {{tool_result}}' },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
       ],
     })

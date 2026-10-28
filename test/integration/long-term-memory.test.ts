@@ -45,12 +45,16 @@ class ToolThenFinalProvider implements LLMProvider {
     this.turn++
     if (this.turn === 1) {
       yield { type: 'tool_use', id: 'read-project', name: 'Read', input: { path: 'package.json' } }
-      yield { type: 'message_end', usage: { input_tokens: 4, output_tokens: 2 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 4, output_tokens: 2 },
+      }
       return
     }
 
     yield { type: 'text_delta', text: 'SESSION_RESULT_UNCHANGED' }
-    yield { type: 'message_end', usage: { input_tokens: 3, output_tokens: 1 } }
+    yield { type: 'message_end', stopReason: 'other', usage: { input_tokens: 3, output_tokens: 1 } }
   }
 }
 

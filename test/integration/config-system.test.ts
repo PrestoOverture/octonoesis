@@ -77,7 +77,11 @@ describe('unified config wiring', () => {
       ) {
         observed.push(options.model)
         yield { type: 'text_delta' as const, text: 'done' }
-        yield { type: 'message_end' as const, usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end' as const,
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     }
     setProvider(provider)
@@ -106,7 +110,11 @@ describe('unified config wiring', () => {
           name: 'Read',
           input: { path: 'package.json' },
         }
-        yield { type: 'message_end' as const, usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end' as const,
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     })
 
@@ -156,7 +164,11 @@ describe('unified config wiring', () => {
             input: { path: 'forbidden.txt', content: 'blocked' },
           }
         } else yield { type: 'text_delta' as const, text: 'done' }
-        yield { type: 'message_end' as const, usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end' as const,
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     })
     let prompted = false
@@ -195,7 +207,11 @@ describe('unified config wiring', () => {
             input: { command: `printf allowed > '${output}'` },
           }
         } else yield { type: 'text_delta' as const, text: 'done' }
-        yield { type: 'message_end' as const, usage: { input_tokens: 1, output_tokens: 1 } }
+        yield {
+          type: 'message_end' as const,
+          stopReason: 'other',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
       },
     })
     let prompted = false

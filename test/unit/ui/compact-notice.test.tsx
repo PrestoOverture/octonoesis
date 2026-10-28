@@ -24,11 +24,19 @@ class CompactingUiProvider implements LLMProvider {
         name: 'Read',
         input: { path: 'package.json' },
       }
-      yield { type: 'message_end', usage: { input_tokens: 5_000, output_tokens: 10 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 5_000, output_tokens: 10 },
+      }
       return
     }
     yield { type: 'text_delta', text: 'UI session complete.' }
-    yield { type: 'message_end', usage: { input_tokens: 100, output_tokens: 10 } }
+    yield {
+      type: 'message_end',
+      stopReason: 'other',
+      usage: { input_tokens: 100, output_tokens: 10 },
+    }
   }
 }
 

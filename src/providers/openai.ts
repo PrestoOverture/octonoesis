@@ -3,7 +3,7 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { dbg } from '../utils/debug'
 import { getOpenAIKey, getSparkKey } from '../utils/env'
 import { withRetryGenerator } from '../utils/retry'
-import type { CanonicalMessage, CanonicalTool, LLMProvider, StreamEvent } from './types'
+import type { CanonicalMessage, CanonicalTool, LLMProvider, StopReason, StreamEvent } from './types'
 
 export const DEFAULT_OPENAI_MODEL = 'gpt-5-nano'
 export const DEFAULT_SPARK_MODEL = 'spark-x2.6'
@@ -138,6 +138,9 @@ export class OpenAIProvider implements LLMProvider {
       const accumulatedToolCalls: Map<number, AccumulatedToolCall> = new Map()
       let inputTokens = 0
       let outputTokens = 0
+      let stopReason: StopReason = 'other'
+      const invalidToolCalls: { id: string; name: string }[] = []
+      let lastToolUseId: string | undefined
 
       for await (const chunk of stream) {
         // Intercept token usage from the final chunks
@@ -148,6 +151,16 @@ export class OpenAIProvider implements LLMProvider {
 
         const choice = chunk.choices[0]
         if (!choice) continue
+        if (choice.finish_reason != null) {
+          stopReason =
+            choice.finish_reason === 'stop'
+              ? 'end_turn'
+              : choice.finish_reason === 'tool_calls'
+                ? 'tool_use'
+                : choice.finish_reason === 'length'
+                  ? 'max_tokens'
+                  : 'other'
+        }
 
         const delta = choice.delta
 
@@ -181,14 +194,16 @@ export class OpenAIProvider implements LLMProvider {
       } // <-- End of chunk streaming loop
 
       // Yield all accumulated tool calls upon stream termination
-      for (const [_, accum] of accumulatedToolCalls) {
+      for (const [, accum] of [...accumulatedToolCalls].sort(([a], [b]) => a - b)) {
         if (accum.id && accum.name) {
+          lastToolUseId = accum.id
           let parsedInput: unknown = {}
           try {
             parsedInput = JSON.parse(accum.arguments)
-          } catch (e) {
-            dbg('stream', 'Failed to parse OpenAI tool call arguments', accum.arguments)
-            parsedInput = accum.arguments
+          } catch {
+            dbg('stream', 'Failed to parse OpenAI tool call arguments', { id: accum.id })
+            invalidToolCalls.push({ id: accum.id, name: accum.name })
+            continue
           }
           yield {
             type: 'tool_use',
@@ -202,6 +217,8 @@ export class OpenAIProvider implements LLMProvider {
       // Yield message end token counts
       yield {
         type: 'message_end',
+        stopReason,
+        ...(invalidToolCalls.length > 0 ? { invalidToolCalls, lastToolUseId } : {}),
         usage: {
           input_tokens: inputTokens,
           output_tokens: outputTokens,

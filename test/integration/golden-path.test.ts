@@ -37,7 +37,7 @@ describe('Golden Path E2E Integration', () => {
         name: 'Read',
         input: { path: 'src/buggy.ts' },
       },
-      { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
     ]
 
     const turn2Events: ProviderStreamEvent[] = [
@@ -48,7 +48,7 @@ describe('Golden Path E2E Integration', () => {
         name: 'Grep',
         input: { pattern: 'handleUser', path: 'src' },
       },
-      { type: 'message_end', usage: { input_tokens: 20, output_tokens: 10 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 20, output_tokens: 10 } },
     ]
 
     const turn3Events: ProviderStreamEvent[] = [
@@ -65,7 +65,7 @@ describe('Golden Path E2E Integration', () => {
             "  if (!user || !user.name) {\n    return 'Hello, Guest!'\n  }\n  return `Hello, ${user.name.toUpperCase()}!`",
         },
       },
-      { type: 'message_end', usage: { input_tokens: 30, output_tokens: 15 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 30, output_tokens: 15 } },
     ]
 
     const turn4Events: ProviderStreamEvent[] = [
@@ -76,7 +76,7 @@ describe('Golden Path E2E Integration', () => {
         name: 'Bash',
         input: { command: 'bun test' },
       },
-      { type: 'message_end', usage: { input_tokens: 40, output_tokens: 20 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 40, output_tokens: 20 } },
     ]
 
     const turn5Events: ProviderStreamEvent[] = [
@@ -84,7 +84,7 @@ describe('Golden Path E2E Integration', () => {
         type: 'text_delta',
         text: 'All 5 tests pass successfully. The null pointer bug has been fixed!',
       },
-      { type: 'message_end', usage: { input_tokens: 50, output_tokens: 10 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 50, output_tokens: 10 } },
     ]
 
     // Set the MockProvider

@@ -100,15 +100,27 @@ describe('one-shot fallback permissions', () => {
       new ScriptedProvider([
         [
           { type: 'tool_use', id: 'bash-1', name: 'Bash', input: { command: 'printf first' } },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
         [
           { type: 'tool_use', id: 'bash-2', name: 'Bash', input: { command: 'printf second' } },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
         [
           { type: 'text_delta', text: 'Both commands completed.' },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
       ]),
     )
@@ -163,15 +175,27 @@ describe('one-shot fallback permissions', () => {
       new ScriptedProvider([
         [
           { type: 'tool_use', id: 'bash-1', name: 'Bash', input: { command: 'printf first' } },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
         [
           { type: 'tool_use', id: 'bash-2', name: 'Bash', input: { command: 'printf second' } },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
         [
           { type: 'text_delta', text: 'Handled the denied command.' },
-          { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 1, output_tokens: 1 },
+          },
         ],
       ]),
     )

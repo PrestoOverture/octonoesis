@@ -55,7 +55,11 @@ async function drain(root: string): Promise<void> {
     name: 'anthropic',
     async *createMessageStream() {
       yield { type: 'text_delta' as const, text: 'done' }
-      yield { type: 'message_end' as const, usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end' as const,
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   for await (const _event of query('trust probe', { repoRoot: root })) {

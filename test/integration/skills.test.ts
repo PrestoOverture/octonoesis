@@ -101,11 +101,19 @@ describe('skill integration', () => {
       scriptedEvents: [
         [
           { type: 'tool_use', id: 'read-1', name: 'Read', input: { path: 'package.json' } },
-          { type: 'message_end', usage: { input_tokens: 2, output_tokens: 1 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 2, output_tokens: 1 },
+          },
         ],
         [
           { type: 'text_delta', text: 'Observed {{tool_result}}' },
-          { type: 'message_end', usage: { input_tokens: 3, output_tokens: 2 } },
+          {
+            type: 'message_end',
+            stopReason: 'other',
+            usage: { input_tokens: 3, output_tokens: 2 },
+          },
         ],
       ],
     })

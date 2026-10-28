@@ -304,15 +304,20 @@ test('resize during streaming and permission preserves committed text and resolv
   setProvider({
     name: 'anthropic',
     async *createMessageStream() {
-      yield { type: 'text_delta', text: 'committed-stream-paragraph\n\npending-stream-tail' }
+      yield { type: 'text_delta', text: 'unfinished-stream-paragraph\n\npending-stream-tail' }
       await gate
       yield { type: 'text_delta', text: '-continued' }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   const tty = await terminal([
     ...messages,
     { role: 'assistant', content: [{ type: 'text', text: 'long-history\n'.repeat(40) }] },
+    { role: 'assistant', content: [{ type: 'text', text: 'committed-stream-paragraph' }] },
   ])
   try {
     await tty.flush()
@@ -381,7 +386,11 @@ for (const live of [false, true]) {
           name: 'anthropic',
           async *createMessageStream() {
             yield { type: 'text_delta', text: 'echo-reply' }
-            yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+            yield {
+              type: 'message_end',
+              stopReason: 'other',
+              usage: { input_tokens: 1, output_tokens: 1 },
+            }
           },
         })
         await until(() => tty.screen.visible.some((line) => line.includes('ctx ')))
@@ -422,3 +431,60 @@ for (const live of [false, true]) {
     }
   }, 15000)
 }
+
+test('stream retry renders a dim line and removes the entire partial reply from the terminal', async () => {
+  let fail = () => {}
+  let succeed = () => {}
+  const failedStream = new Promise<void>((resolve) => {
+    fail = resolve
+  })
+  const retriedStream = new Promise<void>((resolve) => {
+    succeed = resolve
+  })
+  let calls = 0
+  setProvider({
+    name: 'anthropic',
+    async *createMessageStream() {
+      if (calls++ === 0) {
+        yield { type: 'text_delta', text: 'stale paragraph\n\nstale tail' }
+        yield { type: 'tool_use', id: 'stale-tool', name: 'Read', input: { path: 'stale-file' } }
+        await failedStream
+        throw Object.assign(new Error('connection reset'), { code: 'ECONNRESET' })
+      }
+      await retriedStream
+      yield { type: 'text_delta', text: 'replacement reply' }
+      yield {
+        type: 'message_end',
+        stopReason: 'end_turn',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
+    },
+  })
+  const tty = await terminal(
+    [{ role: 'assistant', content: [{ type: 'text', text: 'previous reply' }] }],
+    { color: true },
+  )
+  try {
+    await tty.flush()
+    tty.stdin.write('recover please')
+    await until(() => tty.screen.visible.join('\n').includes('recover please'))
+    tty.stdin.write('\r')
+    await until(() => tty.screen.lines.join('\n').includes('stale tail'))
+    fail()
+    await until(() => tty.screen.lines.join('\n').includes('↻ connection lost, retrying (1/2)'))
+    expect(tty.screen.lines.join('\n')).not.toContain('stale')
+    expect(tty.screen.lines.join('\n')).toContain('previous reply')
+    expect(tty.chunks.join('')).toContain('\x1b[2m↻ connection lost, retrying (1/2)')
+    succeed()
+    await until(() => tty.screen.lines.join('\n').includes('replacement reply'))
+    await tty.flush()
+    expect(tty.screen.lines.join('\n')).not.toContain('stale')
+    expect(tty.chunks.join('')).not.toContain('\x1b[2J')
+    expect(tty.chunks.join('')).not.toContain('\x1b[3J')
+    expect(calls).toBe(2)
+  } finally {
+    fail()
+    succeed()
+    await tty.close()
+  }
+})

@@ -223,6 +223,7 @@ describe('LLM Providers & Router Integration', () => {
         },
         {
           type: 'message_end',
+          stopReason: 'end_turn',
           usage: { input_tokens: 100, output_tokens: 50 },
         },
       ])
@@ -338,6 +339,7 @@ describe('LLM Providers & Router Integration', () => {
         },
         {
           type: 'message_end',
+          stopReason: 'other',
           usage: { input_tokens: 80, output_tokens: 40 },
         },
       ])

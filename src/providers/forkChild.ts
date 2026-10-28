@@ -352,6 +352,7 @@ function createMockProvider(config: ForkMockConfig): LLMProvider {
       yield { type: 'text_delta', text: config.text ?? '' }
       yield {
         type: 'message_end',
+        stopReason: 'other',
         usage: { input_tokens: 0, output_tokens: 0 },
       }
     },

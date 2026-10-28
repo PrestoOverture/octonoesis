@@ -132,6 +132,7 @@ export function DisplayEntry({ item, width }: { item: DisplayItem; width?: numbe
       />
     )
   if (item.kind === 'compact') return <CompactNotice {...item} />
+  if (item.kind === 'stream_retry') return <Text dimColor>{item.text}</Text>
   if (item.kind === 'resume') return <Text color="yellow">{item.text}</Text>
   if (item.kind === 'task_notice')
     return (

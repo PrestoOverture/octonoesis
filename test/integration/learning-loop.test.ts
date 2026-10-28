@@ -116,7 +116,7 @@ describe('End-to-End Learning Loop', () => {
         name: 'Bash',
         input: { command: 'bun test' },
       },
-      { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
     ]
 
     const s1Turn2Events: ProviderStreamEvent[] = [
@@ -127,7 +127,7 @@ describe('End-to-End Learning Loop', () => {
         name: 'Read',
         input: { path: 'src/buggy.ts' },
       },
-      { type: 'message_end', usage: { input_tokens: 20, output_tokens: 10 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 20, output_tokens: 10 } },
     ]
 
     const s1Turn3Events: ProviderStreamEvent[] = [
@@ -142,7 +142,7 @@ describe('End-to-End Learning Loop', () => {
           new_string: 'fixed content',
         },
       },
-      { type: 'message_end', usage: { input_tokens: 30, output_tokens: 15 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 30, output_tokens: 15 } },
     ]
 
     const s1Turn4Events: ProviderStreamEvent[] = [
@@ -153,12 +153,12 @@ describe('End-to-End Learning Loop', () => {
         name: 'Bash',
         input: { command: 'bun test' },
       },
-      { type: 'message_end', usage: { input_tokens: 40, output_tokens: 20 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 40, output_tokens: 20 } },
     ]
 
     const s1Turn5Events: ProviderStreamEvent[] = [
       { type: 'text_delta', text: 'Fixed error successfully!' },
-      { type: 'message_end', usage: { input_tokens: 50, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 50, output_tokens: 5 } },
     ]
 
     // ----------------------------------------------------
@@ -172,7 +172,7 @@ describe('End-to-End Learning Loop', () => {
         name: 'Bash',
         input: { command: 'bun test' },
       },
-      { type: 'message_end', usage: { input_tokens: 10, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
     ]
 
     const s2Turn2Events: ProviderStreamEvent[] = [
@@ -187,7 +187,7 @@ describe('End-to-End Learning Loop', () => {
           new_string: 'fixed option content',
         },
       },
-      { type: 'message_end', usage: { input_tokens: 30, output_tokens: 15 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 30, output_tokens: 15 } },
     ]
 
     const s2Turn3Events: ProviderStreamEvent[] = [
@@ -198,12 +198,12 @@ describe('End-to-End Learning Loop', () => {
         name: 'Bash',
         input: { command: 'bun test' },
       },
-      { type: 'message_end', usage: { input_tokens: 40, output_tokens: 20 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 40, output_tokens: 20 } },
     ]
 
     const s2Turn4Events: ProviderStreamEvent[] = [
       { type: 'text_delta', text: 'Task completed successfully!' },
-      { type: 'message_end', usage: { input_tokens: 50, output_tokens: 5 } },
+      { type: 'message_end', stopReason: 'other', usage: { input_tokens: 50, output_tokens: 5 } },
     ]
 
     let s1Turn = 0
@@ -239,6 +239,7 @@ describe('End-to-End Learning Loop', () => {
           }
           yield {
             type: 'message_end',
+            stopReason: 'other',
             usage: { input_tokens: 5, output_tokens: 5 },
           }
           return
@@ -261,6 +262,7 @@ describe('End-to-End Learning Loop', () => {
           }
           yield {
             type: 'message_end',
+            stopReason: 'other',
             usage: { input_tokens: 5, output_tokens: 5 },
           }
           return

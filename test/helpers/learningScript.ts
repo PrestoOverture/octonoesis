@@ -83,7 +83,11 @@ export async function learningScript(root: string, fault = false) {
         if (step) yield { type: 'tool_use', ...step }
         else yield { type: 'text_delta', text: 'Fixed.' }
       }
-      yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+      yield {
+        type: 'message_end',
+        stopReason: 'other',
+        usage: { input_tokens: 1, output_tokens: 1 },
+      }
     },
   })
   const ctx: QueryLoopContext = { repoRoot: root, sessionId: 'learning-script', messages: [] }

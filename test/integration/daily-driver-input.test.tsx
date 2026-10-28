@@ -33,7 +33,7 @@ class CapturingProvider implements LLMProvider {
   ): AsyncIterable<StreamEvent> {
     this.calls.push(structuredClone(messages))
     yield { type: 'text_delta', text: 'done' }
-    yield { type: 'message_end', usage: { input_tokens: 1, output_tokens: 1 } }
+    yield { type: 'message_end', stopReason: 'other', usage: { input_tokens: 1, output_tokens: 1 } }
   }
 }
 
