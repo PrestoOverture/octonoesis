@@ -1,0 +1,25 @@
+// @ts-nocheck -- standalone eval fixture; implementation may be absent before solving.
+import { expect, test } from 'bun:test'
+import { LRU } from './src/lru'
+test('contract', () => {
+  for (const n of [0, -1, 1.5, NaN, Infinity]) expect(() => new LRU(n)).toThrow(RangeError)
+  const c = new LRU<string, number | undefined>(2)
+  expect(c.set('a', undefined)).toBe(c)
+  c.set('b', 2)
+  expect(c.has('a')).toBe(true)
+  expect(c.get('a')).toBeUndefined()
+  c.set('c', 3)
+  expect(c.has('b')).toBe(false)
+  expect(c.keys()).toEqual(['c', 'a'])
+  c.set('a', 4)
+  expect(c.size).toBe(2)
+  expect(c.keys()).toEqual(['a', 'c'])
+  expect(c.has('c')).toBe(true)
+  expect(c.keys()).toEqual(['a', 'c'])
+  expect(c.get('absent')).toBeUndefined()
+  expect(c.delete('c')).toBe(true)
+  expect(c.delete('c')).toBe(false)
+  c.clear()
+  expect(c.keys()).toEqual([])
+  expect(c.size).toBe(0)
+})

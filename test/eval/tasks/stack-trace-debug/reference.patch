@@ -1,0 +1,10 @@
+diff --git a/src/checkout.ts b/src/checkout.ts
+index 52e2b6c..60842e3 100644
+--- a/src/checkout.ts
++++ b/src/checkout.ts
+@@ -1,4 +1,4 @@
+ import { receipt } from './receipt'
+ export function checkout(row: { unit_cents: number; quantity: number }): string {
+-  return receipt({ unitCents: row.unit_cents, count: (row as unknown as { count: number }).count })
++  return receipt({ unitCents: row.unit_cents, count: row.quantity })
+ }

@@ -1,0 +1,17 @@
+diff --git a/src/normalize.ts b/src/normalize.ts
+index bc71c20..66f33af 100644
+--- a/src/normalize.ts
++++ b/src/normalize.ts
+@@ -1 +1 @@
+-export function normalize(value: string): string { return value.trim().toLowerCase() }
++export function normalize(value: string): string { return value.normalize('NFKC').trim().toLowerCase() }
+diff --git a/src/search.ts b/src/search.ts
+index ebe875d..599f7be 100644
+--- a/src/search.ts
++++ b/src/search.ts
+@@ -1,4 +1,4 @@
+ import { normalize } from './normalize'
+ export function search(values: string[], query: string): string[] {
+-  return values.filter(value => normalize(value).includes(query))
++  return values.filter(value => normalize(value).includes(normalize(query)))
+ }

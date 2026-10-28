@@ -1,0 +1,5 @@
+{
+  "prompt": "Rename formatUser to renderUser, add options: { uppercase?: boolean } = {}, preserve trimming and default case, and make all four views request uppercase. Update imports and tests; remove every occurrence of the old name from TypeScript files.",
+  "check": "bun test && ! grep -R -n 'formatUser' --include='*.ts' src ./*.test.ts",
+  "timeout_s": 240
+}

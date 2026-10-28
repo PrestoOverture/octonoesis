@@ -1,0 +1,5 @@
+{
+  "prompt": "Verify that clamp matches README.md by running the tests. Only change source if it violates the specification; otherwise leave it untouched.",
+  "check": "bun test && git diff --quiet -- src",
+  "timeout_s": 240
+}

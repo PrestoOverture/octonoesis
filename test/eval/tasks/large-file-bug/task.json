@@ -1,0 +1,5 @@
+{
+  "prompt": "Invoice totals disagree with the documented discount: invoice(codes, discount) must sum tariff cents, apply a fractional discount once, then round to cents. Unknown codes cost zero. Preserve the generated tariff table.",
+  "check": "bun test",
+  "timeout_s": 240
+}

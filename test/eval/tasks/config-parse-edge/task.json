@@ -1,0 +1,5 @@
+{
+  "prompt": "Fix parse() in src/config.ts. Assignments are key=value, blank/comment lines ignored, # starts a comment only outside a JSON double-quoted string. Handle escaped quotes, escaped backslashes, embedded # and =, empty strings, duplicate keys (last wins), and reject unterminated strings. Keep unquoted values trimmed.",
+  "check": "bun test",
+  "timeout_s": 240
+}
