@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import OpenAI from 'openai'
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions'
 import { dbg } from '../utils/debug'
@@ -139,59 +140,85 @@ export class OpenAIProvider implements LLMProvider {
       let inputTokens = 0
       let outputTokens = 0
       let stopReason: StopReason = 'other'
+      let receivedChunk = false
+      let hasFinishReason = false
       const invalidToolCalls: { id: string; name: string }[] = []
       let lastToolUseId: string | undefined
 
-      for await (const chunk of stream) {
-        // Intercept token usage from the final chunks
-        if (chunk.usage) {
-          inputTokens = chunk.usage.prompt_tokens ?? inputTokens
-          outputTokens = chunk.usage.completion_tokens ?? outputTokens
-        }
+      try {
+        for await (const chunk of stream) {
+          receivedChunk = true
+          // Intercept token usage from the final chunks
+          if (chunk.usage) {
+            inputTokens = chunk.usage.prompt_tokens ?? inputTokens
+            outputTokens = chunk.usage.completion_tokens ?? outputTokens
+          }
 
-        const choice = chunk.choices[0]
-        if (!choice) continue
-        if (choice.finish_reason != null) {
-          stopReason =
-            choice.finish_reason === 'stop'
-              ? 'end_turn'
-              : choice.finish_reason === 'tool_calls'
-                ? 'tool_use'
-                : choice.finish_reason === 'length'
-                  ? 'max_tokens'
-                  : 'other'
-        }
+          const choice = chunk.choices[0]
+          if (!choice) continue
+          if (choice.finish_reason != null) {
+            hasFinishReason = true
+            stopReason =
+              choice.finish_reason === 'stop'
+                ? 'end_turn'
+                : choice.finish_reason === 'tool_calls'
+                  ? 'tool_use'
+                  : choice.finish_reason === 'length'
+                    ? 'max_tokens'
+                    : 'other'
+          }
 
-        const delta = choice.delta
+          const delta = choice.delta
 
-        // 1. Text streaming
-        if (delta.content) {
-          yield { type: 'text_delta', text: delta.content }
-          dbg('stream', 'text_delta', { length: delta.content.length })
-        }
+          // 1. Text streaming
+          if (delta.content) {
+            yield { type: 'text_delta', text: delta.content }
+            dbg('stream', 'text_delta', { length: delta.content.length })
+          }
 
-        // 2. Tool calls streaming
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const index = tc.index
-            if (!accumulatedToolCalls.has(index)) {
-              accumulatedToolCalls.set(index, { arguments: '' })
-            }
-            const accum = accumulatedToolCalls.get(index)
-            if (accum) {
-              if (tc.id) {
-                accum.id = tc.id
+          // 2. Tool calls streaming
+          if (delta.tool_calls) {
+            for (const tc of delta.tool_calls) {
+              const index = tc.index
+              if (!accumulatedToolCalls.has(index)) {
+                accumulatedToolCalls.set(index, { arguments: '' })
               }
-              if (tc.function?.name) {
-                accum.name = tc.function.name
-              }
-              if (tc.function?.arguments) {
-                accum.arguments += tc.function.arguments
+              const accum = accumulatedToolCalls.get(index)
+              if (accum) {
+                if (tc.id) {
+                  accum.id = tc.id
+                }
+                if (tc.function?.name) {
+                  accum.name = tc.function.name
+                }
+                if (tc.function?.arguments) {
+                  accum.arguments += tc.function.arguments
+                }
               }
             }
           }
+        } // <-- End of chunk streaming loop
+      } catch (error) {
+        if (
+          !isSpark ||
+          !receivedChunk ||
+          opts.signal.aborted ||
+          !(error instanceof Error) ||
+          !error.message.includes('tool call stream ended before </tool_call>')
+        ) {
+          throw error
         }
-      } // <-- End of chunk streaming loop
+        stopReason = 'max_tokens'
+        const calls = [...accumulatedToolCalls].sort(([a], [b]) => a - b).map(([, call]) => call)
+        if (calls.length === 0) calls.push({ arguments: '' })
+        for (const call of calls) {
+          const invalidCall = { id: call.id ?? randomUUID(), name: call.name ?? 'unknown' }
+          invalidToolCalls.push(invalidCall)
+          lastToolUseId = invalidCall.id
+        }
+        // Even parseable arguments are unfinished when Spark misses the closing marker.
+        accumulatedToolCalls.clear()
+      }
 
       // Yield all accumulated tool calls upon stream termination
       for (const [, accum] of [...accumulatedToolCalls].sort(([a], [b]) => a - b)) {
@@ -213,6 +240,8 @@ export class OpenAIProvider implements LLMProvider {
           }
         }
       }
+
+      if (!hasFinishReason && invalidToolCalls.length > 0) stopReason = 'max_tokens'
 
       // Yield message end token counts
       yield {
