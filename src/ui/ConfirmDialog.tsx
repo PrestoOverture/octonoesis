@@ -32,10 +32,13 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     }
   })
 
-  const isEdit = toolName === 'Edit'
-  const editInput = input as { path: string; old_string: string; new_string: string }
+  const editInput = input as { path: string; old_string?: string; new_string?: string }
+  const hasDiff =
+    (toolName === 'Edit' || toolName === 'Write') &&
+    typeof editInput.old_string === 'string' &&
+    typeof editInput.new_string === 'string'
 
-  // Format parameters cleanly for non-Edit tools
+  // Format parameters cleanly for tools without a diff
   const paramsStr = typeof input === 'string' ? input : JSON.stringify(input, null, 2)
 
   const { rows } = useWindowSize()
@@ -50,7 +53,7 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
     'Press [y] Yes once / [n] No / [a] Always allow for this input',
     width,
   )
-  const label = wrapProseLines(isEdit ? `File: ${editInput.path}` : 'Parameters:', width)
+  const label = wrapProseLines(hasDiff ? `File: ${editInput.path}` : 'Parameters:', width)
   // Borders, heading, payload label and answer keys are accounted for before the body.
   const bodyRows = Math.max(
     1,
@@ -76,10 +79,10 @@ export function ConfirmDialog(props: ConfirmDialogProps) {
           <Text bold color="gray">
             {label.join('\n')}
           </Text>
-          {isEdit ? (
+          {hasDiff ? (
             <DiffPreview
-              oldText={editInput.old_string}
-              newText={editInput.new_string}
+              oldText={editInput.old_string ?? ''}
+              newText={editInput.new_string ?? ''}
               filePath={editInput.path}
               maxLines={bodyRows}
               columns={width}
