@@ -54,9 +54,10 @@ describe('CLI stats options and subcommands', () => {
       env: {
         ...process.env,
         OCTONOESIS_MEMORY_DIR: TEST_DIR,
-        // Stats paths make no API call; a dummy key satisfies the startup presence
-        // check on keyless environments (CI) without violating the no-live-key policy.
-        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || 'test-dummy-key',
+        // Stats make no API call, so they must work on keyless environments (CI).
+        ANTHROPIC_API_KEY: '',
+        OPENAI_API_KEY: '',
+        SPARK_API_KEY: '',
       },
       stdout: 'pipe',
       stderr: 'pipe',
@@ -98,9 +99,10 @@ describe('CLI stats options and subcommands', () => {
       env: {
         ...process.env,
         OCTONOESIS_MEMORY_DIR: TEST_DIR,
-        // Stats paths make no API call; a dummy key satisfies the startup presence
-        // check on keyless environments (CI) without violating the no-live-key policy.
-        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || 'test-dummy-key',
+        // Stats make no API call, so they must work on keyless environments (CI).
+        ANTHROPIC_API_KEY: '',
+        OPENAI_API_KEY: '',
+        SPARK_API_KEY: '',
       },
       stdout: 'pipe',
       stderr: 'pipe',

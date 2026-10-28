@@ -305,8 +305,6 @@ program
       console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
       process.exit(1)
     }
-    checkApiKey()
-
     if (program.opts().stats) {
       try {
         const { readCalibrationRecords, aggregateCalibrationStats } = await import(
@@ -325,6 +323,8 @@ program
         throw error
       }
     }
+
+    checkApiKey()
 
     claimProcessSignals()
     const controller = new AbortController()
