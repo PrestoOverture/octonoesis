@@ -10,7 +10,8 @@ import type { QueryLoopContext } from '../../src/query/types'
 import { bashTool } from '../../src/tools/Bash'
 import { editTool } from '../../src/tools/Edit'
 import { readTool } from '../../src/tools/Read'
-import { registerTool } from '../../src/tools/registry'
+import { getAllTools, registerTool } from '../../src/tools/registry'
+import { BUILTIN_TOOL_NAMES, restoreRegistry } from './globalState'
 
 export function seededRule(id = 'rule-fix'): RuleFile {
   return {
@@ -47,6 +48,13 @@ export async function learningScript(root: string, fault = false) {
   await fs.writeFile(path.join(root, 'bug.txt'), 'broken\n')
   await saveRule(seededRule())
   for (const tool of [bashTool, readTool, editTool]) registerTool(tool)
+  // Files that unregister and re-register a built-in move it to the end of the registry,
+  // so restore engine.ts order: the fixture's system prompt lists tools in that order.
+  const rank = (name: string) => {
+    const index = (BUILTIN_TOOL_NAMES as readonly string[]).indexOf(name)
+    return index < 0 ? BUILTIN_TOOL_NAMES.length : index
+  }
+  restoreRegistry(getAllTools().sort((left, right) => rank(left.name) - rank(right.name)))
   registerPromptHandler(async () => 'allow_always')
   const command =
     'if [ "$(cat bug.txt)" = fixed ]; then echo passed; else echo \'TypeError: broken at bug.txt\'; exit 1; fi'
