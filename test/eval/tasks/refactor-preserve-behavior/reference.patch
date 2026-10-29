@@ -1,0 +1,788 @@
+diff --git a/src/format.ts b/src/format.ts
+new file mode 100644
+index 0000000..276b097
+--- /dev/null
++++ b/src/format.ts
+@@ -0,0 +1,161 @@
++// @ts-nocheck -- standalone eval fixture
++import { validate0, validate1, validate2, validate3, validate4, validate5, validate6, validate7, validate8, validate9, validate10, validate11, validate12, validate13, validate14, validate15, validate16, validate17, validate18, validate19 } from './validate'
++export function format0(value) {
++  const checked = validate0(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric0'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format1(value) {
++  const checked = validate1(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric1'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format2(value) {
++  const checked = validate2(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric2'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format3(value) {
++  const checked = validate3(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric3'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format4(value) {
++  const checked = validate4(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric4'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format5(value) {
++  const checked = validate5(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric5'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format6(value) {
++  const checked = validate6(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric6'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format7(value) {
++  const checked = validate7(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric7'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format8(value) {
++  const checked = validate8(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric8'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format9(value) {
++  const checked = validate9(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric9'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format10(value) {
++  const checked = validate10(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric10'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format11(value) {
++  const checked = validate11(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric11'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format12(value) {
++  const checked = validate12(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric12'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format13(value) {
++  const checked = validate13(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric13'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format14(value) {
++  const checked = validate14(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric14'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format15(value) {
++  const checked = validate15(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric15'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format16(value) {
++  const checked = validate16(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric16'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format17(value) {
++  const checked = validate17(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric17'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format18(value) {
++  const checked = validate18(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric18'
++  const separator = '='
++  return label + separator + rounded
++}
++
++export function format19(value) {
++  const checked = validate19(value)
++  const rounded = checked.toFixed(2)
++  const label = 'metric19'
++  const separator = '='
++  return label + separator + rounded
++}
+diff --git a/src/metrics.ts b/src/metrics.ts
+index 49702f4..1650d21 100644
+--- a/src/metrics.ts
++++ b/src/metrics.ts
+@@ -1,380 +1,4 @@
+ // @ts-nocheck -- standalone eval fixture
+-export function validate0(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric0: expected finite number')
+-  if (value < 0) throw new RangeError('metric0: below minimum')
+-  return value
+-}
+-
+-export function validate1(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric1: expected finite number')
+-  if (value < 1) throw new RangeError('metric1: below minimum')
+-  return value
+-}
+-
+-export function validate2(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric2: expected finite number')
+-  if (value < 2) throw new RangeError('metric2: below minimum')
+-  return value
+-}
+-
+-export function validate3(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric3: expected finite number')
+-  if (value < 3) throw new RangeError('metric3: below minimum')
+-  return value
+-}
+-
+-export function validate4(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric4: expected finite number')
+-  if (value < 4) throw new RangeError('metric4: below minimum')
+-  return value
+-}
+-
+-export function validate5(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric5: expected finite number')
+-  if (value < 5) throw new RangeError('metric5: below minimum')
+-  return value
+-}
+-
+-export function validate6(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric6: expected finite number')
+-  if (value < 6) throw new RangeError('metric6: below minimum')
+-  return value
+-}
+-
+-export function validate7(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric7: expected finite number')
+-  if (value < 7) throw new RangeError('metric7: below minimum')
+-  return value
+-}
+-
+-export function validate8(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric8: expected finite number')
+-  if (value < 8) throw new RangeError('metric8: below minimum')
+-  return value
+-}
+-
+-export function validate9(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric9: expected finite number')
+-  if (value < 9) throw new RangeError('metric9: below minimum')
+-  return value
+-}
+-
+-export function validate10(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric10: expected finite number')
+-  if (value < 10) throw new RangeError('metric10: below minimum')
+-  return value
+-}
+-
+-export function validate11(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric11: expected finite number')
+-  if (value < 11) throw new RangeError('metric11: below minimum')
+-  return value
+-}
+-
+-export function validate12(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric12: expected finite number')
+-  if (value < 12) throw new RangeError('metric12: below minimum')
+-  return value
+-}
+-
+-export function validate13(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric13: expected finite number')
+-  if (value < 13) throw new RangeError('metric13: below minimum')
+-  return value
+-}
+-
+-export function validate14(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric14: expected finite number')
+-  if (value < 14) throw new RangeError('metric14: below minimum')
+-  return value
+-}
+-
+-export function validate15(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric15: expected finite number')
+-  if (value < 15) throw new RangeError('metric15: below minimum')
+-  return value
+-}
+-
+-export function validate16(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric16: expected finite number')
+-  if (value < 16) throw new RangeError('metric16: below minimum')
+-  return value
+-}
+-
+-export function validate17(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric17: expected finite number')
+-  if (value < 17) throw new RangeError('metric17: below minimum')
+-  return value
+-}
+-
+-export function validate18(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric18: expected finite number')
+-  if (value < 18) throw new RangeError('metric18: below minimum')
+-  return value
+-}
+-
+-export function validate19(value) {
+-  if (!Number.isFinite(value)) throw new TypeError('metric19: expected finite number')
+-  if (value < 19) throw new RangeError('metric19: below minimum')
+-  return value
+-}
+-
+-export function format0(value) {
+-  const checked = validate0(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric0'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format1(value) {
+-  const checked = validate1(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric1'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format2(value) {
+-  const checked = validate2(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric2'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format3(value) {
+-  const checked = validate3(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric3'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format4(value) {
+-  const checked = validate4(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric4'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format5(value) {
+-  const checked = validate5(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric5'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format6(value) {
+-  const checked = validate6(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric6'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format7(value) {
+-  const checked = validate7(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric7'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format8(value) {
+-  const checked = validate8(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric8'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format9(value) {
+-  const checked = validate9(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric9'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format10(value) {
+-  const checked = validate10(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric10'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format11(value) {
+-  const checked = validate11(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric11'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format12(value) {
+-  const checked = validate12(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric12'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format13(value) {
+-  const checked = validate13(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric13'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format14(value) {
+-  const checked = validate14(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric14'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format15(value) {
+-  const checked = validate15(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric15'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format16(value) {
+-  const checked = validate16(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric16'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format17(value) {
+-  const checked = validate17(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric17'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format18(value) {
+-  const checked = validate18(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric18'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function format19(value) {
+-  const checked = validate19(value)
+-  const rounded = checked.toFixed(2)
+-  const label = 'metric19'
+-  const separator = '='
+-  return label + separator + rounded
+-}
+-
+-export function parse0(text) {
+-  if (!text.startsWith('metric0=')) throw new Error('metric0: invalid prefix')
+-  return validate0(Number(text.slice(8)))
+-}
+-
+-export function parse1(text) {
+-  if (!text.startsWith('metric1=')) throw new Error('metric1: invalid prefix')
+-  return validate1(Number(text.slice(8)))
+-}
+-
+-export function parse2(text) {
+-  if (!text.startsWith('metric2=')) throw new Error('metric2: invalid prefix')
+-  return validate2(Number(text.slice(8)))
+-}
+-
+-export function parse3(text) {
+-  if (!text.startsWith('metric3=')) throw new Error('metric3: invalid prefix')
+-  return validate3(Number(text.slice(8)))
+-}
+-
+-export function parse4(text) {
+-  if (!text.startsWith('metric4=')) throw new Error('metric4: invalid prefix')
+-  return validate4(Number(text.slice(8)))
+-}
+-
+-export function parse5(text) {
+-  if (!text.startsWith('metric5=')) throw new Error('metric5: invalid prefix')
+-  return validate5(Number(text.slice(8)))
+-}
+-
+-export function parse6(text) {
+-  if (!text.startsWith('metric6=')) throw new Error('metric6: invalid prefix')
+-  return validate6(Number(text.slice(8)))
+-}
+-
+-export function parse7(text) {
+-  if (!text.startsWith('metric7=')) throw new Error('metric7: invalid prefix')
+-  return validate7(Number(text.slice(8)))
+-}
+-
+-export function parse8(text) {
+-  if (!text.startsWith('metric8=')) throw new Error('metric8: invalid prefix')
+-  return validate8(Number(text.slice(8)))
+-}
+-
+-export function parse9(text) {
+-  if (!text.startsWith('metric9=')) throw new Error('metric9: invalid prefix')
+-  return validate9(Number(text.slice(8)))
+-}
+-
+-export function parse10(text) {
+-  if (!text.startsWith('metric10=')) throw new Error('metric10: invalid prefix')
+-  return validate10(Number(text.slice(9)))
+-}
+-
+-export function parse11(text) {
+-  if (!text.startsWith('metric11=')) throw new Error('metric11: invalid prefix')
+-  return validate11(Number(text.slice(9)))
+-}
+-
+-export function parse12(text) {
+-  if (!text.startsWith('metric12=')) throw new Error('metric12: invalid prefix')
+-  return validate12(Number(text.slice(9)))
+-}
+-
+-export function parse13(text) {
+-  if (!text.startsWith('metric13=')) throw new Error('metric13: invalid prefix')
+-  return validate13(Number(text.slice(9)))
+-}
+-
+-export function parse14(text) {
+-  if (!text.startsWith('metric14=')) throw new Error('metric14: invalid prefix')
+-  return validate14(Number(text.slice(9)))
+-}
+-
+-export function parse15(text) {
+-  if (!text.startsWith('metric15=')) throw new Error('metric15: invalid prefix')
+-  return validate15(Number(text.slice(9)))
+-}
+-
+-export function parse16(text) {
+-  if (!text.startsWith('metric16=')) throw new Error('metric16: invalid prefix')
+-  return validate16(Number(text.slice(9)))
+-}
+-
+-export function parse17(text) {
+-  if (!text.startsWith('metric17=')) throw new Error('metric17: invalid prefix')
+-  return validate17(Number(text.slice(9)))
+-}
+-
+-export function parse18(text) {
+-  if (!text.startsWith('metric18=')) throw new Error('metric18: invalid prefix')
+-  return validate18(Number(text.slice(9)))
+-}
+-
+-export function parse19(text) {
+-  if (!text.startsWith('metric19=')) throw new Error('metric19: invalid prefix')
+-  return validate19(Number(text.slice(9)))
+-}
++export * from './validate'
++export * from './format'
++export * from './parse'
+diff --git a/src/parse.ts b/src/parse.ts
+new file mode 100644
+index 0000000..46bf4e1
+--- /dev/null
++++ b/src/parse.ts
+@@ -0,0 +1,101 @@
++// @ts-nocheck -- standalone eval fixture
++import { validate0, validate1, validate2, validate3, validate4, validate5, validate6, validate7, validate8, validate9, validate10, validate11, validate12, validate13, validate14, validate15, validate16, validate17, validate18, validate19 } from './validate'
++export function parse0(text) {
++  if (!text.startsWith('metric0=')) throw new Error('metric0: invalid prefix')
++  return validate0(Number(text.slice(8)))
++}
++
++export function parse1(text) {
++  if (!text.startsWith('metric1=')) throw new Error('metric1: invalid prefix')
++  return validate1(Number(text.slice(8)))
++}
++
++export function parse2(text) {
++  if (!text.startsWith('metric2=')) throw new Error('metric2: invalid prefix')
++  return validate2(Number(text.slice(8)))
++}
++
++export function parse3(text) {
++  if (!text.startsWith('metric3=')) throw new Error('metric3: invalid prefix')
++  return validate3(Number(text.slice(8)))
++}
++
++export function parse4(text) {
++  if (!text.startsWith('metric4=')) throw new Error('metric4: invalid prefix')
++  return validate4(Number(text.slice(8)))
++}
++
++export function parse5(text) {
++  if (!text.startsWith('metric5=')) throw new Error('metric5: invalid prefix')
++  return validate5(Number(text.slice(8)))
++}
++
++export function parse6(text) {
++  if (!text.startsWith('metric6=')) throw new Error('metric6: invalid prefix')
++  return validate6(Number(text.slice(8)))
++}
++
++export function parse7(text) {
++  if (!text.startsWith('metric7=')) throw new Error('metric7: invalid prefix')
++  return validate7(Number(text.slice(8)))
++}
++
++export function parse8(text) {
++  if (!text.startsWith('metric8=')) throw new Error('metric8: invalid prefix')
++  return validate8(Number(text.slice(8)))
++}
++
++export function parse9(text) {
++  if (!text.startsWith('metric9=')) throw new Error('metric9: invalid prefix')
++  return validate9(Number(text.slice(8)))
++}
++
++export function parse10(text) {
++  if (!text.startsWith('metric10=')) throw new Error('metric10: invalid prefix')
++  return validate10(Number(text.slice(9)))
++}
++
++export function parse11(text) {
++  if (!text.startsWith('metric11=')) throw new Error('metric11: invalid prefix')
++  return validate11(Number(text.slice(9)))
++}
++
++export function parse12(text) {
++  if (!text.startsWith('metric12=')) throw new Error('metric12: invalid prefix')
++  return validate12(Number(text.slice(9)))
++}
++
++export function parse13(text) {
++  if (!text.startsWith('metric13=')) throw new Error('metric13: invalid prefix')
++  return validate13(Number(text.slice(9)))
++}
++
++export function parse14(text) {
++  if (!text.startsWith('metric14=')) throw new Error('metric14: invalid prefix')
++  return validate14(Number(text.slice(9)))
++}
++
++export function parse15(text) {
++  if (!text.startsWith('metric15=')) throw new Error('metric15: invalid prefix')
++  return validate15(Number(text.slice(9)))
++}
++
++export function parse16(text) {
++  if (!text.startsWith('metric16=')) throw new Error('metric16: invalid prefix')
++  return validate16(Number(text.slice(9)))
++}
++
++export function parse17(text) {
++  if (!text.startsWith('metric17=')) throw new Error('metric17: invalid prefix')
++  return validate17(Number(text.slice(9)))
++}
++
++export function parse18(text) {
++  if (!text.startsWith('metric18=')) throw new Error('metric18: invalid prefix')
++  return validate18(Number(text.slice(9)))
++}
++
++export function parse19(text) {
++  if (!text.startsWith('metric19=')) throw new Error('metric19: invalid prefix')
++  return validate19(Number(text.slice(9)))
++}
+diff --git a/src/validate.ts b/src/validate.ts
+new file mode 100644
+index 0000000..955967f
+--- /dev/null
++++ b/src/validate.ts
+@@ -0,0 +1,120 @@
++// @ts-nocheck -- standalone eval fixture
++export function validate0(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric0: expected finite number')
++  if (value < 0) throw new RangeError('metric0: below minimum')
++  return value
++}
++
++export function validate1(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric1: expected finite number')
++  if (value < 1) throw new RangeError('metric1: below minimum')
++  return value
++}
++
++export function validate2(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric2: expected finite number')
++  if (value < 2) throw new RangeError('metric2: below minimum')
++  return value
++}
++
++export function validate3(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric3: expected finite number')
++  if (value < 3) throw new RangeError('metric3: below minimum')
++  return value
++}
++
++export function validate4(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric4: expected finite number')
++  if (value < 4) throw new RangeError('metric4: below minimum')
++  return value
++}
++
++export function validate5(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric5: expected finite number')
++  if (value < 5) throw new RangeError('metric5: below minimum')
++  return value
++}
++
++export function validate6(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric6: expected finite number')
++  if (value < 6) throw new RangeError('metric6: below minimum')
++  return value
++}
++
++export function validate7(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric7: expected finite number')
++  if (value < 7) throw new RangeError('metric7: below minimum')
++  return value
++}
++
++export function validate8(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric8: expected finite number')
++  if (value < 8) throw new RangeError('metric8: below minimum')
++  return value
++}
++
++export function validate9(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric9: expected finite number')
++  if (value < 9) throw new RangeError('metric9: below minimum')
++  return value
++}
++
++export function validate10(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric10: expected finite number')
++  if (value < 10) throw new RangeError('metric10: below minimum')
++  return value
++}
++
++export function validate11(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric11: expected finite number')
++  if (value < 11) throw new RangeError('metric11: below minimum')
++  return value
++}
++
++export function validate12(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric12: expected finite number')
++  if (value < 12) throw new RangeError('metric12: below minimum')
++  return value
++}
++
++export function validate13(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric13: expected finite number')
++  if (value < 13) throw new RangeError('metric13: below minimum')
++  return value
++}
++
++export function validate14(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric14: expected finite number')
++  if (value < 14) throw new RangeError('metric14: below minimum')
++  return value
++}
++
++export function validate15(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric15: expected finite number')
++  if (value < 15) throw new RangeError('metric15: below minimum')
++  return value
++}
++
++export function validate16(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric16: expected finite number')
++  if (value < 16) throw new RangeError('metric16: below minimum')
++  return value
++}
++
++export function validate17(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric17: expected finite number')
++  if (value < 17) throw new RangeError('metric17: below minimum')
++  return value
++}
++
++export function validate18(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric18: expected finite number')
++  if (value < 18) throw new RangeError('metric18: below minimum')
++  return value
++}
++
++export function validate19(value) {
++  if (!Number.isFinite(value)) throw new TypeError('metric19: expected finite number')
++  if (value < 19) throw new RangeError('metric19: below minimum')
++  return value
++}

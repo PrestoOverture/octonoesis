@@ -21,9 +21,13 @@ const ids = [
   'chinese-prompt',
   'long-generation',
   'no-op-trap',
+  'misleading-stack-trace',
+  'async-race',
+  'spec-from-tests-only',
+  'refactor-preserve-behavior',
 ]
 
-test('eval catalog contains exactly the sixteen contracted fixtures', async () => {
+test('eval catalog contains exactly the twenty contracted fixtures', async () => {
   expect((await readdir(tasksRoot)).sort()).toEqual([...ids].sort())
 })
 

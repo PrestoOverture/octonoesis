@@ -1,0 +1,1 @@
+coalesce accepts an array of half-open integer ranges [start,end]. Return their sorted union, merging touching ranges. Endpoints must be safe integers and start <= end; otherwise throw RangeError("invalid range"). Preserve zero-length ranges unless absorbed by another range. Inputs must remain unchanged; output ranges must be independent copies.

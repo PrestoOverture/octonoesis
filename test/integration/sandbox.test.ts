@@ -472,6 +472,10 @@ describeDarwin('macOS sandbox escape policy', () => {
       { repoRoot, sandbox, abortSignal: controller.signal },
     )
 
+    const deadline = Date.now() + 2_000
+    while (activeSubprocesses.size === baseline && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
     expect(activeSubprocesses.size).toBe(baseline + 1)
     controller.abort()
     const result = await pending

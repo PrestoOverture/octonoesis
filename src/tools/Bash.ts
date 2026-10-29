@@ -4,6 +4,7 @@ import { z } from 'zod'
 import { resolveSandboxConfig } from '../sandbox/manager'
 import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { wrapWithSandbox } from '../sandbox/wrapper'
+import { recordFileHistoryCommand } from '../state/fileHistory'
 import { taskOutputLogPath } from '../tasks/framework'
 import { startLocalShellTask } from '../tasks/localShell'
 import { shellChildEnv } from '../utils/childEnv'
@@ -117,6 +118,8 @@ class BashTool implements Tool<BashInput, string> {
         error: `blocked_command: Command contains forbidden operation "${blocked}".`,
       }
     }
+
+    await recordFileHistoryCommand(ctx, input.command)
 
     if (input.run_in_background) {
       try {

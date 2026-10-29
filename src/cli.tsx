@@ -234,6 +234,8 @@ program
 program
   .command('rewind')
   .description('List file checkpoints or restore files to before a recorded change')
+  .option('--prune', 'Prune expired file history sessions')
+  .option('--days <N>', 'Retention days for --prune (0 keeps all)')
   .option('--list', 'List recent file history sessions for this repository')
   .option('--session <id>', 'Select a session (default: most recent for this repository)')
   .option('--to <seq>', 'Restore files touched at or after this change number')
@@ -242,7 +244,12 @@ program
   .action(async (options) => {
     try {
       const { runRewind } = await import('./state/rewind.ts')
-      await runRewind(options, startupRepoRoot, getMemoryDir())
+      await runRewind(
+        options,
+        startupRepoRoot,
+        getMemoryDir(),
+        startupConfig.fileHistory?.retentionDays ?? 30,
+      )
     } catch (error) {
       console.error(
         `Error rewinding files: ${error instanceof Error ? error.message : String(error)}`,

@@ -1,0 +1,8 @@
+diff --git a/src/defaults.ts b/src/defaults.ts
+index 4af9e9d..864abfe 100644
+--- a/src/defaults.ts
++++ b/src/defaults.ts
+@@ -1,2 +1,2 @@
+ // @ts-nocheck -- standalone eval fixture
+-export const defaults = { currency: 'usd' }
++export const defaults = { currency: 'USD' }
