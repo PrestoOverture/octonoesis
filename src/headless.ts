@@ -14,6 +14,7 @@ export interface HeadlessResult {
   tool_calls: { name: string; ok: boolean }[]
   final_text: string
   session_id: string
+  error?: string
 }
 
 /** Consume engine events without rendering; publish one result after session cleanup. */
@@ -43,6 +44,7 @@ export async function runJsonQuery(
       exit_reason: signal?.aborted ? 'user_cancel' : 'fatal_error',
       turns: ctx.sessionState?.turns ?? 0,
       usage: ctx.sessionState?.usage ?? { input_tokens: 0, output_tokens: 0 },
+      error: error instanceof Error ? error.message : String(error),
     }
   } finally {
     try {
@@ -65,6 +67,7 @@ export async function runJsonQuery(
     tool_calls: toolCalls,
     final_text: result.final_message ?? '',
     session_id: ctx.sessionId,
+    ...(result.error !== undefined ? { error: result.error } : {}),
   }
   if (result.exit_reason !== 'completed' && result.exit_reason !== 'user_cancel') {
     process.exitCode = 1

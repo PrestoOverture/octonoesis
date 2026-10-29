@@ -114,6 +114,7 @@ test('JSON reports provider failure as a result object', async () => {
     expect(result.code).toBe(1)
     const value = JSON.parse(result.stdout)
     expect(value.exit_reason).toBe('fatal_error')
+    expect(value.error).toContain('invalid model')
     expect(value.final_text).toBe('')
     expect(value.tool_calls).toEqual([])
   } finally {
