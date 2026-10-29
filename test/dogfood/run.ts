@@ -20,6 +20,7 @@ import { isKnownJournalEvent, parseJournalEvent } from '../../src/memory/events'
 import { loadAllRulesIncludingArchived } from '../../src/memory/rules/store'
 import { classify, command, parseOutput } from '../eval/run'
 import type { Job, Observation, Plan } from './model'
+import { hiddenGroups, parseHiddenResults } from './check'
 import { markdown, report } from './stats'
 import { digest, families, generateStream, loadStream, materialize } from './tasks'
 
@@ -338,6 +339,7 @@ async function runSession(
       30000,
     )
     await jsonFile(path.join(workspace, 'check.json'), check)
+    row.hidden_groups = parseHiddenResults(check.stdout)
     row.status = classify(cli, check, Boolean(row.output), row.output?.exit_reason)
     if (
       cli.timed_out ||
@@ -636,10 +638,31 @@ export function calibrationSummary(rows: Observation[]) {
       const group = rows.filter((r) => r.job.task.family === family)
       const hidden = group.filter((r) => r.status === 'PASS').length
       const publicPass = group.filter((r) => r.public_status === 'PASS').length
+      const failed = new Map<
+        string,
+        { id: string; clause_ids: string[]; failures: number; sessions: string[] }
+      >()
+      for (const row of group)
+        for (const check of row.hidden_groups ?? [])
+          if (!check.passed) {
+            const entry = failed.get(check.id) ?? {
+              id: check.id,
+              clause_ids: check.clause_ids,
+              failures: 0,
+              sessions: [],
+            }
+            entry.failures++
+            entry.sessions.push(row.job.task.id)
+            failed.set(check.id, entry)
+          }
       return [
         family,
         {
           sessions: group.length,
+          failed_groups: [...failed.values()],
+          diagnostics_missing: group.filter(
+            (r) => r.hidden_groups?.length !== hiddenGroups[family].length,
+          ).length,
           hidden_passes: hidden,
           hidden_pass_rate: group.length ? hidden / group.length : null,
           public_passes: publicPass,
@@ -734,10 +757,14 @@ export async function calibrate(options: Options) {
         throw error
     }
     console.log('Family | hidden pass | public pass | median seconds | median turns | errors')
-    for (const [family, row] of Object.entries(summary))
+    for (const [family, row] of Object.entries(summary)) {
       console.log(
         `${family} | ${row.hidden_pass_rate} | ${row.public_pass_rate} | ${row.median_seconds} | ${row.median_turns} | ${row.errors}`,
       )
+      console.log(
+        `  failed groups: ${row.failed_groups.map((group) => `${group.id} [${group.clause_ids.join(', ')}] x${group.failures} (${group.sessions.join(', ')})`).join('; ') || 'none observed'}; missing diagnostics: ${row.diagnostics_missing}`,
+      )
+    }
     return { dir, result }
   } finally {
     await unlock()

@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { command } from '../eval/run'
 import { calibrate, preregister, runPool } from './run'
+import { families } from './tasks'
 
 test('--calibrate is keyless-testable, uses fresh ledgers and never writes a preregistration', async () => {
   const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'dogfood-calibrate-')))
@@ -30,6 +31,7 @@ test('--calibrate is keyless-testable, uses fresh ledgers and never writes a pre
     )
     expect(cli.code).toBe(0)
     expect(cli.stdout).toContain('hidden pass | public pass | median seconds | median turns')
+    expect(cli.stdout).toContain('failed groups:')
     const files = await readdir(dir)
     expect(files).not.toContain('preregistration.json')
     expect(files).not.toContain('stream.json')
@@ -41,6 +43,8 @@ test('--calibrate is keyless-testable, uses fresh ledgers and never writes a pre
       median_seconds: number
       median_turns: number
       errors: number
+      failed_groups: { id: string; clause_ids: string[]; failures: number; sessions: string[] }[]
+      diagnostics_missing: number
     }[]) {
       expect(row.sessions).toBe(2)
       expect(row.hidden_pass_rate).toBe(0.5)
@@ -48,6 +52,13 @@ test('--calibrate is keyless-testable, uses fresh ledgers and never writes a pre
       expect(row.median_seconds).toBeGreaterThan(0)
       expect(row.median_turns).toBe(5)
       expect(row.errors).toBe(0)
+      expect(row.diagnostics_missing).toBe(0)
+      expect(row.failed_groups.length).toBeGreaterThan(0)
+      expect(
+        row.failed_groups.every(
+          (group) => group.clause_ids.length > 0 && group.sessions.length === group.failures,
+        ),
+      ).toBe(true)
     }
     const text = await readFile(path.join(dir, 'events.jsonl'), 'utf8')
     const rows = text
@@ -56,9 +67,9 @@ test('--calibrate is keyless-testable, uses fresh ledgers and never writes a pre
       .map((line) => JSON.parse(line))
       .filter((e) => e.kind === 'result')
       .map((e) => e.observation)
-    expect(rows.length).toBe(6)
+    expect(rows.length).toBe(2 * families.length)
     expect(rows.every((r) => r.rules_before === 0)).toBe(true)
-    expect(new Set(rows.map((r) => r.ledger)).size).toBe(6)
+    expect(new Set(rows.map((r) => r.ledger)).size).toBe(2 * families.length)
     const resumed = await calibrate({ dryRun: true, perFamily: 2, concurrency: 3, output: dir })
     expect(resumed.result).toEqual(result)
     expect(await readFile(path.join(dir, 'events.jsonl'), 'utf8')).toBe(text)

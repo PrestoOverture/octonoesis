@@ -275,8 +275,20 @@ export function assertSpecCoverage(specs: Record<Family, string> = specification
   }
 }
 
-/** External oracle. Invoked only AFTER the agent process exits, outside its repository. */
-export async function hiddenCheck(repo: string, family: Family, seed: number): Promise<void> {
+export interface HiddenGroupResult {
+  id: string
+  clause_ids: string[]
+  passed: boolean
+  message?: string
+}
+
+/** Run every independent group; results stay outside the agent's process and context. */
+export async function inspectHidden(
+  repo: string,
+  family: Family,
+  seed: number,
+  emit?: (event: unknown) => void,
+): Promise<HiddenGroupResult[]> {
   assertSpecCoverage()
   const m = (await import(
     `${pathToFileURL(path.join(repo, 'src/subject.ts')).href}?seed=${seed}`
@@ -286,15 +298,71 @@ export async function hiddenCheck(repo: string, family: Family, seed: number): P
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0
     return state % n
   }
-  for (const group of hiddenGroups[family]) await group.run(m, random)
+  const results: HiddenGroupResult[] = []
+  for (const group of hiddenGroups[family]) {
+    const clause_ids = Object.entries(clauses[family])
+      .filter(([, text]) => group.requires.includes(text))
+      .map(([id]) => `${family}.${id}`)
+    emit?.({ kind: 'group_start', id: group.id, clause_ids })
+    let result: HiddenGroupResult = { id: group.id, clause_ids, passed: true }
+    try {
+      await group.run(m, random)
+    } catch (error) {
+      result = {
+        ...result,
+        passed: false,
+        message: (error instanceof Error ? `${error.name}: ${error.message}` : String(error)).slice(
+          0,
+          800,
+        ),
+      }
+    }
+    results.push(result)
+    emit?.({ kind: 'group_result', ...result })
+  }
+  return results
+}
+
+export function parseHiddenResults(stdout: string): HiddenGroupResult[] {
+  const results: HiddenGroupResult[] = []
+  for (const line of stdout.split('\n')) {
+    try {
+      const value = JSON.parse(line)
+      if (
+        value.kind === 'group_result' &&
+        typeof value.id === 'string' &&
+        typeof value.passed === 'boolean' &&
+        Array.isArray(value.clause_ids) &&
+        value.clause_ids.every((id: unknown) => typeof id === 'string')
+      )
+        results.push(value as HiddenGroupResult)
+    } catch {}
+  }
+  return results
+}
+
+/** Compatibility API used by external probes: any failed group rejects the check. */
+export async function hiddenCheck(repo: string, family: Family, seed: number): Promise<void> {
+  const results = await inspectHidden(repo, family, seed)
+  if (results.some((result) => !result.passed))
+    throw new AggregateError(
+      results
+        .filter((result) => !result.passed)
+        .map((result) => new Error(`${result.id}: ${result.message}`)),
+      'Hidden contract check failed',
+    )
 }
 
 if (import.meta.main) {
   const [repo, family, seed] = process.argv.slice(2)
-  hiddenCheck(repo as string, family as Family, Number(seed))
-    .then(() => console.log('PASS'))
+  inspectHidden(repo as string, family as Family, Number(seed), (event) =>
+    console.log(JSON.stringify(event)),
+  )
+    .then((results) => {
+      if (results.some((result) => !result.passed)) process.exitCode = 1
+    })
     .catch(() => {
-      console.error('Hidden contract check failed')
+      console.error('Hidden contract check could not complete')
       process.exitCode = 1
     })
 }

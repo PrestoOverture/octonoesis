@@ -1,4 +1,5 @@
 import type { HeadlessResult } from '../../src/headless'
+import type { HiddenGroupResult } from './check'
 import type { Task } from './tasks'
 
 export type Arm = 'rules-on' | 'rules-off'
@@ -19,6 +20,7 @@ export interface Observation {
   ledger: string
   duration_ms?: number
   public_status?: 'PASS' | 'FAIL' | 'ERROR'
+  hidden_groups?: HiddenGroupResult[]
 }
 export interface Plan {
   version: 1
