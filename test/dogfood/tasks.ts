@@ -45,7 +45,7 @@ export const clauses = {
     ownKeys:
       'Both accounts must be OWN keys. Reject missing own accounts with RangeError, even when that name exists on the prototype.',
     final:
-      'Accumulate the simultaneous batch exactly, then reject negative or unsafe FINAL balances with RangeError. Intermediate totals may be negative or outside the safe integer range; validate only the final totals. Self transfers have no effect but still validate their amount and accounts.',
+      'Accumulate the simultaneous batch exactly, then reject negative or unsafe FINAL balances with RangeError. Intermediate totals may be negative or outside the safe integer range; validate only the final totals. Exact means mathematical integer arithmetic: ordinary Number addition can lose a unit even when all inputs and final balances are safe integers. Use BigInt (or an equally exact method) for all totals/deltas, then convert valid final balances back to Number. For example, with M=Number.MAX_SAFE_INTEGER, the mathematical expression 1+M+M-1-M-M equals 0 and must stay 0. Self transfers have no effect but still validate their amount and accounts.',
     immutable:
       'On success or failure, never mutate balances or moves. Frozen balances, move arrays and move objects are valid inputs.',
     retries:
@@ -76,7 +76,7 @@ export const clauses = {
       'new Pool(limit) requires a positive integer limit and otherwise throws RangeError. run(job, signal?) always returns a Promise. Each pool has independent capacity. Jobs are functions returning a value or Promise, or throwing synchronously; invoke them from a microtask and never exceed limit concurrently unsettled jobs.',
     fifo: 'Start jobs in FIFO submission order, skipping cancelled entries. Synchronous throws and promise rejections release capacity exactly once and do not block later work. A job submitted reentrantly joins the tail behind older queued jobs.',
     cancellation:
-      'An already-aborted or queued-aborted signal rejects that caller immediately with signal.reason and never invokes its job. If aborted after the job starts, reject its caller immediately with signal.reason, but retain its capacity until the underlying job settles: cancellation does not preempt running work. Aborting between run and the job-start microtask must also skip the job. A late settlement cannot overwrite an abort rejection; a late abort cannot change an already-settled result. Handle underlying rejections even after abort. Request abort rejection synchronously in the abort notification (or in run when already aborted); Promise reactions still run asynchronously.',
+      'Cancellation applies only before a job starts. An already-aborted or queued-aborted signal rejects that caller immediately with signal.reason and never invokes its job. Aborting between run and the job-start microtask must also skip the job. Once the job starts, ignore its signal: its caller receives the underlying result or rejection, and its capacity stays occupied until settlement. Request pre-start abort rejection synchronously in the abort notification (or in run when already aborted); Promise reactions still run asynchronously.',
   },
 } as const
 
@@ -127,7 +127,7 @@ export const solutions: Record<Family, string> = {
   'async-pool': `export class Pool {
  constructor(limit){if(!Number.isInteger(limit)||limit<1)throw new RangeError('limit');this.limit=limit;this.active=0;this.queue=[];}
  run(job,signal){return new Promise((resolve,reject)=>{const e={job,signal,resolve,reject,aborted:false,done:false};e.abort=()=>{if(e.done)return;e.aborted=true;reject(signal.reason);this.pump();};if(signal?.aborted){reject(signal.reason);return;}signal?.addEventListener('abort',e.abort,{once:true});this.queue.push(e);this.pump();});}
- pump(){while(this.active<this.limit&&this.queue.length){const e=this.queue.shift();if(e.aborted){e.signal?.removeEventListener('abort',e.abort);continue;}this.active++;Promise.resolve().then(()=>{if(!e.aborted)return e.job();}).then(value=>{if(!e.aborted)e.resolve(value);},error=>{if(!e.aborted)e.reject(error);}).finally(()=>{e.done=true;this.active--;e.signal?.removeEventListener('abort',e.abort);this.pump();});}}
+ pump(){while(this.active<this.limit&&this.queue.length){const e=this.queue.shift();if(e.aborted){e.signal?.removeEventListener('abort',e.abort);continue;}this.active++;Promise.resolve().then(()=>{e.signal?.removeEventListener('abort',e.abort);if(!e.aborted)return e.job();}).then(value=>{if(!e.aborted)e.resolve(value);},error=>{if(!e.aborted)e.reject(error);}).finally(()=>{e.done=true;this.active--;e.signal?.removeEventListener('abort',e.abort);this.pump();});}}
 }
 `,
 }
@@ -139,11 +139,7 @@ export function partialSolution(family: Family): string {
   if (family === 'atomic-transfer') return source.replace('if(ids.has(x.id))', 'if(false)')
   if (family === 'event-bus')
     return source.replace('for(const entry of [...list])', 'for(const entry of list)')
-  if (family === 'async-pool')
-    return source.replace(
-      'e.aborted=true;reject(signal.reason);',
-      'e.aborted=true;this.active--;reject(signal.reason);',
-    )
+  if (family === 'async-pool') return source.replace('e.aborted=true;', 'e.aborted=false;')
   return source
     .replace('if(this.entries.get(key)===e)', 'if(true)')
     .replace('if(this.entries.get(key)===e)', 'if(true)')

@@ -554,71 +554,34 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
       },
     },
     {
-      id: 'running-abort-retains-permit',
-      requires: [
-        clauses['async-pool'].capacity,
-        clauses['async-pool'].cancellation,
-        clauses['async-pool'].fifo,
-      ],
+      id: 'running-abort-is-ignored',
+      requires: [clauses['async-pool'].capacity, clauses['async-pool'].cancellation],
       async run(m) {
         const pool = new m.Pool(1)
         const gate = deferred()
         const controller = new AbortController()
-        const reason = { why: 'running' }
-        let firstStarted = false
-        let secondStarted = false
-        let cancelled: unknown
+        let started = false
+        let nextStarted = false
         const first = pool
           .run(() => {
-            firstStarted = true
+            started = true
             return gate.promise
           }, controller.signal)
-          .catch((error) => {
-            cancelled = error
-            return error
-          })
-        await until(() => firstStarted)
-        const second = pool.run(() => {
-          secondStarted = true
+          .catch((error) => error)
+        await until(() => started)
+        const next = pool.run(() => {
+          nextStarted = true
           return 12
         })
         try {
-          controller.abort(reason)
+          controller.abort('ignored')
           await new Promise<void>((resolve) => setImmediate(resolve))
-          assert.equal(cancelled, reason)
-          assert.equal(await first, reason)
-          assert.equal(secondStarted, false)
+          assert.equal(nextStarted, false)
         } finally {
-          gate.resolve(undefined)
+          gate.resolve(11)
         }
-        assert.equal(await second, 12)
-        const late = new AbortController()
-        assert.equal(await pool.run(() => 13, late.signal), 13)
-        late.abort(reason)
-        assert.equal(await pool.run(() => 14), 14)
-        const rejected = new AbortController()
-        const underlying = deferred()
-        let begun = false
-        let lateRejection: unknown
-        const call = pool
-          .run(() => {
-            begun = true
-            return underlying.promise
-          }, rejected.signal)
-          .catch((error) => {
-            lateRejection = error
-            return error
-          })
-        await until(() => begun)
-        try {
-          rejected.abort(reason)
-          await new Promise<void>((resolve) => setImmediate(resolve))
-          assert.equal(lateRejection, reason)
-          assert.equal(await call, reason)
-        } finally {
-          underlying.reject(new Error('late'))
-        }
-        assert.equal(await pool.run(() => 15), 15)
+        assert.equal(await first, 11)
+        assert.equal(await next, 12)
       },
     },
   ],
