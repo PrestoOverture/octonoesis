@@ -243,7 +243,7 @@ export function report(plan: Plan, rows: Observation[]) {
     preregistration: plan,
     limitations: [
       'First attempt means first completed headless session submission; local edit/test retries are allowed.',
-      'Conditional on one trained ledger, three synthetic task families and a fixed provider/model. No R1 parameter search or R2 distiller comparison is performed.',
+      `Conditional on one trained ledger, ${new Set(plan.tasks.map((task) => task.family)).size} synthetic task families and a fixed provider/model. No R1 parameter search or R2 distiller comparison is performed.`,
       'Rule hit rate uses production signature-flip accounting; repeat failures use observed coarse fingerprints from previously trained sessions, not hidden oracle labels.',
     ],
   }

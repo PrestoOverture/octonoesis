@@ -78,7 +78,7 @@ test('keyless end-to-end: preregistration precedes sessions, training accumulate
     expect(environment.OCTONOESIS_MEMORY_DIR).toBe(path.join(dir, 'ledger'))
     expect(environment.SPARK_API_KEY).toBeUndefined()
     const { result } = await run({ dryRun: true, output: dir })
-    expect(result.completed_jobs).toBe(30)
+    expect(result.completed_jobs).toBe(50)
     expect(result.verdict).toBe('inconclusive')
     expect(result.arms['rules-off']?.errors).toBe(0)
     expect(result.arms['rules-on']?.errors).toBe(0)
@@ -89,7 +89,7 @@ test('keyless end-to-end: preregistration precedes sessions, training accumulate
       .map((line) => JSON.parse(line))
     const starts = events.filter((e) => e.kind === 'started')
     const observations = events.filter((e) => e.kind === 'result').map((e) => e.observation)
-    expect(starts.length).toBe(30)
+    expect(starts.length).toBe(50)
     expect(starts.every((e) => e.plan_hash === digest(plan))).toBe(true)
     expect((await stat(path.join(dir, 'preregistration.json'))).birthtimeMs).toBeLessThan(
       (await stat(path.join(dir, 'sessions/train-0/task.json'))).birthtimeMs,
@@ -189,7 +189,7 @@ test('evaluation concurrency preserves pairs, outcomes, training lineage and has
   expect(
     parallelEvents.slice(firstEval, firstResult).filter((e) => e.kind === 'started').length,
   ).toBe(3)
-  expect(parallelEvents.slice(0, firstEval).filter((e) => e.kind === 'result').length).toBe(6)
+  expect(parallelEvents.slice(0, firstEval).filter((e) => e.kind === 'result').length).toBe(10)
   for (const task of plan.tasks.filter((t) => t.split === 'heldout')) {
     const jobs = plan.jobs.filter((j) => j.task.id === task.id)
     const first = jobs[0]

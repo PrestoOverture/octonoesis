@@ -19,10 +19,20 @@ import { Command } from 'commander'
 import { isKnownJournalEvent, parseJournalEvent } from '../../src/memory/events'
 import { loadAllRulesIncludingArchived } from '../../src/memory/rules/store'
 import { classify, command, parseOutput } from '../eval/run'
-import type { Job, Observation, Plan } from './model'
 import { hiddenGroups, parseHiddenResults } from './check'
+import type { Job, Observation, Plan } from './model'
 import { markdown, report } from './stats'
-import { digest, families, generateStream, loadStream, materialize } from './tasks'
+import {
+  DRY_HELDOUT_PER_FAMILY,
+  DRY_TRAINING_PER_FAMILY,
+  HELDOUT_PER_FAMILY,
+  TRAINING_PER_FAMILY,
+  digest,
+  families,
+  generateStream,
+  loadStream,
+  materialize,
+} from './tasks'
 
 // Keep imports credential-neutral: src/providers captures and scrubs process.env keys.
 // credentials.test.ts pins these pure copies to the production defaults.
@@ -161,7 +171,12 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
   }
   if ((await readdir(dir)).some((name) => name !== '.run-lock'))
     throw new Error('New output directory must be empty')
-  const tasks = loadStream(generateStream(options.dryRun ? 6 : 24, options.dryRun ? 12 : 120))
+  const tasks = loadStream(
+    generateStream(
+      (options.dryRun ? DRY_TRAINING_PER_FAMILY : TRAINING_PER_FAMILY) * families.length,
+      (options.dryRun ? DRY_HELDOUT_PER_FAMILY : HELDOUT_PER_FAMILY) * families.length,
+    ),
+  )
   const jobs: Job[] = tasks
     .filter((t) => t.split === 'train')
     .map((task) => ({ id: task.id, task, arm: 'train' }))

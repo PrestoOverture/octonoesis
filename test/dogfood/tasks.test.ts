@@ -15,8 +15,14 @@ import {
 
 test('task stream loads deterministically, recurs across sessions, and separates seeds', () => {
   const stream = loadStream(JSON.parse(JSON.stringify(generateStream())))
-  expect(stream.length).toBe(144)
+  expect(stream.length).toBe(48 * families.length)
   expect(digest(stream)).toBe(digest(generateStream()))
+  for (const split of ['train', 'heldout'])
+    expect(
+      stream
+        .filter((t) => t.split === split)
+        .every((task, i) => task.family === families[i % families.length]),
+    ).toBe(true)
   for (const family of families) {
     expect(stream.filter((t) => t.family === family && t.split === 'train').length).toBe(8)
     expect(stream.filter((t) => t.family === family && t.split === 'heldout').length).toBe(40)

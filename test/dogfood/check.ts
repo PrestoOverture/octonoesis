@@ -3,9 +3,18 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { type Family, clauses, families, specifications } from './tasks'
 
-type Layer = { start: number; end: number; tag: string }
-type Move = { from: string; to: string; amount: unknown }
+type Layer = { start: number; end: number; tag: string | null }
+type Move = { from: string; to: string; amount: unknown; id?: unknown }
 interface Subject {
+  createBus(): {
+    on(
+      event: string,
+      listener: (...args: unknown[]) => unknown,
+      options?: { once?: boolean },
+    ): () => boolean
+    emit(event: string, ...args: unknown[]): number
+  }
+  Pool: new (limit: number) => { run(job: () => unknown, signal?: AbortSignal): Promise<unknown> }
   overlay(layers: Layer[]): Layer[]
   transfer(balances: Record<string, unknown>, moves: Move[]): Record<string, unknown>
   Cache: new (
@@ -23,9 +32,47 @@ interface AssertionGroup {
   run(subject: Subject, random: (n: number) => number): void | Promise<void>
 }
 
+function deferred() {
+  let resolve!: (value: unknown) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise((a, b) => {
+    resolve = a
+    reject = b
+  })
+  return { promise, resolve, reject }
+}
+async function until(predicate: () => boolean): Promise<void> {
+  while (!predicate()) await new Promise<void>((resolve) => setImmediate(resolve))
+}
+
 /** Every executable assertion belongs to a group linked to verbatim agent-visible clauses. */
 export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
   'interval-overlay': [
+    {
+      id: 'peel-history',
+      requires: [clauses['interval-overlay'].domain, clauses['interval-overlay'].overlay],
+      run(m) {
+        const layers = [
+          { start: 0, end: 8, tag: 'base' },
+          { start: 0, end: 8, tag: 'x' },
+          { start: 0, end: 8, tag: 'x' },
+          { start: 2, end: 6, tag: null },
+          { start: 3, end: 5, tag: null },
+        ]
+        assert.deepEqual(m.overlay(layers), [
+          { start: 0, end: 3, tag: 'x' },
+          { start: 3, end: 5, tag: 'base' },
+          { start: 5, end: 8, tag: 'x' },
+        ])
+        assert.deepEqual(
+          m.overlay([
+            { start: -2, end: 2, tag: null },
+            { start: 0, end: 1, tag: '' },
+          ]),
+          [{ start: 0, end: 1, tag: '' }],
+        )
+      },
+    },
     {
       id: 'overlay-matrix',
       requires: Object.values(clauses['interval-overlay']),
@@ -33,13 +80,22 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
         for (let run = 0; run < 100; run++) {
           const layers = Array.from({ length: 12 }, () => {
             const start = random(30) - 15
-            return { start, end: start + random(12), tag: String(random(3)) }
+            return {
+              start,
+              end: start + random(12),
+              tag: random(4) === 0 ? null : (['', 'a', 'b'][random(3)] as string),
+            }
           })
           const before = JSON.stringify(layers)
           const expected: Layer[] = []
           for (let x = -15; x < 27; x++) {
-            let tag: string | undefined
-            for (const layer of layers) if (layer.start <= x && x < layer.end) tag = layer.tag
+            const stack: string[] = []
+            for (const layer of layers)
+              if (layer.start <= x && x < layer.end) {
+                if (layer.tag === null) stack.pop()
+                else stack.push(layer.tag)
+              }
+            const tag = stack.at(-1)
             if (tag === undefined) continue
             const last = expected.at(-1)
             if (last && last.end === x && last.tag === tag) last.end++
@@ -55,6 +111,60 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
     },
   ],
   'atomic-transfer': [
+    {
+      id: 'retry-identities',
+      requires: [
+        clauses['atomic-transfer'].retries,
+        clauses['atomic-transfer'].values,
+        clauses['atomic-transfer'].final,
+      ],
+      run(m) {
+        const move = { from: 'a', to: 'b', amount: 2, id: '' }
+        const balances = { a: 4, b: 0 }
+        assert.deepEqual({ ...m.transfer(balances, [move, { ...move }]) }, { a: 2, b: 2 })
+        assert.deepEqual(
+          {
+            ...m.transfer(balances, [
+              { ...move, id: undefined },
+              { ...move, id: undefined },
+            ]),
+          },
+          { a: 0, b: 4 },
+        )
+        assert.throws(() => m.transfer(balances, [move, { ...move, amount: 1 }]), RangeError)
+        assert.throws(() => m.transfer(balances, [{ ...move, id: 0 }]), RangeError)
+        const self = { from: 'a', to: 'a', amount: 1, id: '__proto__' }
+        assert.throws(() => m.transfer(balances, [self, { ...self, to: 'b' }]), RangeError)
+        assert.deepEqual(
+          {
+            ...m.transfer(balances, [
+              { ...move, id: '__proto__' },
+              { ...move, id: '__proto__' },
+            ]),
+          },
+          { a: 2, b: 2 },
+        )
+        assert.deepEqual(balances, { a: 4, b: 0 })
+      },
+    },
+    {
+      id: 'wide-exact-net',
+      requires: [clauses['atomic-transfer'].final, clauses['atomic-transfer'].immutable],
+      run(m) {
+        const M = Number.MAX_SAFE_INTEGER
+        const balances = { a: 1, b: M, c: M, d: 0 }
+        const moves = [
+          { from: 'b', to: 'a', amount: M },
+          { from: 'c', to: 'a', amount: M },
+          { from: 'a', to: 'd', amount: 1 },
+          { from: 'a', to: 'b', amount: M },
+          { from: 'a', to: 'c', amount: M },
+        ]
+        const before = JSON.stringify([balances, moves])
+        assert.deepEqual({ ...m.transfer(balances, moves) }, { a: 0, b: M, c: M, d: 1 })
+        assert.equal(JSON.stringify([balances, moves]), before)
+      },
+    },
     {
       id: 'own-account-properties',
       requires: [clauses['atomic-transfer'].result, clauses['atomic-transfer'].ownKeys],
@@ -254,6 +364,261 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
         })
         await assert.rejects(promise as Promise<unknown>)
         assert.equal(await retry.get('a'), 9)
+      },
+    },
+  ],
+  'event-bus': [
+    {
+      id: 'snapshot-mutations',
+      requires: [clauses['event-bus'].registration, clauses['event-bus'].snapshot],
+      run(m) {
+        const bus = m.createBus()
+        const seen: string[] = []
+        let added = false
+        let off = () => false
+        bus.on('x', () => {
+          seen.push('a')
+          off()
+          if (!added) {
+            added = true
+            bus.on('x', () => seen.push('new'))
+          }
+        })
+        off = bus.on('x', () => seen.push('removed'))
+        bus.on('x', () => seen.push('b'))
+        assert.equal(bus.emit('x'), 2)
+        assert.deepEqual(seen, ['a', 'b'])
+        seen.length = 0
+        assert.equal(bus.emit('x'), 3)
+        assert.deepEqual(seen, ['a', 'b', 'new'])
+        assert.equal(off(), false)
+      },
+    },
+    {
+      id: 'once-reentrancy-and-duplicates',
+      requires: [clauses['event-bus'].registration, clauses['event-bus'].snapshot],
+      run(m) {
+        const bus = m.createBus()
+        const seen: unknown[] = []
+        bus.on(
+          '__proto__',
+          () => {
+            seen.push('once')
+            assert.equal(bus.emit('__proto__', 'nested'), 2)
+          },
+          { once: true },
+        )
+        const listener = (...args: unknown[]) => seen.push(args)
+        const off = bus.on('__proto__', listener)
+        bus.on('__proto__', listener, { once: true })
+        // Nested emit consumes the later once registration; outer snapshot skips it.
+        assert.equal(bus.emit('__proto__', 'outer', 7), 2)
+        assert.deepEqual(seen, ['once', ['nested'], ['nested'], ['outer', 7]])
+        assert.equal(off(), true)
+        assert.equal(off(), false)
+        assert.equal(bus.emit('__proto__'), 0)
+        const other = m.createBus()
+        assert.equal(other.emit('__proto__'), 0)
+        other.on('', listener)
+        assert.equal(other.emit('', 0), 1)
+      },
+    },
+    {
+      id: 'aggregate-listener-errors',
+      requires: [clauses['event-bus'].errors, clauses['event-bus'].snapshot],
+      run(m) {
+        const bus = m.createBus()
+        const nested = new AggregateError(['nested'])
+        let notified = 0
+        bus.on(
+          'x',
+          () => {
+            throw 0
+          },
+          { once: true },
+        )
+        bus.on('x', () => {
+          throw nested
+        })
+        bus.on('x', () => {
+          notified++
+        })
+        assert.throws(
+          () => bus.emit('x'),
+          (error: unknown) => {
+            assert.ok(error instanceof AggregateError)
+            assert.deepEqual(error.errors, [0, nested])
+            return true
+          },
+        )
+        assert.equal(notified, 1)
+        assert.throws(
+          () => bus.emit('x'),
+          (error: unknown) => {
+            assert.ok(error instanceof AggregateError)
+            assert.deepEqual(error.errors, [nested])
+            return true
+          },
+        )
+        assert.equal(notified, 2)
+      },
+    },
+  ],
+  'async-pool': [
+    {
+      id: 'pool-capacity-and-fifo',
+      requires: [clauses['async-pool'].capacity, clauses['async-pool'].fifo],
+      async run(m) {
+        for (const limit of [0, -1, 1.5, Number.POSITIVE_INFINITY, Number.NaN])
+          assert.throws(() => new m.Pool(limit), RangeError)
+        const pool = new m.Pool(1)
+        const first = deferred()
+        const seen: string[] = []
+        const a = pool
+          .run(async () => {
+            seen.push('a')
+            await first.promise
+            pool.run(() => seen.push('nested'))
+            throw new Error('job')
+          })
+          .catch(() => 'rejected')
+        const b = pool.run(() => {
+          seen.push('b')
+          return 9
+        })
+        await until(() => seen.length > 0)
+        assert.deepEqual(seen, ['a'])
+        first.resolve(undefined)
+        assert.equal(await a, 'rejected')
+        assert.equal(await b, 9)
+        await until(() => seen.includes('nested'))
+        assert.deepEqual(seen, ['a', 'b', 'nested'])
+        const separate = new m.Pool(1)
+        assert.equal(await separate.run(() => 3), 3)
+        assert.equal(await pool.run(() => undefined), undefined)
+      },
+    },
+    {
+      id: 'queued-and-before-start-abort',
+      requires: [
+        clauses['async-pool'].capacity,
+        clauses['async-pool'].cancellation,
+        clauses['async-pool'].fifo,
+      ],
+      async run(m) {
+        const pool = new m.Pool(1)
+        const reason = { why: 'cancelled' }
+        let called = false
+        const pre = new AbortController()
+        pre.abort(reason)
+        await assert.rejects(
+          pool.run(() => {
+            called = true
+          }, pre.signal),
+          (error) => error === reason,
+        )
+        const immediate = new AbortController()
+        const immediateResult = pool
+          .run(() => {
+            called = true
+          }, immediate.signal)
+          .catch((error) => error)
+        immediate.abort(reason)
+        assert.equal(await immediateResult, reason)
+        assert.equal(called, false)
+        const gate = deferred()
+        const active = pool.run(() => gate.promise)
+        let started = false
+        const queuedAbort = new AbortController()
+        let cancelled: unknown
+        const queued = pool
+          .run(() => {
+            started = true
+          }, queuedAbort.signal)
+          .catch((error) => {
+            cancelled = error
+            return error
+          })
+        const after = pool.run(() => 11)
+        try {
+          queuedAbort.abort(reason)
+          await new Promise<void>((resolve) => setImmediate(resolve))
+          assert.equal(cancelled, reason)
+          assert.equal(await queued, reason)
+        } finally {
+          gate.resolve(undefined)
+        }
+        await active
+        assert.equal(await after, 11)
+        assert.equal(started, false)
+      },
+    },
+    {
+      id: 'running-abort-retains-permit',
+      requires: [
+        clauses['async-pool'].capacity,
+        clauses['async-pool'].cancellation,
+        clauses['async-pool'].fifo,
+      ],
+      async run(m) {
+        const pool = new m.Pool(1)
+        const gate = deferred()
+        const controller = new AbortController()
+        const reason = { why: 'running' }
+        let firstStarted = false
+        let secondStarted = false
+        let cancelled: unknown
+        const first = pool
+          .run(() => {
+            firstStarted = true
+            return gate.promise
+          }, controller.signal)
+          .catch((error) => {
+            cancelled = error
+            return error
+          })
+        await until(() => firstStarted)
+        const second = pool.run(() => {
+          secondStarted = true
+          return 12
+        })
+        try {
+          controller.abort(reason)
+          await new Promise<void>((resolve) => setImmediate(resolve))
+          assert.equal(cancelled, reason)
+          assert.equal(await first, reason)
+          assert.equal(secondStarted, false)
+        } finally {
+          gate.resolve(undefined)
+        }
+        assert.equal(await second, 12)
+        const late = new AbortController()
+        assert.equal(await pool.run(() => 13, late.signal), 13)
+        late.abort(reason)
+        assert.equal(await pool.run(() => 14), 14)
+        const rejected = new AbortController()
+        const underlying = deferred()
+        let begun = false
+        let lateRejection: unknown
+        const call = pool
+          .run(() => {
+            begun = true
+            return underlying.promise
+          }, rejected.signal)
+          .catch((error) => {
+            lateRejection = error
+            return error
+          })
+        await until(() => begun)
+        try {
+          rejected.abort(reason)
+          await new Promise<void>((resolve) => setImmediate(resolve))
+          assert.equal(lateRejection, reason)
+          assert.equal(await call, reason)
+        } finally {
+          underlying.reject(new Error('late'))
+        }
+        assert.equal(await pool.run(() => 15), 15)
       },
     },
   ],

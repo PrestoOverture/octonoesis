@@ -4,7 +4,7 @@ import { markdown, mcnemar, pairedStats, planningPower, report } from './stats'
 import { digest, generateStream } from './tasks'
 
 function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
-  const tasks = generateStream()
+  const tasks = generateStream(24, 120)
   const jobs: Plan['jobs'] = tasks.flatMap<Plan['jobs'][number]>((task) =>
     task.split === 'train'
       ? [{ id: task.id, task, arm: 'train' as const }]

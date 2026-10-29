@@ -3,7 +3,17 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 
-export const families = ['interval-overlay', 'atomic-transfer', 'single-flight'] as const
+export const families = [
+  'interval-overlay',
+  'atomic-transfer',
+  'single-flight',
+  'event-bus',
+  'async-pool',
+] as const
+export const TRAINING_PER_FAMILY = 8
+export const HELDOUT_PER_FAMILY = 40
+export const DRY_TRAINING_PER_FAMILY = 2
+export const DRY_HELDOUT_PER_FAMILY = 4
 export type Family = (typeof families)[number]
 export const taskSchema = z
   .object({
@@ -21,9 +31,9 @@ export type Task = z.infer<typeof taskSchema>
 export const clauses = {
   'interval-overlay': {
     domain:
-      'Layers are {start,end,tag} with integer endpoints in [-1000000,1000000], start <= end, and string tags.',
+      'Layers are {start,end,tag} with integer endpoints in [-1000000,1000000], start <= end, and tags that are strings (including the empty string) or null.',
     overlay:
-      'Each layer covers [start,end); later layers win. Ignore empty layers. Return sorted nonoverlapping {start,end,tag} spans covering exactly the union, coalescing touching spans with equal tags.',
+      'Process layers in input order over [start,end). A string tag pushes a paint layer; a null tag peels exactly one currently visible paint layer at each covered point, revealing the previous paint or leaving it uncovered. Peeling an uncovered point is a no-op. Equal-tag paints are separate history entries even when their visible output is coalesced. Ignore empty layers. Return sorted nonoverlapping {start,end,tag} spans of the final visible strings, coalescing touching spans with equal tags; omit uncovered points.',
     immutable:
       'Do not mutate input or enumerate individual points. Handle nested, crossing, negative and touching ranges.',
   },
@@ -38,6 +48,8 @@ export const clauses = {
       'Accumulate the simultaneous batch exactly, then reject negative or unsafe FINAL balances with RangeError. Intermediate totals may be negative or outside the safe integer range; validate only the final totals. Self transfers have no effect but still validate their amount and accounts.',
     immutable:
       'On success or failure, never mutate balances or moves. Frozen balances, move arrays and move objects are valid inputs.',
+    retries:
+      'A move may carry an id. Undefined id means anonymous: apply every occurrence. Otherwise id must be a string (including empty and prototype names), or throw RangeError. Apply identical repeats of an id with the same from, to and amount only once. Reusing an id with a different payload must throw RangeError; self transfers still reserve their id. Validate all moves, including ignored repeats, before returning a result.',
   },
   'single-flight': {
     constructor:
@@ -51,12 +63,27 @@ export const clauses = {
     invalidation:
       'invalidate(key) removes cached AND pending ownership; an already pending caller still gets its own result or rejection, but stale completion/rejection must not overwrite or delete a newer generation.',
   },
+  'event-bus': {
+    registration:
+      'createBus() returns {on, emit}. on(event, listener, {once=false}={}) returns an unsubscribe function: it returns true on the first removal of an active registration and false thereafter. Event names are arbitrary strings, including empty and prototype names. Duplicate listener functions are independent registrations. Listeners receive all emit arguments in order.',
+    snapshot:
+      'emit(event,...args) invokes registrations synchronously in registration order from a snapshot taken at the start of that emit. Skip a listener removed before its turn. Additions do not join the current emit, but are visible to later or nested emits. Remove once listeners BEFORE calling them, including when they throw or reenter emit. Nested emits take their own snapshots of currently active registrations.',
+    errors:
+      'Continue notifying remaining listeners after a listener throws. After the snapshot completes, throw AggregateError whose errors array contains the thrown values in invocation order, including non-Error and falsy values; do not flatten a thrown AggregateError. With no thrown values, return the count of listeners invoked by this emit (excluding nested emits).',
+  },
+  'async-pool': {
+    capacity:
+      'new Pool(limit) requires a positive integer limit and otherwise throws RangeError. run(job, signal?) always returns a Promise. Each pool has independent capacity. Jobs are functions returning a value or Promise, or throwing synchronously; invoke them from a microtask and never exceed limit concurrently unsettled jobs.',
+    fifo: 'Start jobs in FIFO submission order, skipping cancelled entries. Synchronous throws and promise rejections release capacity exactly once and do not block later work. A job submitted reentrantly joins the tail behind older queued jobs.',
+    cancellation:
+      'An already-aborted or queued-aborted signal rejects that caller immediately with signal.reason and never invokes its job. If aborted after the job starts, reject its caller immediately with signal.reason, but retain its capacity until the underlying job settles: cancellation does not preempt running work. Aborting between run and the job-start microtask must also skip the job. A late settlement cannot overwrite an abort rejection; a late abort cannot change an already-settled result. Handle underlying rejections even after abort. Request abort rejection synchronously in the abort notification (or in run when already aborted); Promise reactions still run asynchronously.',
+  },
 } as const
 
 export const specifications: Record<Family, string> = Object.fromEntries(
   families.map((family) => [
     family,
-    `Repair ${family === 'interval-overlay' ? 'overlay(layers)' : family === 'atomic-transfer' ? 'transfer(balances, moves)' : 'Cache'} in src/subject.ts. ${Object.values(clauses[family]).join(' ')}`,
+    `Repair ${family === 'interval-overlay' ? 'overlay(layers)' : family === 'atomic-transfer' ? 'transfer(balances, moves)' : family === 'single-flight' ? 'Cache' : family === 'event-bus' ? 'createBus()' : 'Pool'} in src/subject.ts. ${Object.values(clauses[family]).join(' ')}`,
   ]),
 ) as Record<Family, string>
 
@@ -67,18 +94,21 @@ export const initialSources: Record<Family, string> = {
     'export function transfer(balances,moves) { for(const x of moves){ balances[x.from]-=x.amount; balances[x.to]+=x.amount } return balances }',
   'single-flight':
     'export class Cache { constructor(loader,ttl,now){this.loader=loader} async get(key){return this.loader(key)} invalidate(key){} }',
+  'event-bus': 'export function createBus(){ return { on(){return ()=>false}, emit(){return 0} } }',
+  'async-pool':
+    'export class Pool { constructor(limit){} run(job,signal){return Promise.resolve().then(job)} }',
 }
 
 /** Reference implementations are used ONLY by the scripted mock provider and oracle tests. */
 export const solutions: Record<Family, string> = {
   'interval-overlay': `export function overlay(layers) {
  const points=[...new Set(layers.flatMap(x=>[x.start,x.end]))].sort((a,b)=>a-b), out=[];
- for(let i=0;i<points.length-1;i++) {const start=points[i],end=points[i+1]; const top=layers.findLast(x=>x.start<=start&&x.end>=end&&x.start<x.end); if(!top)continue;
- const prev=out.at(-1); if(prev&&prev.end===start&&prev.tag===top.tag)prev.end=end; else out.push({start,end,tag:top.tag}); } return out;
+ for(let i=0;i<points.length-1;i++) {const start=points[i],end=points[i+1]; const stack=[];for(const layer of layers){if(layer.start<=start&&layer.end>=end&&layer.start<layer.end){if(layer.tag===null)stack.pop();else stack.push(layer.tag);}} const tag=stack.at(-1);if(tag===undefined)continue;
+ const prev=out.at(-1); if(prev&&prev.end===start&&prev.tag===tag)prev.end=end; else out.push({start,end,tag}); } return out;
 }`,
   'atomic-transfer': `export function transfer(balances,moves) {
- const totals=new Map(); for(const k of Object.keys(balances)){if(!Number.isSafeInteger(balances[k])||balances[k]<0)throw new RangeError('balance'); totals.set(k,BigInt(balances[k]));}
- for(const x of moves){if(!Object.hasOwn(balances,x.from)||!Object.hasOwn(balances,x.to)||!Number.isSafeInteger(x.amount)||x.amount<0)throw new RangeError('move'); const n=BigInt(x.amount); totals.set(x.from,totals.get(x.from)-n); totals.set(x.to,totals.get(x.to)+n);}
+ const totals=new Map(),ids=new Map(); for(const k of Object.keys(balances)){if(!Number.isSafeInteger(balances[k])||balances[k]<0)throw new RangeError('balance'); totals.set(k,BigInt(balances[k]));}
+ for(const x of moves){if(!Object.hasOwn(balances,x.from)||!Object.hasOwn(balances,x.to)||!Number.isSafeInteger(x.amount)||x.amount<0)throw new RangeError('move'); if(x.id!==undefined){if(typeof x.id!=='string')throw new RangeError('id');const payload=JSON.stringify([x.from,x.to,x.amount]);if(ids.has(x.id)){if(ids.get(x.id)!==payload)throw new RangeError('conflicting id');continue;}ids.set(x.id,payload);} const n=BigInt(x.amount); totals.set(x.from,totals.get(x.from)-n); totals.set(x.to,totals.get(x.to)+n);}
  const out={}; for(const [k,n] of totals){if(n<0n||n>BigInt(Number.MAX_SAFE_INTEGER))throw new RangeError('final'); Object.defineProperty(out,k,{value:Number(n),enumerable:true,writable:true,configurable:true});}return out;
 }`,
   'single-flight': `export class Cache {
@@ -88,22 +118,41 @@ export const solutions: Record<Family, string> = {
  e.promise=Promise.resolve().then(()=>this.loader(key)).then(value=>{if(this.entries.get(key)===e){e.pending=false;e.until=this.now()+this.ttl;}return value;},error=>{if(this.entries.get(key)===e)this.entries.delete(key);throw error;});return e.promise;}
  invalidate(key){this.entries.delete(key);}
 }`,
+  'event-bus': `export function createBus(){
+ const events=new Map();return {
+ on(event,fn,{once=false}={}){const entry={fn,once,active:true};const list=events.get(event)||[];list.push(entry);events.set(event,list);return ()=>{if(!entry.active)return false;entry.active=false;return true;};},
+ emit(event,...args){const list=events.get(event)||[];let count=0;const errors=[];for(const entry of [...list]){if(!entry.active)continue;if(entry.once)entry.active=false;count++;try{entry.fn(...args)}catch(error){errors.push(error)}}if(errors.length)throw new AggregateError(errors);return count;}
+ };}
+`,
+  'async-pool': `export class Pool {
+ constructor(limit){if(!Number.isInteger(limit)||limit<1)throw new RangeError('limit');this.limit=limit;this.active=0;this.queue=[];}
+ run(job,signal){return new Promise((resolve,reject)=>{const e={job,signal,resolve,reject,aborted:false,done:false};e.abort=()=>{if(e.done)return;e.aborted=true;reject(signal.reason);this.pump();};if(signal?.aborted){reject(signal.reason);return;}signal?.addEventListener('abort',e.abort,{once:true});this.queue.push(e);this.pump();});}
+ pump(){while(this.active<this.limit&&this.queue.length){const e=this.queue.shift();if(e.aborted){e.signal?.removeEventListener('abort',e.abort);continue;}this.active++;Promise.resolve().then(()=>{if(!e.aborted)return e.job();}).then(value=>{if(!e.aborted)e.resolve(value);},error=>{if(!e.aborted)e.reject(error);}).finally(()=>{e.done=true;this.active--;e.signal?.removeEventListener('abort',e.abort);this.pump();});}}
+}
+`,
 }
 
 /** Plausible partial fixes: public examples pass; independent hidden checks reject them. */
 export function partialSolution(family: Family): string {
   const source = solutions[family]
-  if (family === 'interval-overlay') return source.replace('prev.tag===top.tag', 'true')
-  if (family === 'atomic-transfer')
-    return source
-      .replace('Object.hasOwn(balances,x.from)', '(x.from in balances)')
-      .replace('Object.hasOwn(balances,x.to)', '(x.to in balances)')
+  if (family === 'interval-overlay') return source.replace('prev.tag===tag', 'true')
+  if (family === 'atomic-transfer') return source.replace('if(ids.has(x.id))', 'if(false)')
+  if (family === 'event-bus')
+    return source.replace('for(const entry of [...list])', 'for(const entry of list)')
+  if (family === 'async-pool')
+    return source.replace(
+      'e.aborted=true;reject(signal.reason);',
+      'e.aborted=true;this.active--;reject(signal.reason);',
+    )
   return source
     .replace('if(this.entries.get(key)===e)', 'if(true)')
     .replace('if(this.entries.get(key)===e)', 'if(true)')
 }
 
-export function generateStream(train = 24, heldout = 120): Task[] {
+export function generateStream(
+  train = TRAINING_PER_FAMILY * families.length,
+  heldout = HELDOUT_PER_FAMILY * families.length,
+): Task[] {
   return (['train', 'heldout'] as const).flatMap((split) =>
     Array.from({ length: split === 'train' ? train : heldout }, (_, i) => {
       const family = families[i % families.length] as Family
@@ -157,6 +206,8 @@ export async function materialize(task: Task, repo: string): Promise<void> {
     'interval-overlay': `const a=[{start:${offset},end:${offset + 6},tag:'v${task.seed}'},{start:${offset + 2},end:${offset + 4},tag:'v${task.seed}'}]; assert.deepEqual(m.overlay(a),[{start:${offset},end:${offset + 6},tag:'v${task.seed}'}]);`,
     'atomic-transfer': `const a={a:${balance},b:0}; const b=m.transfer(a,[{from:'a',to:'b',amount:${amount}}]); assert.deepEqual({...b},{a:${balance - amount},b:${amount}}); assert.deepEqual(a,{a:${balance},b:0});`,
     'single-flight': `let n=0; const c=new m.Cache(async()=>++n,${amount},()=>${offset}); assert.equal(await c.get('v${task.seed}'),1); assert.equal(await c.get('v${task.seed}'),1); assert.equal(n,1);`,
+    'event-bus': `const seen=[];const bus=m.createBus();bus.on('v${task.seed}',value=>seen.push(value));assert.equal(bus.emit('v${task.seed}',${amount}),1);assert.deepEqual(seen,[${amount}]);`,
+    'async-pool': `const pool=new m.Pool(1);const seen=[];let release;const gate=new Promise(r=>release=r);const a=pool.run(async()=>{seen.push('a');await gate;seen.push('end')});const b=pool.run(()=>seen.push('b'));while(!seen.length)await new Promise(r=>setImmediate(r));assert.deepEqual(seen,['a']);release();await Promise.all([a,b]);assert.deepEqual(seen,['a','end','b']);`,
   }
   if (task.family === 'atomic-transfer') {
     cases[task.family] +=
