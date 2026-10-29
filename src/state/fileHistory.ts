@@ -4,7 +4,7 @@ import path from 'node:path'
 import { z } from 'zod'
 import type { ToolContext } from '../tools/Tool'
 import { writeFileAtomic } from '../utils/atomicWrite'
-import { withFileLock } from '../utils/fileLock'
+import { LockTimeoutError, withFileLock } from '../utils/fileLock'
 import { getMemoryDir } from '../utils/path'
 
 const entrySchema = z.object({
@@ -81,7 +81,7 @@ function warn(error: unknown): void {
 
 let pruningStarted = false
 
-/** Best-effort retention, with nonblocking exclusion and no traversal through symlink directories. */
+/** Best-effort retention, with bounded lock acquisition and no traversal through symlink directories. */
 export async function pruneFileHistory(
   memoryDir: string,
   days: number,
@@ -100,35 +100,28 @@ export async function pruneFileHistory(
         const directory = sessionDirectory(memoryDir, id)
         const info = await fs.lstat(directory)
         if (!info.isDirectory()) continue
-        const lockPath = path.join(directory, '.lock')
-        let lock: Awaited<ReturnType<typeof fs.open>>
-        try {
-          lock = await fs.open(lockPath, 'wx')
-        } catch (error) {
-          if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
-          throw error
-        }
-        try {
-          let newest = info.mtimeMs
-          try {
-            const manifest = await readManifest(directory)
-            const timestamps = [...manifest.entries, ...(manifest.commands ?? [])].map((item) =>
-              Date.parse(item.ts),
-            )
-            if (timestamps.length) newest = Math.max(...timestamps)
-          } catch {
-            // Invalid or missing manifests use the directory mtime captured before locking.
-          }
-          if (newest < cutoff) {
-            await fs.rm(directory, { recursive: true })
-            removed.push(id)
-          }
-        } finally {
-          await lock.close()
-          await fs.rm(lockPath, { force: true })
-        }
+        await withFileLock(
+          path.join(directory, '.lock'),
+          async () => {
+            let newest = info.mtimeMs
+            try {
+              const manifest = await readManifest(directory)
+              const timestamps = [...manifest.entries, ...(manifest.commands ?? [])].map((item) =>
+                Date.parse(item.ts),
+              )
+              if (timestamps.length) newest = Math.max(...timestamps)
+            } catch {
+              // Invalid or missing manifests use the directory mtime captured before locking.
+            }
+            if (newest < cutoff) {
+              await fs.rm(directory, { recursive: true })
+              removed.push(id)
+            }
+          },
+          { timeoutMs: 50, staleMs: 600_000 },
+        )
       } catch (error) {
-        warn(error)
+        if (!(error instanceof LockTimeoutError)) warn(error)
       }
     }
   } catch (error) {

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it } from 'bun:test'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -51,7 +51,10 @@ it('prunes old and invalid sessions, keeping recent/current/locked sessions and 
   await session('current', old)
   await session('recent', new Date().toISOString())
   const locked = await session('locked', old)
-  await fs.writeFile(path.join(locked, '.lock'), JSON.stringify({ pid: process.pid }))
+  await fs.writeFile(
+    path.join(locked, '.lock'),
+    JSON.stringify({ pid: process.pid, acquired_at: Date.now(), nonce: 'live-holder' }),
+  )
   const invalid = await session('invalid', old)
   await fs.writeFile(path.join(invalid, 'manifest.json'), 'invalid')
   await fs.utimes(invalid, new Date(old), new Date(old))
@@ -173,6 +176,42 @@ it('warns on recording failure while Bash still executes', async () => {
   try {
     expect((await bashTool.call({ command: 'true' }, ctx)).ok).toBe(true)
     expect(warnings.join('')).toContain('Warning: file checkpoint unavailable')
+  } finally {
+    console.error = originalError
+  }
+})
+
+it('reclaims dead and stale holders while silently skipping a fresh live holder', async () => {
+  const child = spawn(process.execPath, ['--no-env-file', '--eval', ''], { stdio: 'ignore' })
+  await new Promise<void>((resolve, reject) => {
+    child.once('error', reject)
+    child.once('exit', () => resolve())
+  })
+  expect(child.pid).toBeDefined()
+  const old = '2000-01-01T00:00:00.000Z'
+  for (const [id, pid, acquired_at] of [
+    ['dead', child.pid, Date.now()],
+    ['stale', process.pid, Date.now() - 600_001],
+    ['live', process.pid, Date.now()],
+  ] as const) {
+    const directory = await session(id, old)
+    await fs.writeFile(
+      path.join(directory, '.lock'),
+      JSON.stringify({ pid, acquired_at, nonce: id }),
+    )
+  }
+  const originalError = console.error
+  const warnings: unknown[][] = []
+  console.error = (...args: unknown[]) => {
+    warnings.push(args)
+  }
+  try {
+    expect((await pruneFileHistory(memoryDir, 30)).sort()).toEqual(['dead', 'stale'])
+    expect(await fs.readdir(path.join(memoryDir, 'file-history'))).toEqual(['live'])
+    expect(
+      JSON.parse(await fs.readFile(path.join(memoryDir, 'file-history/live/.lock'), 'utf8')).nonce,
+    ).toBe('live')
+    expect(warnings).toEqual([])
   } finally {
     console.error = originalError
   }
