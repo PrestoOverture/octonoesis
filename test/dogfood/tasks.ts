@@ -17,14 +17,48 @@ export const taskSchema = z
   .strict()
 export type Task = z.infer<typeof taskSchema>
 
-const specifications: Record<Family, string> = {
-  'interval-overlay':
-    'Repair overlay(layers) in src/subject.ts. Layers are {start,end,tag} with integer endpoints in [-1000000,1000000], start <= end, and string tags. Each layer covers [start,end); later layers win. Ignore empty layers. Return sorted nonoverlapping {start,end,tag} spans covering exactly the union, coalescing touching spans with equal tags. Do not mutate input or enumerate individual points. Handle nested, crossing, negative and touching ranges.',
-  'atomic-transfer':
-    'Repair transfer(balances, moves) in src/subject.ts. Return a NEW plain object with the same own account keys and final balances after a simultaneous batch. A move is {from,to,amount}; amount and every balance must be nonnegative safe integers. Both accounts must be OWN keys. Reject malformed values, missing accounts, unsafe totals, or negative FINAL balances with RangeError. Intermediate negative balances are allowed: the batch is simultaneous. Self transfers have no effect but still validate. On success or failure, never mutate balances or moves. Account names may be JavaScript prototype names.',
-  'single-flight':
-    'Repair Cache in src/subject.ts. new Cache(loader, ttl, now) uses a positive finite ttl and an injected clock function. get(key) returns a Promise; concurrent gets for the same key share ONE loader call. Different keys are independent. Values including undefined are cached until now() >= completionTime + ttl. Rejections are never cached. invalidate(key) removes cached AND pending ownership; an already pending caller still gets its result, but stale completion/rejection must not overwrite or delete a newer generation. Loader may return synchronously or throw synchronously; get must always return a Promise.',
-}
+/** Clauses are shown verbatim in both the prompt and README. Hidden groups cite them. */
+export const clauses = {
+  'interval-overlay': {
+    domain:
+      'Layers are {start,end,tag} with integer endpoints in [-1000000,1000000], start <= end, and string tags.',
+    overlay:
+      'Each layer covers [start,end); later layers win. Ignore empty layers. Return sorted nonoverlapping {start,end,tag} spans covering exactly the union, coalescing touching spans with equal tags.',
+    immutable:
+      'Do not mutate input or enumerate individual points. Handle nested, crossing, negative and touching ranges.',
+  },
+  'atomic-transfer': {
+    result:
+      'Return a NEW plain object (Object.prototype or null prototype) with the same own enumerable account keys and final balances after a simultaneous batch. Account names may be JavaScript prototype names, including __proto__, constructor and toString; preserve them as own data properties.',
+    values:
+      'A move is {from,to,amount}; amount and every initial balance must be nonnegative safe integers. Reject invalid amounts or initial balances with RangeError, including when moves is empty.',
+    ownKeys:
+      'Both accounts must be OWN keys. Reject missing own accounts with RangeError, even when that name exists on the prototype.',
+    final:
+      'Accumulate the simultaneous batch exactly, then reject negative or unsafe FINAL balances with RangeError. Intermediate totals may be negative or outside the safe integer range; validate only the final totals. Self transfers have no effect but still validate their amount and accounts.',
+    immutable:
+      'On success or failure, never mutate balances or moves. Frozen balances, move arrays and move objects are valid inputs.',
+  },
+  'single-flight': {
+    constructor:
+      'new Cache(loader, ttl, now) uses an injected clock function. The constructor must throw RangeError unless ttl is a positive finite number, including for 0, negative values, Infinity and NaN.',
+    pending:
+      'get(key) returns a Promise; concurrent gets for the same key share ONE loader call. Different keys are independent.',
+    expiry:
+      'Values including undefined are cached until now() >= completionTime + ttl; TTL starts when the loader completes, not when get is called.',
+    rejection:
+      'Rejections are never cached. Loader may return synchronously or throw synchronously; get must always return a Promise and turn synchronous throws into rejections.',
+    invalidation:
+      'invalidate(key) removes cached AND pending ownership; an already pending caller still gets its own result or rejection, but stale completion/rejection must not overwrite or delete a newer generation.',
+  },
+} as const
+
+export const specifications: Record<Family, string> = Object.fromEntries(
+  families.map((family) => [
+    family,
+    `Repair ${family === 'interval-overlay' ? 'overlay(layers)' : family === 'atomic-transfer' ? 'transfer(balances, moves)' : 'Cache'} in src/subject.ts. ${Object.values(clauses[family]).join(' ')}`,
+  ]),
+) as Record<Family, string>
 
 export const initialSources: Record<Family, string> = {
   'interval-overlay':
@@ -79,7 +113,7 @@ export function generateStream(train = 24, heldout = 120): Task[] {
         split,
         family,
         seed,
-        timeout_s: 300,
+        timeout_s: 900,
         prompt: `${specifications[family]}\nRun bun test before and after changes. Add regression tests as needed. Complete the task in this session.\nFixture variant: ${family}/${seed}.`,
       })
     }),
@@ -121,8 +155,16 @@ export async function materialize(task: Task, repo: string): Promise<void> {
   const amount = 1 + (task.seed % 5)
   const cases: Record<Family, string> = {
     'interval-overlay': `const a=[{start:${offset},end:${offset + 6},tag:'v${task.seed}'},{start:${offset + 2},end:${offset + 4},tag:'v${task.seed}'}]; assert.deepEqual(m.overlay(a),[{start:${offset},end:${offset + 6},tag:'v${task.seed}'}]);`,
-    'atomic-transfer': `const a={a:${balance},b:0}; const b=m.transfer(a,[{from:'a',to:'b',amount:${amount}}]); assert.deepEqual(b,{a:${balance - amount},b:${amount}}); assert.deepEqual(a,{a:${balance},b:0});`,
+    'atomic-transfer': `const a={a:${balance},b:0}; const b=m.transfer(a,[{from:'a',to:'b',amount:${amount}}]); assert.deepEqual({...b},{a:${balance - amount},b:${amount}}); assert.deepEqual(a,{a:${balance},b:0});`,
     'single-flight': `let n=0; const c=new m.Cache(async()=>++n,${amount},()=>${offset}); assert.equal(await c.get('v${task.seed}'),1); assert.equal(await c.get('v${task.seed}'),1); assert.equal(n,1);`,
+  }
+  if (task.family === 'atomic-transfer') {
+    cases[task.family] +=
+      `const named=JSON.parse('{"__proto__":5,"a":0}'); const copied=m.transfer(named,[]); assert.equal(Object.hasOwn(copied,'__proto__'),true); assert.equal(copied.__proto__,5);`
+    cases[task.family] +=
+      task.seed % 2 === 0
+        ? `assert.throws(()=>m.transfer({a:1,b:0},[{from:'a',to:'b',amount:2}]),RangeError);`
+        : `assert.throws(()=>m.transfer({a:1,b:Number.MAX_SAFE_INTEGER},[{from:'a',to:'b',amount:1}]),RangeError);`
   }
   await writeFile(
     path.join(repo, 'contract.test.ts'),
