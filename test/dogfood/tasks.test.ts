@@ -64,7 +64,7 @@ test('all task families have visible learnable failures and independent hidden d
           { PATH: process.env.PATH },
           10000,
         )
-        expect(publicResult.code).toBe(0)
+        expect(publicResult.code).toBe(label === 'reference' ? 0 : 1)
         const hidden = await command(
           [
             process.execPath,

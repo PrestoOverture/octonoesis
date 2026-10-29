@@ -90,6 +90,12 @@ test('keyless end-to-end: preregistration precedes sessions, training accumulate
     const starts = events.filter((e) => e.kind === 'started')
     const observations = events.filter((e) => e.kind === 'result').map((e) => e.observation)
     expect(starts.length).toBe(50)
+    const wrongFirst = observations.find((r) => r.first_attempt?.public_status === 'FAIL')
+    expect(wrongFirst).toBeDefined()
+    expect(wrongFirst.status).toBe('FAIL')
+    expect(wrongFirst.hidden_status).toBe('PASS')
+    expect(wrongFirst.observed_repair_failure).toBe(true)
+    expect(wrongFirst.observed_repair_resolution).toBe(true)
     expect(starts.every((e) => e.plan_hash === digest(plan))).toBe(true)
     expect((await stat(path.join(dir, 'preregistration.json'))).birthtimeMs).toBeLessThan(
       (await stat(path.join(dir, 'sessions/train-0/task.json'))).birthtimeMs,

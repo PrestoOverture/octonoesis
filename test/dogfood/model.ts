@@ -20,7 +20,15 @@ export interface Observation {
   ledger: string
   duration_ms?: number
   public_status?: 'PASS' | 'FAIL' | 'ERROR'
+  hidden_status?: 'PASS' | 'FAIL' | 'ERROR'
+  first_attempt?: {
+    source_hash: string
+    public_status: 'PASS' | 'FAIL' | 'ERROR'
+    hidden_status: 'PASS' | 'FAIL' | 'ERROR'
+  }
   hidden_groups?: HiddenGroupResult[]
+  observed_repair_failure?: boolean
+  observed_repair_resolution?: boolean
 }
 export interface Plan {
   version: 1
@@ -44,8 +52,14 @@ export interface Plan {
     max_training_fraction: number
   }
   calibration: {
+    max_error_fraction: number
     min_failure_rate: number
     max_failure_rate: number
     min_recurring_sessions: number
+    min_pooled: number
+    min_per_family: number
+    min_informative_families: number
+    min_attempt_coverage: number
+    min_signal_families: number
   }
 }

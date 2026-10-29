@@ -14,6 +14,7 @@ async function main(): Promise<void> {
   // The mock observes actual injected advice. It is never given the arm label or oracle.
   let turn = 0
   let helped = false
+  let partial = false
   const provider: LLMProvider = {
     name: 'openai-compatible',
     async *createMessageStream(messages, tools, opts): AsyncGenerator<StreamEvent> {
@@ -36,6 +37,7 @@ async function main(): Promise<void> {
       else {
         helped ||= `${opts.system}\n${text}`.includes(`Remember ${task.family}:`)
         const step = turn++
+        if (step === 2) partial = !helped && task.seed % 2 !== 0
         const tool =
           step === 0
             ? { name: 'Read', input: { path: 'src/subject.ts' } }
@@ -54,7 +56,14 @@ async function main(): Promise<void> {
                   }
                 : step === 3
                   ? { name: 'Bash', input: { command: 'bun test' } }
-                  : undefined
+                  : step === 4 && partial
+                    ? {
+                        name: 'Write',
+                        input: { path: 'src/subject.ts', content: solutions[task.family] },
+                      }
+                    : step === 5 && partial
+                      ? { name: 'Bash', input: { command: 'bun test' } }
+                      : undefined
         if (tool) yield { type: 'tool_use', id: `call-${step}`, ...tool }
         else
           yield { type: 'text_delta', text: 'Completed the implementation and local verification.' }

@@ -1,3 +1,4 @@
+import { calibrationGate } from './calibration'
 import type { Arm, Observation, Plan } from './model'
 
 function binomial(n: number, p: number): number[] {
@@ -154,14 +155,6 @@ export function report(plan: Plan, rows: Observation[]) {
       const recurring = [...sessions]
         .filter(([, ids]) => ids.size >= plan.calibration.min_recurring_sessions)
         .map(([fp]) => fp)
-      if (
-        rate === null ||
-        rate < plan.calibration.min_failure_rate ||
-        rate > plan.calibration.max_failure_rate
-      )
-        reasons.push(
-          `${family}: training first-submission failure rate outside preregistered calibration range.`,
-        )
       if (!recurring.length)
         reasons.push(`${family}: no observed recurring production fingerprint class.`)
       return [
@@ -177,6 +170,8 @@ export function report(plan: Plan, rows: Observation[]) {
       ]
     }),
   )
+  const gate = calibrationGate(training, plan.calibration)
+  reasons.push(...gate.reasons)
   const evaluation = rows.filter((r) => r.job.arm !== 'train')
   if (!evaluation.some((r) => r.job.arm === 'rules-on' && r.rules_before > 0))
     reasons.push('No trained eligible rules available for treatment.')
@@ -238,11 +233,12 @@ export function report(plan: Plan, rows: Observation[]) {
     error_tolerance: tolerance,
     arms,
     calibration,
+    calibration_gate: gate,
     planned_jobs: plan.jobs.length,
     completed_jobs: rows.length,
     preregistration: plan,
     limitations: [
-      'First attempt means first completed headless session submission; local edit/test retries are allowed.',
+      'First attempt is the first tested changed-source state, independently replayed against original public and hidden checks; final hidden success is a regression guard. Baseline unchanged-source tests do not count.',
       `Conditional on one trained ledger, ${new Set(plan.tasks.map((task) => task.family)).size} synthetic task families and a fixed provider/model. No R1 parameter search or R2 distiller comparison is performed.`,
       'Rule hit rate uses production signature-flip accounting; repeat failures use observed coarse fingerprints from previously trained sessions, not hidden oracle labels.',
     ],
@@ -251,7 +247,7 @@ export function report(plan: Plan, rows: Observation[]) {
 
 export function markdown(result: ReturnType<typeof report>): string {
   const p = result.primary
-  return `# Dogfood / RSC measurement\n\nVerdict: **${result.verdict}** (${result.mode})\n\n${result.reasons.map((r) => `- ${r}`).join('\n')}\n\nPaired first-submission success lift (rules-on minus rules-off): ${p.risk_difference === null ? 'unavailable' : `${(100 * p.risk_difference).toFixed(1)} percentage points`}.\n95% CI: ${p.ci95 ? `[${p.ci95.map((v) => (100 * v).toFixed(1)).join(', ')}] percentage points` : 'unavailable'}; exact two-sided p = ${p.p_value ?? 'unavailable'}.\nPairs: ${p.pairs}; on-only wins: ${p.on_only}; off-only wins: ${p.off_only}.\n\n| Arm | Sessions | First-attempt success | Repeat failure | Mean turns | Mean tokens | Rule hit rate |\n|---|---:|---:|---:|---:|---:|---:|\n${Object.entries(
+  return `# Dogfood / RSC measurement\n\nVerdict: **${result.verdict}** (${result.mode})\n\n${result.reasons.map((r) => `- ${r}`).join('\n')}\n\nPaired first-tested-repair success lift (rules-on minus rules-off): ${p.risk_difference === null ? 'unavailable' : `${(100 * p.risk_difference).toFixed(1)} percentage points`}.\n95% CI: ${p.ci95 ? `[${p.ci95.map((v) => (100 * v).toFixed(1)).join(', ')}] percentage points` : 'unavailable'}; exact two-sided p = ${p.p_value ?? 'unavailable'}.\nPairs: ${p.pairs}; on-only wins: ${p.on_only}; off-only wins: ${p.off_only}.\n\n| Arm | Sessions | First-attempt success | Repeat failure | Mean turns | Mean tokens | Rule hit rate |\n|---|---:|---:|---:|---:|---:|---:|\n${Object.entries(
     result.arms,
   )
     .map(
@@ -260,5 +256,5 @@ export function markdown(result: ReturnType<typeof report>): string {
     )
     .join(
       '\n',
-    )}\n\n## Operational-error sensitivity\n\nPrimary analysis counts ERROR as failure. After dropping every pair containing ERROR: ${result.sensitivity.pairs} pairs, lift ${result.sensitivity.risk_difference ?? 'unavailable'}, p = ${result.sensitivity.p_value ?? 'unavailable'}, 95% CI ${JSON.stringify(result.sensitivity.ci95)}.\n\nAffected pairs: ${result.error_tolerance.affected_pairs}/${result.error_tolerance.max_affected_pairs} allowed; arm errors on/off: ${result.error_tolerance.rules_on_errors}/${result.error_tolerance.rules_off_errors}; training errors: ${result.error_tolerance.training_errors}/${result.error_tolerance.max_training_errors} allowed. Operational eligibility: ${result.error_tolerance.eligible}.\n\n## Calibration\n\n\`\`\`json\n${JSON.stringify(result.calibration, null, 2)}\n\`\`\`\n\n## Interpretation\n\n${result.limitations.join('\n\n')}\n\nThe CI uses ${p.method}. A null result is inconclusive, not evidence of equivalence. See preregistration.json for the fixed plan and events.jsonl for every attempted session.\n`
+    )}\n\n## Operational-error sensitivity\n\nPrimary analysis counts ERROR as failure. After dropping every pair containing ERROR: ${result.sensitivity.pairs} pairs, lift ${result.sensitivity.risk_difference ?? 'unavailable'}, p = ${result.sensitivity.p_value ?? 'unavailable'}, 95% CI ${JSON.stringify(result.sensitivity.ci95)}.\n\nAffected pairs: ${result.error_tolerance.affected_pairs}/${result.error_tolerance.max_affected_pairs} allowed; arm errors on/off: ${result.error_tolerance.rules_on_errors}/${result.error_tolerance.rules_off_errors}; training errors: ${result.error_tolerance.training_errors}/${result.error_tolerance.max_training_errors} allowed. Operational eligibility: ${result.error_tolerance.eligible}.\n\n## Calibration\n\n\`\`\`json\n${JSON.stringify({ gate: result.calibration_gate, families: result.calibration }, null, 2)}\n\`\`\`\n\n## Interpretation\n\n${result.limitations.join('\n\n')}\n\nThe CI uses ${p.method}. A null result is inconclusive, not evidence of equivalence. See preregistration.json for the fixed plan and events.jsonl for every attempted session.\n`
 }

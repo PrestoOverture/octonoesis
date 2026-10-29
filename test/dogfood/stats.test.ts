@@ -1,10 +1,11 @@
 import { expect, test } from 'bun:test'
+import { CALIBRATION_RULE } from './calibration'
 import type { Observation, Plan } from './model'
 import { markdown, mcnemar, pairedStats, planningPower, report } from './stats'
 import { digest, generateStream } from './tasks'
 
 function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
-  const tasks = generateStream(24, 120)
+  const tasks = generateStream(30, 120)
   const jobs: Plan['jobs'] = tasks.flatMap<Plan['jobs'][number]>((task) =>
     task.split === 'train'
       ? [{ id: task.id, task, arm: 'train' as const }]
@@ -23,7 +24,7 @@ function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
     hypothesis: 'synthetic',
     metrics: {},
     test: 'McNemar',
-    sample_size: { training: 24, pairs: 120 },
+    sample_size: { training: 30, pairs: 120 },
     stopping_rule: 'fixed',
     evaluation_concurrency: 1,
     error_tolerance: {
@@ -31,7 +32,7 @@ function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
       max_arm_count_difference: 1,
       max_training_fraction: 0.05,
     },
-    calibration: { min_failure_rate: 0.1, max_failure_rate: 0.9, min_recurring_sessions: 2 },
+    calibration: { ...CALIBRATION_RULE },
   }
   const rows: Observation[] = jobs.map((job) => {
     const i = Number(job.task.id.split('-')[1])
@@ -45,6 +46,14 @@ function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
       misses: 0,
       rules_before: job.arm === 'rules-off' ? 0 : 3,
       ledger: 'synthetic',
+      hidden_status: 'PASS',
+      observed_repair_failure: !pass,
+      observed_repair_resolution: !pass,
+      first_attempt: {
+        source_hash: 'synthetic',
+        public_status: pass ? 'PASS' : 'FAIL',
+        hidden_status: pass ? 'PASS' : 'FAIL',
+      },
     }
   })
   return { plan, rows }
@@ -141,7 +150,7 @@ test('incomplete, uncalibrated, mock, missing-rule and operational-error runs ca
   expect(() =>
     report(
       plan,
-      rows.map((r, i) => (i === 24 ? { ...r, job: { ...r.job, arm: 'train' } } : r)),
+      rows.map((r, i) => (i === 30 ? { ...r, job: { ...r.job, arm: 'train' } } : r)),
     ),
   ).toThrow('preregistered')
 })

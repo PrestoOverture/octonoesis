@@ -159,7 +159,7 @@ export function generateStream(
         family,
         seed,
         timeout_s: 900,
-        prompt: `${specifications[family]}\nRun bun test before and after changes. Add regression tests as needed. Complete the task in this session.\nFixture variant: ${family}/${seed}.`,
+        prompt: `${specifications[family]}\nRun bun test directly before and after changes, without pipes or redirection, so failing exit codes reach the learning loop. Keep contract.test.ts unchanged; add separate regression tests as needed. Complete the task in this session.\nFixture variant: ${family}/${seed}.`,
       })
     }),
   )
@@ -205,6 +205,14 @@ export async function materialize(task: Task, repo: string): Promise<void> {
     'event-bus': `const seen=[];const bus=m.createBus();bus.on('v${task.seed}',value=>seen.push(value));assert.equal(bus.emit('v${task.seed}',${amount}),1);assert.deepEqual(seen,[${amount}]);`,
     'async-pool': `const pool=new m.Pool(1);const seen=[];let release;const gate=new Promise(r=>release=r);const a=pool.run(async()=>{seen.push('a');await gate;seen.push('end')});const b=pool.run(()=>seen.push('b'));while(!seen.length)await new Promise(r=>setImmediate(r));assert.deepEqual(seen,['a']);release();await Promise.all([a,b]);assert.deepEqual(seen,['a','end','b']);`,
   }
+  const learnable: Record<Family, string> = {
+    'interval-overlay': `assert.deepEqual(m.overlay([{start:0,end:2,tag:'a'},{start:2,end:4,tag:'b'}]),[{start:0,end:2,tag:'a'},{start:2,end:4,tag:'b'}]);assert.deepEqual(m.overlay([{start:0,end:3,tag:'old'},{start:1,end:2,tag:'new'},{start:1,end:2,tag:null}]),[{start:0,end:3,tag:'old'}]);`,
+    'atomic-transfer': `const retry={from:'a',to:'b',amount:2,id:'retry'};assert.deepEqual({...m.transfer({a:6,b:0},[retry,retry])},{a:4,b:2});`,
+    'single-flight': `let finish;let calls=0;const c2=new m.Cache(()=>++calls===1?new Promise((r,reject)=>finish=reject):Promise.resolve('new'),10,()=>0);const old=c2.get('key').catch(e=>e);while(!finish)await new Promise(r=>setImmediate(r));c2.invalidate('key');assert.equal(await c2.get('key'),'new');finish(new Error('old rejection'));await old;assert.equal(await c2.get('key'),'new');assert.equal(calls,2);`,
+    'event-bus': `const b2=m.createBus();const log=[];let added=false;b2.on('event',()=>{log.push('first');if(!added){added=true;b2.on('event',()=>log.push('later'));}});b2.emit('event');assert.deepEqual(log,['first']);b2.emit('event');assert.deepEqual(log,['first','first','later']);`,
+    'async-pool': `const p2=new m.Pool(1);const cancel=new AbortController();let called=false;const pending=p2.run(()=>{called=true},cancel.signal).catch(e=>e);cancel.abort('stop');assert.equal(await pending,'stop');await new Promise(r=>setImmediate(r));assert.equal(called,false);`,
+  }
+  cases[task.family] += learnable[task.family]
   if (task.family === 'atomic-transfer') {
     cases[task.family] +=
       `const named=JSON.parse('{"__proto__":5,"a":0}'); const copied=m.transfer(named,[]); assert.equal(Object.hasOwn(copied,'__proto__'),true); assert.equal(copied.__proto__,5);`
@@ -215,6 +223,6 @@ export async function materialize(task: Task, repo: string): Promise<void> {
   }
   await writeFile(
     path.join(repo, 'contract.test.ts'),
-    `import {test} from 'bun:test'; import assert from 'node:assert/strict'; import * as m from './src/subject';\nclass ${errorClass} extends Error {name='${errorClass}'}\ntest('${task.family}',async()=>{try{${cases[task.family]}}catch(e){throw new ${errorClass}(String(e))}});\n`,
+    `import {test} from 'bun:test'; import assert from 'node:assert/strict'; import {readFileSync,appendFileSync} from 'node:fs';\nconst source=readFileSync(new URL('./src/subject.ts',import.meta.url),'utf8');\nif(process.env.OCTONOESIS_DOGFOOD_ATTEMPTS)appendFileSync(process.env.OCTONOESIS_DOGFOOD_ATTEMPTS,JSON.stringify({source,started_at:new Date().toISOString()})+'\\n');\nclass ${errorClass} extends Error {name='${errorClass}'}\ntest('${task.family}',async()=>{try{const m=await import('./src/subject');${cases[task.family]}}catch(e){throw new ${errorClass}(String(e))}});\n`,
   )
 }

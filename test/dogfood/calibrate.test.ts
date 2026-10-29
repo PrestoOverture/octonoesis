@@ -102,13 +102,13 @@ test('--calibrate is keyless-testable, uses fresh ledgers and never writes a pre
       diagnostics_missing: number
     }[]) {
       expect(row.sessions).toBe(2)
-      expect(row.hidden_pass_rate).toBe(0.5)
+      expect(row.hidden_pass_rate).toBe(1)
       expect(row.public_pass_rate).toBe(1)
       expect(row.median_seconds).toBeGreaterThan(0)
-      expect(row.median_turns).toBe(5)
+      expect(row.median_turns).toBe(6)
       expect(row.errors).toBe(0)
       expect(row.diagnostics_missing).toBe(0)
-      expect(row.failed_groups.length).toBeGreaterThan(0)
+      expect(row.failed_groups.length).toBe(0)
       expect(
         row.failed_groups.every(
           (group) => group.clause_ids.length > 0 && group.sessions.length === group.failures,

@@ -18,8 +18,10 @@ import path from 'node:path'
 import { Command } from 'commander'
 import { isKnownJournalEvent, parseJournalEvent } from '../../src/memory/events'
 import { loadAllRulesIncludingArchived } from '../../src/memory/rules/store'
-import { classify, command, parseOutput } from '../eval/run'
+import { command, parseOutput } from '../eval/run'
+import { CALIBRATION_RULE, calibrationGate } from './calibration'
 import { hiddenGroups, parseHiddenResults } from './check'
+import { sessionStatus } from './endpoint'
 import type { Job, Observation, Plan } from './model'
 import { markdown, report } from './stats'
 import {
@@ -153,6 +155,7 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
   if (!model) throw new Error('Live runs require --model to pin the provider model')
   if (!['spark', 'openai', 'anthropic'].includes(provider)) throw new Error('Unsupported provider')
   const concurrency = positiveInteger(options.concurrency ?? 1)
+  if (concurrency > 10) throw new Error('Concurrency cap is 10')
   const hash = await sourceHash()
   try {
     const plan = JSON.parse(await readFile(file, 'utf8')) as Plan
@@ -198,29 +201,30 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
     tasks,
     jobs,
     hypothesis:
-      'Rules learned in sequential training sessions improve first-submission hidden-check success on paired held-out variants.',
+      'Rules learned from visible semantic repairs improve first-tested-repair success on paired held-out variants, guarded by independent hidden checks.',
     metrics: {
-      primary: 'paired first-submission success (one headless session, local retries allowed)',
+      primary:
+        'paired first tested changed-source state passing original public and independent hidden checks; final hidden regression guard must also pass',
       repeat_failure:
         'fraction of held-out sessions with a production coarse fingerprint observed during training',
       turns_tokens: 'mean headless turns and input+output tokens by arm (fork overhead excluded)',
       rule_hit_rate:
         'production rule hit deltas / (hit + miss deltas); undefined without accounted outcomes',
     },
-    test: 'Two-sided exact McNemar alpha .05 on complete matched task pairs; risk difference on minus off; conservative 95% Bonferroni-Wilson CI. ERROR counts as failure in primary analysis. Sensitivity drops all ERROR-containing pairs; confirmation requires both analyses significant in the same direction. Operational tolerance: at most 5% of planned evaluation pairs affected, arm error counts differing by at most one, and at most 5% training errors. Secondary metrics descriptive only.',
+    test: 'Two-sided exact McNemar alpha .05 on complete matched task pairs; risk difference on minus off; conservative 95% Bonferroni-Wilson CI. max_turns is task FAIL; infrastructure ERROR counts as failure in primary analysis. Sensitivity drops all ERROR-containing pairs; confirmation requires both analyses significant in the same direction. Operational tolerance: at most 5% of planned evaluation pairs affected, arm error counts differing by at most one, and at most 5% training errors. Secondary metrics descriptive only.',
     sample_size: {
       training: tasks.filter((t) => t.split === 'train').length,
       pairs: tasks.filter((t) => t.split === 'heldout').length,
     },
     stopping_rule:
-      'Run all planned jobs exactly once. Training stays sequential; evaluation uses the registered concurrency with hashed within-pair order. No efficacy peeking, no early success or sample extension. Resume skips committed jobs; an interrupted started job becomes ERROR, never rerun. Final inference only after fixed sample; calibration failure, operational tolerance exceeded, or sensitivity disagreement => inconclusive.',
+      'Run all planned jobs exactly once. Training stays sequential; evaluation uses the registered concurrency (cap 10) with hashed within-pair order. No efficacy peeking, no early success or sample extension. Resume skips committed jobs; an interrupted started job becomes ERROR, never rerun. Final inference only after fixed sample; calibration failure, operational tolerance exceeded, or sensitivity disagreement => inconclusive.',
     evaluation_concurrency: concurrency,
     error_tolerance: {
       max_pair_fraction: 0.05,
       max_arm_count_difference: 1,
       max_training_fraction: 0.05,
     },
-    calibration: { min_failure_rate: 0.1, max_failure_rate: 0.9, min_recurring_sessions: 2 },
+    calibration: { ...CALIBRATION_RULE },
   }
   // Both artifacts are durable before the first session is scheduled.
   await jsonFile(path.join(dir, 'stream.json'), tasks)
@@ -274,14 +278,19 @@ async function runSession(
   await mkdir(workspace, { recursive: true })
   await jsonFile(path.join(workspace, 'task.json'), job.task)
   await materialize(job.task, repo)
-  if (measurePublic) {
-    const source = (await readFile(path.join(repo, 'contract.test.ts'), 'utf8')).replace(
-      "'./src/subject'",
-      JSON.stringify(path.join(repo, 'src/subject.ts')),
-    )
+  {
+    const source = (await readFile(path.join(repo, 'contract.test.ts'), 'utf8'))
+      .replaceAll("'./src/subject'", JSON.stringify(path.join(repo, 'src/subject.ts')))
+      .replaceAll("'./src/subject.ts'", JSON.stringify(path.join(repo, 'src/subject.ts')))
     await writeFile(path.join(workspace, 'public.test.ts'), source, { flag: 'wx' })
   }
-  const env = sessionEnvironment(repo, ledger, plan)
+  const originalTest = await readFile(path.join(repo, 'contract.test.ts'), 'utf8')
+  const initialSource = await readFile(path.join(repo, 'src/subject.ts'), 'utf8')
+  const attemptsFile = path.join(workspace, 'attempts.jsonl')
+  const env = {
+    ...sessionEnvironment(repo, ledger, plan),
+    OCTONOESIS_DOGFOOD_ATTEMPTS: attemptsFile,
+  }
   const before = await loadAllRulesIncludingArchived(path.join(ledger, 'rules'))
   const row: Observation = {
     job,
@@ -356,18 +365,85 @@ async function runSession(
     )
     await jsonFile(path.join(workspace, 'check.json'), check)
     row.hidden_groups = parseHiddenResults(check.stdout)
-    row.status = classify(cli, check, Boolean(row.output), row.output?.exit_reason)
-    if (
-      cli.timed_out ||
-      cli.code !== 0 ||
-      !row.output ||
-      row.output.exit_reason !== 'completed' ||
-      check.timed_out ||
-      check.signal ||
-      check.code > 1
-    ) {
-      row.status = 'ERROR'
+    row.hidden_status =
+      check.timed_out || check.signal || check.code > 1
+        ? 'ERROR'
+        : check.code === 0
+          ? 'PASS'
+          : 'FAIL'
+    row.status = sessionStatus(cli, check, row.output)
+    if (row.status === 'ERROR')
       row.error ??= `Session/check operational failure (CLI ${cli.code}, check ${check.code})`
+    let snapshots: { source: string; started_at: string }[] = []
+    try {
+      snapshots = (await readFile(attemptsFile, 'utf8'))
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const value = JSON.parse(line)
+          if (
+            typeof value.source !== 'string' ||
+            typeof value.started_at !== 'string' ||
+            !Number.isFinite(Date.parse(value.started_at))
+          )
+            throw new Error('Invalid tested-source snapshot')
+          return value
+        })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+    const first = snapshots.find((snapshot) => snapshot.source !== initialSource)
+    if (first && row.status !== 'ERROR') {
+      const replay = path.join(workspace, 'first-attempt')
+      await materialize(job.task, replay)
+      await writeFile(path.join(replay, 'src/subject.ts'), first.source)
+      const publicCheck = await command(
+        [process.execPath, '--no-env-file', 'test', 'contract.test.ts'],
+        replay,
+        verificationEnvironment(),
+        30000,
+      )
+      const hiddenCheck = await command(
+        [
+          process.execPath,
+          '--no-env-file',
+          path.join(import.meta.dir, 'check.ts'),
+          replay,
+          job.task.family,
+          String(job.task.seed),
+        ],
+        replay,
+        verificationEnvironment(),
+        30000,
+      )
+      await jsonFile(path.join(workspace, 'first-public.json'), publicCheck)
+      await jsonFile(path.join(workspace, 'first-check.json'), hiddenCheck)
+      const status = (result: typeof publicCheck) =>
+        result.timed_out || result.signal || result.code > 1
+          ? ('ERROR' as const)
+          : result.code === 0
+            ? ('PASS' as const)
+            : ('FAIL' as const)
+      row.first_attempt = {
+        source_hash: digest(first.source),
+        public_status: status(publicCheck),
+        hidden_status: status(hiddenCheck),
+      }
+      if (
+        row.first_attempt.public_status === 'ERROR' ||
+        row.first_attempt.hidden_status === 'ERROR'
+      )
+        row.status = 'ERROR'
+      else if (
+        row.first_attempt.public_status !== 'PASS' ||
+        row.first_attempt.hidden_status !== 'PASS'
+      )
+        row.status = 'FAIL'
+    } else if (row.status !== 'ERROR') row.status = 'FAIL'
+    if ((await readFile(path.join(repo, 'contract.test.ts'), 'utf8')) !== originalTest) {
+      row.status = 'ERROR'
+      row.error = 'Measurement fixture modified; tested-state evidence cannot be trusted'
     }
     const text = await readFile(path.join(ledger, 'journal.jsonl'), 'utf8')
     const fingerprints = new Set<string>()
@@ -375,6 +451,22 @@ async function runSession(
       const event = parseJournalEvent(JSON.parse(line))
       if (!event || !isKnownJournalEvent(event) || event.session_id !== row.output?.session_id)
         continue
+      if (
+        event.kind === 'verify' &&
+        event.verdict === 'FAIL' &&
+        !event.stale &&
+        first &&
+        event.ts &&
+        event.ts >= first.started_at
+      )
+        row.observed_repair_failure = true
+      if (
+        event.kind === 'verify' &&
+        event.verdict === 'PASS' &&
+        !event.stale &&
+        row.observed_repair_failure
+      )
+        row.observed_repair_resolution = true
       if (event.kind === 'tool' || event.kind === 'verify')
         for (const fp of event.fingerprints ?? [])
           if (typeof fp.coarse === 'string') fingerprints.add(fp.coarse)
@@ -652,7 +744,7 @@ export function calibrationSummary(rows: Observation[]) {
   return Object.fromEntries(
     families.map((family) => {
       const group = rows.filter((r) => r.job.task.family === family)
-      const hidden = group.filter((r) => r.status === 'PASS').length
+      const hidden = group.filter((r) => r.hidden_status === 'PASS').length
       const publicPass = group.filter((r) => r.public_status === 'PASS').length
       const failed = new Map<
         string,
@@ -679,6 +771,12 @@ export function calibrationSummary(rows: Observation[]) {
           diagnostics_missing: group.filter(
             (r) => r.hidden_groups?.length !== hiddenGroups[family].length,
           ).length,
+          primary_passes: group.filter((r) => r.status === 'PASS').length,
+          primary_failure_rate: group.some((r) => r.status !== 'ERROR')
+            ? group.filter((r) => r.status === 'FAIL').length /
+              group.filter((r) => r.status !== 'ERROR').length
+            : null,
+          first_attempt_coverage: group.filter((r) => r.first_attempt).length,
           hidden_passes: hidden,
           hidden_pass_rate: group.length ? hidden / group.length : null,
           public_passes: publicPass,
@@ -702,11 +800,6 @@ export function calibrationSummary(rows: Observation[]) {
             ),
           ),
           median_turns: median(group.flatMap((r) => (r.output ? [r.output.turns] : []))),
-          target_failure_rate: [0.2, 0.7],
-          within_target:
-            group.length > 0 &&
-            1 - hidden / group.length >= 0.2 &&
-            1 - hidden / group.length <= 0.7,
         },
       ]
     }),
@@ -726,6 +819,7 @@ export async function calibrate(options: Options) {
       throw new Error('Unsupported provider')
     const perFamily = positiveInteger(options.perFamily ?? 3)
     const concurrency = positiveInteger(options.concurrency ?? 1)
+    if (concurrency > 10) throw new Error('Concurrency cap is 10')
     const tasks = generateStream(families.length * perFamily, 1).filter((t) => t.split === 'train')
     const config: CalibrationConfig = {
       mode: options.dryRun ? 'dry-run' : 'live',
@@ -768,7 +862,13 @@ export async function calibrate(options: Options) {
         config.jobs.findIndex((j) => j.id === b.job.id),
     )
     const summary = calibrationSummary(rows)
-    const result = { mode: config.mode, provider, model: config.model, summary }
+    const result = {
+      mode: config.mode,
+      provider,
+      model: config.model,
+      summary,
+      calibration_gate: calibrationGate(rows),
+    }
     const reportFile = path.join(dir, 'calibration-report.json')
     try {
       await jsonFile(reportFile, result)
@@ -779,10 +879,12 @@ export async function calibrate(options: Options) {
       )
         throw error
     }
-    console.log('Family | hidden pass | public pass | median seconds | median turns | errors')
+    console.log(
+      'Family | hidden pass | public pass | median seconds | median turns | errors | first repair failure',
+    )
     for (const [family, row] of Object.entries(summary)) {
       console.log(
-        `${family} | ${row.hidden_pass_rate} | ${row.public_pass_rate} | ${row.median_seconds} | ${row.median_turns} | ${row.errors}`,
+        `${family} | ${row.hidden_pass_rate} | ${row.public_pass_rate} | ${row.median_seconds} | ${row.median_turns} | ${row.errors} | ${row.primary_failure_rate}`,
       )
       console.log(
         `  failed groups: ${row.failed_groups.map((group) => `${group.id} [${group.clause_ids.join(', ')}] x${group.failures} (${group.sessions.join(', ')})`).join('; ') || 'none observed'}; missing diagnostics: ${row.diagnostics_missing}`,
@@ -790,6 +892,9 @@ export async function calibrate(options: Options) {
       for (const error of row.operational_errors)
         console.log(`  ${error.session}: ${error.exit_reason ?? 'no result'}: ${error.error}`)
     }
+    console.log(
+      `Pooled calibration eligible: ${result.calibration_gate.eligible}; ${result.calibration_gate.reasons.join(' ')}`,
+    )
     return { dir, result }
   } finally {
     await unlock()
