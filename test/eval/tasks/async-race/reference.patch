@@ -1,0 +1,13 @@
+diff --git a/src/queue.ts b/src/queue.ts
+index bd93978..96b3188 100644
+--- a/src/queue.ts
++++ b/src/queue.ts
+@@ -3,7 +3,7 @@ export class Queue {
+  private tail = Promise.resolve()
+  add(job) {
+   const result = this.tail.then(job)
+-  this.tail = Promise.resolve()
++  this.tail = result.then(() => undefined, () => undefined)
+   return result
+  }
+ }
