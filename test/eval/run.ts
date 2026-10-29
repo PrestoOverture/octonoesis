@@ -86,7 +86,7 @@ export async function command(
   }
 }
 
-function parseOutput(stdout: string): HeadlessResult {
+export function parseOutput(stdout: string): HeadlessResult {
   const value = JSON.parse(stdout) as HeadlessResult
   if (
     !value ||

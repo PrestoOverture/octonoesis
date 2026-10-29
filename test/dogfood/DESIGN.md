@@ -1,0 +1,83 @@
+# Autonomous dogfooding and RSC measurement
+
+## Run and resume
+
+From the repository root, with `SPARK_API_KEY` in the environment:
+
+```sh
+bun test/dogfood/run.ts --provider spark --model spark-x2.6 --output /tmp/octonoesis-spark-dogfood-001
+```
+
+That single command generates the stream, durably preregisters it, trains, evaluates, and writes `report.json` and `report.md`. Run **the same command and output path** to resume. Use a new empty directory for a new experiment. The output must be outside this repository and every `.octonoesis` directory, including symlink aliases. No production learning code is modified.
+
+Keyless pipeline demonstration:
+
+```sh
+bun test/dogfood/run.ts --dry-run
+```
+
+The default creates a retained external temporary directory and prints its path. `--output /tmp/octonoesis-dogfood-mock-001` makes the location explicit and resumable. Dry run has six training sessions and twelve paired tasks (30 sessions); live has 24 training sessions and 120 pairs (264 sessions). There is no concurrency setting: sessions run sequentially. An invalid configuration or process-level harness failure exits nonzero. A completed measurement may legitimately report `inconclusive`, including failed tasks, without a nonzero process exit.
+
+## Hypothesis and estimand
+
+Rules accumulated by the unmodified learning loop during training improve externally checked **first-submission task success** on held-out variants, compared with withholding those same rules. The primary estimand is success probability with rules minus success probability without rules, conditional on this trained ledger, task distribution, provider and pinned model.
+
+“First attempt” means the first headless session's final filesystem submission, **not** its first edit or initial baseline test. The agent has the normal toolset, default turn/output budgets, and permission bypass used by the existing eval harness. It may inspect, edit, write regression tests, and iterate on local tests. There are no oracle-guided retries. This measures the product's session-level success, not one-shot code completion.
+
+This is an RSC measurement baseline: a causal ablation of learned rules, not a claim that R1 parameter regression or R2 distiller search has been implemented or won. A positive result would justify further rung comparisons; it would not by itself justify a production parameter change.
+
+## Task stream and hidden checks
+
+`tasks.ts` generates and validates `stream.json`; `task.json` is retained per session outside the agent repository. Training seeds 1000–1023 and held-out seeds 100000–100119 are disjoint. Families recur in round-robin order: eight training and forty held-out variants each. Public example values, tags, cache keys and clocks vary with the seed; hidden oracle workloads also vary with it. All variants of a family intentionally share the same API and source/test paths, enabling cross-session rule reuse.
+
+| Family | Required behavior | Hidden discrimination |
+|---|---|---|
+| Interval overlay | Last-writer priority, half-open intervals, coalescing, no input mutation or point enumeration | Seeded nested/crossing/negative/empty/touching ranges against an independent small-domain point oracle; large-span case |
+| Atomic transfer | Simultaneous all-or-nothing batch, immutable input, safe integer balances and amounts, own account keys | Cycles, self transfers, unsafe totals, malformed amounts, prototype-named and missing own accounts, rejected-batch immutability |
+| Single flight cache | Pending request deduplication, completion-based TTL, rejection recovery, generation ownership on invalidation | Deterministically controlled promises settling out of order, stale rejection, undefined values, independent keys, expiry boundary, synchronous throw |
+
+The public test starts failing and exposes an ordinary failure → repair → verification arc for the learning loop. Named family-specific exceptions and stable test paths make recurring production fingerprints possible without pre-seeding rules. The harness reads the **actual production journal** and requires a coarse fingerprint to recur in at least two training sessions per family; it does not substitute its own family label for a measured fingerprint.
+
+`check.ts` executes only after the agent process has exited. Only buggy source, a public example test, and the specification README are materialized into its disposable git repository. Oracle source, reference implementations, expected outputs and oracle command paths are never placed in that repository, prompt, tool results or agent environment. The checker has no provider credentials and cannot feed results back into the agent. Agent modifications to public tests do not change external grading. Tests demonstrate that plausible partial fixes pass public tests yet fail hidden checks, while reference implementations pass both.
+
+These tasks are designed for omissions in nontrivial semantics rather than a reduced tool budget. **No live difficulty claim has been established without keys.** Calibration is part of the registered validity criteria: each family's training first-submission failure rate must be between 10% and 90%, inclusive (with eight sessions, at least one success and one failure), fingerprints must recur, and treatment must have learned eligible rules. Saturation, universal failure, missing rules, or fingerprint drift forces `inconclusive`. The architect should send calibration Deltas if Spark saturates these tasks. A changed stream or method requires a fresh preregistration/output directory; never pool a pilot with a later revised confirmatory run.
+
+## Design and ledger isolation
+
+1. Create `stream.json` and immutable `preregistration.json` before scheduling any session. The plan records the hypothesis, metrics, exact task/arm order, fixed sample, test, validity gates and stopping rule. It hashes the task stream and executable harness/production sources plus dependency manifests. Each durable `started` event includes the plan hash. Resume rejects changed source, provider, model, stream or an altered plan after scheduling.
+2. Train sequentially with memory and automatic distillation enabled. Every session receives a dedicated external `OCTONOESIS_MEMORY_DIR`. Training checkpoint N contains the complete ledger from checkpoint N−1, including journal, episodes, rules and auto-memory. This is one persistent **logical ledger lineage**, implemented as full copy-on-session checkpoints for crash recovery. Successful ledger writes accumulate exactly as in normal use; no rules are manufactured, promoted or rewritten by the harness.
+3. Freeze the final trained checkpoint for the comparison. For every held-out variant, make two independent copies of that checkpoint and identical initial repositories. The rules-on arm retains all rule files; rules-off withholds the copied `rules/` directory, including archived rules. All other memory is initially identical. Both run the normal learning loop, including session-end learning. New evaluation learning stays in that session's branch and cannot leak into the other arm or later pairs. This isolates access to previously learned rules while retaining the normal query/verification machinery.
+4. Both arms occur exactly once for each task. Their within-pair execution order is chosen by a preregistered hash of the task ID, reducing order drift. The IDs/seeds determine fixtures and ordering; they do **not** seed provider sampling. No override is added to production experiments or query code: train/frozen-held-out paired ablation is used instead of random `src/experiments` assignment, which would not guarantee matched pairs.
+5. Preserve per-session `task.json`, `cli.json`, `check.json`, repository and ledger alongside append-only `events.jsonl`. Headless JSON parsing, timeout/process-group termination and status classification reuse `test/eval/run.ts`. A run lock prevents simultaneous writers. Inherited memory-disable and experiment switches are removed in the child environment; parent environment is not changed. Spark's main/distillation model is pinned with MODEL and SPARK_MODEL; the other providers retain their production cheapest-model defaults for distillation, covered by the source hash.
+
+Reports are written only after scheduling finishes and are immutable. Ordinary resume verifies existing reports rather than replacing them. Complete corrupted event lines fail closed. Torn trailing JSON is retained byte-for-byte and followed by a hash-identified recovery marker. A started session without a committed result becomes an operational error, is never retried, and cannot supply its half-mutated checkpoint to subsequent training. Already committed sessions are skipped. This trades statistical eligibility for honest crash recovery: any interrupted submission makes the final inference inconclusive. Large ledgers are copied in full; storage use grows with checkpoint size.
+
+## Metrics
+
+- **Primary:** paired external hidden-check success at first session submission. The report gives successes per arm, on-only/off-only wins and risk difference in percentage points.
+- **Repeat failure rate:** fraction of evaluation sessions with an observed production coarse fingerprint that occurred in training. A signature is counted once per session. This is an exposure-normalized, coarse session metric rather than the dashboard's weekly resolved-episode occurrence metric. It includes initial baseline verification, so high rates can reflect deliberate reproduction of the supplied bug; do not interpret it as an independent success endpoint.
+- **Turns/tokens:** mean headless turns and total input plus output tokens per arm for sessions with valid JSON. These exclude auxiliary provider/fork calls not included in headless usage. Missing usage is not imputed as zero.
+- **Rule hit rate:** changes in production rule hit/miss counters, summed over evaluation branches, divided by hits + misses. Undefined when there are no accounted outcomes. This is FR-INJ-1 signature-flip accounting, not a causal success attribution and not a count of session-start impressions.
+- **Validity/coverage:** training failure rate and recurring fingerprints by family, eligible rules before each session, operational errors, planned/completed job counts, and reasons an inference is inconclusive.
+
+Timeouts, invalid JSON, externally killed sessions, non-completed engine exits, missing journals or checker crashes are operational errors. A valid completed session that fails an assertion is a task failure. Errors remain in the output and count as unsuccessful submissions for descriptive rates; **any** error disqualifies a confirmatory verdict. Only complete arm pairs enter the paired estimate; missing pairs prevent confirmation rather than silently shrinking the sample.
+
+## Sample size, power, test and stopping rule
+
+The live sample is fixed at **24 training sessions + 120 matched held-out pairs** (120 sessions per arm). The primary two-sided exact McNemar test conditions on discordant pairs: under the null, on-only wins are Binomial(discordant, 0.5). Reject at **p < 0.05**; positive risk difference yields `helps`, negative yields `harms`, subject to all validity gates. No rejection yields `inconclusive`, never evidence of equivalence. Secondary endpoints and family breakdowns are descriptive and have no additional significance claims.
+
+Planning alternative: paired improvement 0.20 with total discordance 0.50 (on-only 0.35, off-only 0.15). Exact multinomial enumeration in `planningPower(120)` gives **86.22% power** at the registered two-sided alpha. This is conditional planning, not a promise about Spark's unknown discordance or effect. The six/twelve dry-run allocation has no inferential power claim.
+
+The 95% risk-difference interval subtracts simultaneous 97.5% Wilson intervals for the two discordant multinomial proportions (Bonferroni). It respects pairing, is conservative and approximate, and can include zero when the exact conditional test rejects. The exact p-value controls the registered verdict; the CI is reported independently. Tests cover a planted improvement, identical null arms, swapped arm labels (same pooled totals, opposite effect), and different pairing with identical marginal arm totals.
+
+**Stopping:** execute the entire registered schedule exactly once. No early efficacy stop, outcome-dependent extension, task replacement, rule curation, or adaptive sample size. Do not inspect intermediate p-values to choose when to stop. Recover interrupted work as described above. Generate inference after the fixed schedule; incomplete samples, failed calibration, absent treatment rules or any operational error force `inconclusive`. A calibration Delta begins a new experiment instead of modifying this one.
+
+## Threats to validity and scope of conclusions
+
+- Families share contracts and buggy implementation templates. Seeds vary examples/check data, not the underlying algorithm. This tests reuse within known failure classes; it does not establish broad repository generalization. Sessions are the sampling unit, conditional on one training history. Power assumes independent provider draws conditional on that history; provider caching/determinism and cross-session dependence can reduce effective sample size. Replication with new preregistered training histories is needed before generalizing.
+- Spark may solve all tasks in one session or never produce useful eligible rules. Session-start injection only accepts broad active rules in production; narrow/candidate rules may help only after failure. The harness does not alter lifecycle thresholds or rule specificity to manufacture a lift.
+- Public and hidden behaviors differ; learning from public repairs may not address hidden omissions. Fingerprint extraction is provider-dependent, and coarse repeats may group different defects. Gates and raw artifacts expose these failures rather than asserting learning occurred.
+- Frozen held-out evaluation measures the effect of the trained rule set. It does not estimate unrestricted continual learning, distiller superiority, or autonomous parameter optimization. Identical auto-memory in both arms may reduce the measured marginal benefit of rules.
+- Bypass is appropriate for trusted disposable fixtures, as in the eval runner. Hidden checks are separated by process, path and timing; this is not a security sandbox against a deliberately malicious agent scanning the host filesystem. Run on the architect's dedicated pilot machine/account. Reference implementations are available to the scripted provider only and are never an oracle input to live sessions.
+- Sequential pairing reduces but cannot eliminate API/provider drift, rate limits or service changes. Live sampling parameters remain the production defaults. Source/dependency hashes make method changes visible; they cannot freeze a remotely served model implementation.
+- The dry-run provider scripts partial/correct code based on real injected advice and uses real query, tools, verification, episodes, distillation and accounting. It suppresses auto-memory forks through the mock child's fork-depth setting because no fork provider exists. It proves plumbing and discriminating checks, not model behavior; **every dry-run verdict is inconclusive**. Unit statistics tests separately establish that a planted arm effect can be detected.
