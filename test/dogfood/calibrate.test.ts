@@ -3,8 +3,63 @@ import { mkdtemp, readFile, readdir, realpath, rm } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { command } from '../eval/run'
+import { mockProvider } from '../helpers/headless'
 import { calibrate, preregister, runPool } from './run'
 import { families } from './tasks'
+
+test('live-session fatal error survives headless JSON, observations and calibration reporting', async () => {
+  const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'dogfood-fatal-')))
+  const server = mockProvider(() => [
+    { error: { message: 'calibration provider failed', type: 'invalid_request_error' } },
+  ])
+  try {
+    const cli = await command(
+      [
+        process.execPath,
+        '--no-env-file',
+        path.join(import.meta.dir, 'run.ts'),
+        '--calibrate',
+        '--provider',
+        'openai',
+        '--per-family',
+        '1',
+        '--concurrency',
+        '3',
+        '--output',
+        dir,
+      ],
+      path.resolve(import.meta.dir, '../..'),
+      {
+        ...process.env,
+        OPENAI_API_KEY: 'mock-key',
+        OPENAI_BASE_URL: `http://127.0.0.1:${server.port}/v1`,
+      },
+      60000,
+    )
+    expect(cli.code).toBe(0)
+    expect(cli.stdout).toContain('calibration provider failed')
+    const events = (await readFile(path.join(dir, 'events.jsonl'), 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+      .filter((event) => event.kind === 'result')
+    const result = JSON.parse(await readFile(path.join(dir, 'calibration-report.json'), 'utf8'))
+    expect(events.length).toBe(families.length)
+    for (const { observation } of events) {
+      expect(observation.status).toBe('ERROR')
+      expect(observation.output.exit_reason).toBe('fatal_error')
+      expect(observation.error).toContain('calibration provider failed')
+      expect(observation.error).toBe(observation.output.error)
+      expect(result.summary[observation.job.task.family].operational_errors).toEqual([
+        { session: observation.job.id, exit_reason: 'fatal_error', error: observation.error },
+      ])
+    }
+    expect(await readdir(dir)).not.toContain('preregistration.json')
+  } finally {
+    server.stop(true)
+    await rm(dir, { recursive: true, force: true })
+  }
+}, 90000)
 
 test('--calibrate is keyless-testable, uses fresh ledgers and never writes a preregistration', async () => {
   const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'dogfood-calibrate-')))

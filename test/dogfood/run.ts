@@ -321,6 +321,7 @@ async function runSession(
     await jsonFile(path.join(workspace, 'cli.json'), cli)
     try {
       row.output = parseOutput(cli.stdout)
+      row.error = row.output.error
     } catch {
       row.error = 'Missing/invalid headless JSON'
     }
@@ -683,6 +684,13 @@ export function calibrationSummary(rows: Observation[]) {
           public_passes: publicPass,
           public_pass_rate: group.length ? publicPass / group.length : null,
           errors: group.filter((r) => r.status === 'ERROR').length,
+          operational_errors: group
+            .filter((r) => r.status === 'ERROR')
+            .map((r) => ({
+              session: r.job.id,
+              exit_reason: r.output?.exit_reason,
+              error: r.error,
+            })),
           public_errors: group.filter((r) => r.public_status === 'ERROR').length,
           median_seconds: median(
             group.flatMap((r) =>
@@ -779,6 +787,8 @@ export async function calibrate(options: Options) {
       console.log(
         `  failed groups: ${row.failed_groups.map((group) => `${group.id} [${group.clause_ids.join(', ')}] x${group.failures} (${group.sessions.join(', ')})`).join('; ') || 'none observed'}; missing diagnostics: ${row.diagnostics_missing}`,
       )
+      for (const error of row.operational_errors)
+        console.log(`  ${error.session}: ${error.exit_reason ?? 'no result'}: ${error.error}`)
     }
     return { dir, result }
   } finally {
