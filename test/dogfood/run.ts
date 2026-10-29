@@ -18,10 +18,15 @@ import path from 'node:path'
 import { Command } from 'commander'
 import { isKnownJournalEvent, parseJournalEvent } from '../../src/memory/events'
 import { loadAllRulesIncludingArchived } from '../../src/memory/rules/store'
+import {
+  DEFAULT_ANTHROPIC_MODEL,
+  DEFAULT_OPENAI_MODEL,
+  DEFAULT_SPARK_MODEL,
+} from '../../src/providers'
 import { classify, command, parseOutput } from '../eval/run'
 import type { Job, Observation, Plan } from './model'
 import { markdown, report } from './stats'
-import { digest, generateStream, loadStream, materialize } from './tasks'
+import { digest, families, generateStream, loadStream, materialize } from './tasks'
 
 export const projectRoot = path.resolve(import.meta.dir, '../..')
 export interface Options {
@@ -188,7 +193,13 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
   return plan
 }
 
-export function sessionEnvironment(repo: string, ledger: string, plan: Plan): NodeJS.ProcessEnv {
+type SessionConfig = Pick<Plan, 'mode' | 'provider' | 'model'>
+
+export function sessionEnvironment(
+  repo: string,
+  ledger: string,
+  plan: SessionConfig,
+): NodeJS.ProcessEnv {
   // Explicitly exclude inherited experiment/memory switches that would change the treatment.
   const env: NodeJS.ProcessEnv = {
     ...process.env,
@@ -215,12 +226,26 @@ export function sessionEnvironment(repo: string, ledger: string, plan: Plan): No
   return env
 }
 
-async function runSession(dir: string, job: Job, plan: Plan, ledger: string): Promise<Observation> {
+async function runSession(
+  dir: string,
+  job: Job,
+  plan: SessionConfig,
+  ledger: string,
+  measurePublic = false,
+): Promise<Observation> {
+  const start = performance.now()
   const workspace = path.join(dir, 'sessions', job.id)
   const repo = path.join(workspace, 'repo')
   await mkdir(workspace, { recursive: true })
   await jsonFile(path.join(workspace, 'task.json'), job.task)
   await materialize(job.task, repo)
+  if (measurePublic) {
+    const source = (await readFile(path.join(repo, 'contract.test.ts'), 'utf8')).replace(
+      "'./src/subject'",
+      JSON.stringify(path.join(repo, 'src/subject.ts')),
+    )
+    await writeFile(path.join(workspace, 'public.test.ts'), source, { flag: 'wx' })
+  }
   const env = sessionEnvironment(repo, ledger, plan)
   const before = await loadAllRulesIncludingArchived(path.join(ledger, 'rules'))
   const row: Observation = {
@@ -263,6 +288,21 @@ async function runSession(dir: string, job: Job, plan: Plan, ledger: string): Pr
       row.output = parseOutput(cli.stdout)
     } catch {
       row.error = 'Missing/invalid headless JSON'
+    }
+    if (measurePublic) {
+      const publicResult = await command(
+        [process.execPath, '--no-env-file', 'test', path.join(workspace, 'public.test.ts')],
+        repo,
+        { PATH: process.env.PATH, TMPDIR: os.tmpdir() },
+        30000,
+      )
+      await jsonFile(path.join(workspace, 'public.json'), publicResult)
+      row.public_status =
+        publicResult.timed_out || publicResult.signal || publicResult.code > 1
+          ? 'ERROR'
+          : publicResult.code === 0
+            ? 'PASS'
+            : 'FAIL'
     }
     // This child is started after the agent exits. No oracle path, source or env is passed to it.
     const check = await command(
@@ -317,6 +357,7 @@ async function runSession(dir: string, job: Job, plan: Plan, ledger: string): Pr
     row.status = 'ERROR'
     row.error = String(error)
   }
+  row.duration_ms = Math.round(performance.now() - start)
   return row
 }
 
@@ -383,9 +424,113 @@ async function readEvents(dir: string): Promise<Event[]> {
   return events
 }
 
+/** Bound independent work, drain in-flight workers on failure before releasing the run lock. */
+export async function runPool<T>(
+  items: readonly T[],
+  concurrency: number,
+  work: (item: T) => Promise<void>,
+): Promise<void> {
+  positiveInteger(concurrency)
+  let next = 0
+  let failed = false
+  let failure: unknown
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (!failed) {
+        const index = next++
+        if (index >= items.length) return
+        try {
+          await work(items[index] as T)
+        } catch (error) {
+          failed = true
+          failure = error
+        }
+      }
+    }),
+  )
+  if (failed) throw failure
+}
+
+function eventWriter(dir: string): (event: Event) => Promise<void> {
+  let pending = Promise.resolve()
+  return (event) => {
+    pending = pending.then(() => appendEvent(dir, event))
+    return pending
+  }
+}
+
+async function resumeRows(dir: string, hash: string, jobs: Job[]): Promise<Observation[]> {
+  const events = await readEvents(dir)
+  for (const event of events) {
+    if (event.kind === 'recovered-tail') continue
+    const job = event.kind === 'started' ? event.job : event.observation.job
+    if (JSON.stringify(jobs.find((j) => j.id === job.id)) !== JSON.stringify(job))
+      throw new Error('Event does not match scheduled job')
+    if (event.kind === 'started' && event.plan_hash !== hash)
+      throw new Error('Preregistration/configuration changed after scheduling')
+  }
+  const rows = events.flatMap((e) => (e.kind === 'result' ? [e.observation] : []))
+  const completed = new Set(rows.map((r) => r.job.id))
+  if (completed.size !== rows.length) throw new Error('Duplicate result in append-only output')
+  for (const event of events)
+    if (event.kind === 'started' && !completed.has(event.job.id)) {
+      const row: Observation = {
+        job: event.job,
+        status: 'ERROR',
+        fingerprints: [],
+        hits: 0,
+        misses: 0,
+        rules_before: 0,
+        error: 'Interrupted session; retained as error, no retry',
+        ledger: '',
+      }
+      await appendEvent(dir, { kind: 'result', observation: row })
+      rows.push(row)
+      completed.add(event.job.id)
+    }
+  return rows
+}
+
+async function performJob(
+  dir: string,
+  job: Job,
+  config: SessionConfig,
+  hash: string,
+  emit: (event: Event) => Promise<void>,
+  previousLedger?: string,
+  measurePublic = false,
+): Promise<Observation> {
+  const ledger = path.join(dir, 'ledgers', job.id)
+  await emit({ kind: 'started', job, ledger, plan_hash: hash })
+  let row: Observation
+  try {
+    if (previousLedger)
+      await cp(previousLedger, ledger, { recursive: true, errorOnExist: true, force: false })
+    else await mkdir(ledger, { recursive: true })
+    if (job.arm === 'rules-off')
+      await rm(path.join(ledger, 'rules'), { recursive: true, force: true })
+    row = await runSession(dir, job, config, ledger, measurePublic)
+  } catch (error) {
+    row = {
+      job,
+      status: 'ERROR',
+      fingerprints: [],
+      hits: 0,
+      misses: 0,
+      rules_before: 0,
+      ledger: '',
+      error: String(error),
+    }
+  }
+  await emit({ kind: 'result', observation: row })
+  return row
+}
+
 export async function run(
   options: Options,
 ): Promise<{ dir: string; result: ReturnType<typeof report> }> {
+  if (options.calibrate || options.perFamily !== undefined)
+    throw new Error('Use --calibrate for calibration options')
   const dir = await assertIsolatedOutput(
     options.output ?? (await mkdtemp(path.join(os.tmpdir(), 'octonoesis-dogfood-'))),
   )
@@ -393,65 +538,39 @@ export async function run(
   const unlock = await acquireLock(dir)
   try {
     const plan = await preregister(dir, options)
-    const events = await readEvents(dir)
-    for (const event of events)
-      if (event.kind === 'started' && event.plan_hash !== digest(plan))
-        throw new Error('Preregistration changed after scheduling')
-    const rows = events.flatMap((e) => (e.kind === 'result' ? [e.observation] : []))
-    const completed = new Set(rows.map((r) => r.job.id))
-    if (completed.size !== rows.length) throw new Error('Duplicate result in append-only output')
-    // A killed process never retries a submission or reuses its half-mutated ledger.
-    for (const event of events)
-      if (event.kind === 'started' && !completed.has(event.job.id)) {
-        const row: Observation = {
-          job: event.job,
-          status: 'ERROR',
-          fingerprints: [],
-          hits: 0,
-          misses: 0,
-          rules_before: 0,
-          error: 'Interrupted session; retained as error, no retry',
-          ledger: '',
-        }
-        await appendEvent(dir, { kind: 'result', observation: row })
-        rows.push(row)
-        completed.add(event.job.id)
-      }
+    const rows = await resumeRows(dir, digest(plan), plan.jobs)
+    const emit = eventWriter(dir)
     const empty = path.join(dir, 'ledgers', 'empty')
     await mkdir(empty, { recursive: true })
     let trained = empty
-    for (const job of plan.jobs) {
+    // The training lineage always has exactly one writer, independent of --concurrency.
+    for (const job of plan.jobs.filter((j) => j.arm === 'train')) {
       const previous = rows.find((r) => r.job.id === job.id)
-      if (previous) {
-        if (job.arm === 'train' && previous.ledger) trained = previous.ledger
-        continue
+      const row = previous ?? (await performJob(dir, job, plan, digest(plan), emit, trained))
+      if (!previous) {
+        rows.push(row)
+        console.log(`${rows.length}/${plan.jobs.length} ${job.id}: ${row.status}`)
       }
-      const ledger = path.join(dir, 'ledgers', job.id)
-      await appendEvent(dir, { kind: 'started', job, ledger, plan_hash: digest(plan) })
-      let row: Observation
-      try {
-        // Each checkpoint has one writer and inherits the complete prior training ledger.
-        await cp(trained, ledger, { recursive: true, errorOnExist: true, force: false })
-        if (job.arm === 'rules-off')
-          await rm(path.join(ledger, 'rules'), { recursive: true, force: true })
-        row = await runSession(dir, job, plan, ledger)
-      } catch (error) {
-        row = {
-          job,
-          status: 'ERROR',
-          fingerprints: [],
-          hits: 0,
-          misses: 0,
-          rules_before: 0,
-          ledger: '',
-          error: String(error),
-        }
-      }
-      await appendEvent(dir, { kind: 'result', observation: row })
-      rows.push(row)
-      if (job.arm === 'train' && row.ledger) trained = row.ledger
-      console.log(`${rows.length}/${plan.jobs.length} ${job.id}: ${row.status}`)
+      if (row.ledger) trained = row.ledger
     }
+    const pairs = plan.tasks
+      .filter((t) => t.split === 'heldout')
+      .map((task) => plan.jobs.filter((j) => j.task.id === task.id))
+    await runPool(pairs, plan.evaluation_concurrency, async (pair) => {
+      // A worker runs a whole pair in its registered hashed order. Other pairs are independent.
+      for (const job of pair) {
+        if (rows.some((r) => r.job.id === job.id)) continue
+        const row = await performJob(dir, job, plan, digest(plan), emit, trained)
+        rows.push(row)
+        console.log(`${rows.length}/${plan.jobs.length} ${job.id}: ${row.status}`)
+      }
+    })
+    // Completion events are keyed by job; analysis and reports always use plan order.
+    rows.sort(
+      (a, b) =>
+        plan.jobs.findIndex((j) => j.id === a.job.id) -
+        plan.jobs.findIndex((j) => j.id === b.job.id),
+    )
     const result = report(plan, rows)
     // Immutable reports are materialized once; resume verifies them instead of overwriting.
     for (const [name, content] of [
@@ -475,6 +594,135 @@ export async function run(
   }
 }
 
+interface CalibrationConfig extends SessionConfig {
+  source_hash: string
+  per_family: number
+  concurrency: number
+  jobs: Job[]
+}
+
+export function calibrationSummary(rows: Observation[]) {
+  const median = (values: number[]) => {
+    const sorted = [...values].sort((a, b) => a - b)
+    if (!sorted.length) return null
+    return (
+      ((sorted[Math.floor((sorted.length - 1) / 2)] as number) +
+        (sorted[Math.floor(sorted.length / 2)] as number)) /
+      2
+    )
+  }
+  return Object.fromEntries(
+    families.map((family) => {
+      const group = rows.filter((r) => r.job.task.family === family)
+      const hidden = group.filter((r) => r.status === 'PASS').length
+      const publicPass = group.filter((r) => r.public_status === 'PASS').length
+      return [
+        family,
+        {
+          sessions: group.length,
+          hidden_passes: hidden,
+          hidden_pass_rate: group.length ? hidden / group.length : null,
+          public_passes: publicPass,
+          public_pass_rate: group.length ? publicPass / group.length : null,
+          errors: group.filter((r) => r.status === 'ERROR').length,
+          public_errors: group.filter((r) => r.public_status === 'ERROR').length,
+          median_seconds: median(
+            group.flatMap((r) =>
+              r.output
+                ? [r.output.duration_ms / 1000]
+                : r.duration_ms === undefined
+                  ? []
+                  : [r.duration_ms / 1000],
+            ),
+          ),
+          median_turns: median(group.flatMap((r) => (r.output ? [r.output.turns] : []))),
+          target_failure_rate: [0.2, 0.7],
+          within_target:
+            group.length > 0 &&
+            1 - hidden / group.length >= 0.2 &&
+            1 - hidden / group.length <= 0.7,
+        },
+      ]
+    }),
+  )
+}
+
+export async function calibrate(options: Options) {
+  const dir = await assertIsolatedOutput(
+    options.output ?? (await mkdtemp(path.join(os.tmpdir(), 'octonoesis-calibration-'))),
+  )
+  await mkdir(dir, { recursive: true })
+  const unlock = await acquireLock(dir)
+  try {
+    const provider = options.provider ?? 'spark'
+    if (!['spark', 'openai', 'anthropic'].includes(provider))
+      throw new Error('Unsupported provider')
+    const perFamily = positiveInteger(options.perFamily ?? 3)
+    const concurrency = positiveInteger(options.concurrency ?? 1)
+    const tasks = generateStream(families.length * perFamily, 1).filter((t) => t.split === 'train')
+    const config: CalibrationConfig = {
+      mode: options.dryRun ? 'dry-run' : 'live',
+      provider,
+      model: options.dryRun
+        ? 'scripted-provider-v1'
+        : (options.model ??
+          (provider === 'spark'
+            ? DEFAULT_SPARK_MODEL
+            : provider === 'openai'
+              ? DEFAULT_OPENAI_MODEL
+              : DEFAULT_ANTHROPIC_MODEL)),
+      per_family: perFamily,
+      concurrency,
+      source_hash: await sourceHash(),
+      jobs: tasks.map((task) => ({ id: task.id, task, arm: 'train' })),
+    }
+    const file = path.join(dir, 'calibration.json')
+    try {
+      const existing = JSON.parse(await readFile(file, 'utf8')) as CalibrationConfig
+      if (digest(existing) !== digest(config))
+        throw new Error('Calibration configuration/source differs from existing run')
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      if ((await readdir(dir)).some((name) => name !== '.run-lock'))
+        throw new Error('New calibration output directory must be empty')
+      // Descriptive run configuration only: no hypothesis/test, registry entry, or preregistration.
+      await jsonFile(file, config)
+    }
+    const rows = await resumeRows(dir, digest(config), config.jobs)
+    const emit = eventWriter(dir)
+    await runPool(config.jobs, concurrency, async (job) => {
+      if (rows.some((r) => r.job.id === job.id)) return
+      const row = await performJob(dir, job, config, digest(config), emit, undefined, true)
+      rows.push(row)
+    })
+    rows.sort(
+      (a, b) =>
+        config.jobs.findIndex((j) => j.id === a.job.id) -
+        config.jobs.findIndex((j) => j.id === b.job.id),
+    )
+    const summary = calibrationSummary(rows)
+    const result = { mode: config.mode, provider, model: config.model, summary }
+    const reportFile = path.join(dir, 'calibration-report.json')
+    try {
+      await jsonFile(reportFile, result)
+    } catch (error) {
+      if (
+        (error as NodeJS.ErrnoException).code !== 'EEXIST' ||
+        (await readFile(reportFile, 'utf8')) !== `${JSON.stringify(result, null, 2)}\n`
+      )
+        throw error
+    }
+    console.log('Family | hidden pass | public pass | median seconds | median turns | errors')
+    for (const [family, row] of Object.entries(summary))
+      console.log(
+        `${family} | ${row.hidden_pass_rate} | ${row.public_pass_rate} | ${row.median_seconds} | ${row.median_turns} | ${row.errors}`,
+      )
+    return { dir, result }
+  } finally {
+    await unlock()
+  }
+}
+
 if (import.meta.main) {
   const program = new Command()
     .name('bun test/dogfood/run.ts')
@@ -482,11 +730,23 @@ if (import.meta.main) {
     .option('--output <dir>', 'External persistent output directory; reuse to resume')
     .option('--provider <name>', 'spark, openai, or anthropic', 'spark')
     .option('--model <name>', 'Pin the live provider model')
+    .option(
+      '--concurrency <N>',
+      'Evaluation pair workers, or fresh-ledger calibration workers',
+      positiveInteger,
+      1,
+    )
+    .option('--calibrate', 'Descriptive fresh-ledger probe; never writes a preregistration')
+    .option('--per-family <K>', 'Calibration sessions per family', positiveInteger)
     .parse(process.argv)
-  run(program.opts<Options>())
-    .then(({ dir, result }) => console.log(`Verdict: ${result.verdict}\nOutput: ${dir}`))
-    .catch((error) => {
-      console.error(String(error))
-      process.exitCode = 1
-    })
+  const options = program.opts<Options>()
+  const execution = options.calibrate
+    ? calibrate(options).then(({ dir }) => console.log(`Calibration output: ${dir}`))
+    : run(options).then(({ dir, result }) =>
+        console.log(`Verdict: ${result.verdict}\nOutput: ${dir}`),
+      )
+  execution.catch((error) => {
+    console.error(String(error))
+    process.exitCode = 1
+  })
 }

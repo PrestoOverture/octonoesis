@@ -149,3 +149,59 @@ test('running lock and changed preregistration/config fail closed before session
   await expect(run({ output: dir, dryRun: true })).rejects.toThrow('changed')
   expect(await readdir(dir)).not.toContain('sessions')
 })
+
+test('evaluation concurrency preserves pairs, outcomes, training lineage and hashed within-pair order', async () => {
+  const serialDir = await temporary()
+  const parallelDir = await temporary()
+  const serial = await run({ dryRun: true, output: serialDir, concurrency: 1 })
+  const parallel = await run({ dryRun: true, output: parallelDir, concurrency: 3 })
+  expect(parallel.result.primary).toEqual(serial.result.primary)
+  expect(parallel.result.sensitivity).toEqual(serial.result.sensitivity)
+  expect(parallel.result.arms).toEqual(serial.result.arms)
+  const events = async (dir: string) =>
+    (await readFile(path.join(dir, 'events.jsonl'), 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+  const serialEvents = await events(serialDir)
+  const parallelEvents = await events(parallelDir)
+  const outcomes = (list: typeof serialEvents) =>
+    list
+      .filter((e) => e.kind === 'result')
+      .map((e) => ({
+        id: e.observation.job.id,
+        status: e.observation.status,
+        fingerprints: e.observation.fingerprints,
+        hits: e.observation.hits,
+        misses: e.observation.misses,
+        rules_before: e.observation.rules_before,
+        turns: e.observation.output?.turns,
+        usage: e.observation.output?.usage,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id))
+  expect(outcomes(parallelEvents)).toEqual(outcomes(serialEvents))
+  const plan = parallel.result.preregistration
+  expect(plan.evaluation_concurrency).toBe(3)
+  const firstEval = parallelEvents.findIndex((e) => e.kind === 'started' && e.job.arm !== 'train')
+  const firstResult = parallelEvents.findIndex(
+    (e) => e.kind === 'result' && e.observation.job.arm !== 'train',
+  )
+  expect(
+    parallelEvents.slice(firstEval, firstResult).filter((e) => e.kind === 'started').length,
+  ).toBe(3)
+  expect(parallelEvents.slice(0, firstEval).filter((e) => e.kind === 'result').length).toBe(6)
+  for (const task of plan.tasks.filter((t) => t.split === 'heldout')) {
+    const jobs = plan.jobs.filter((j) => j.task.id === task.id)
+    const first = jobs[0]
+    const second = jobs[1]
+    expect(
+      parallelEvents.findIndex((e) => e.kind === 'result' && e.observation.job.id === first?.id),
+    ).toBeLessThan(parallelEvents.findIndex((e) => e.kind === 'started' && e.job.id === second?.id))
+  }
+  const log = await readFile(path.join(parallelDir, 'events.jsonl'), 'utf8')
+  await run({ dryRun: true, output: parallelDir, concurrency: 3 })
+  expect(await readFile(path.join(parallelDir, 'events.jsonl'), 'utf8')).toBe(log)
+  await expect(run({ dryRun: true, output: parallelDir, concurrency: 2 })).rejects.toThrow(
+    'differs',
+  )
+}, 120000)
