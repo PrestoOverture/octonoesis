@@ -3,10 +3,10 @@ import { mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { command } from '../eval/run'
-import { hiddenGroups, parseHiddenResults } from './check'
-import { calibrationSummary, preregister } from './run'
+import { GROUP_TIMEOUT_MS, hiddenGroups, parseHiddenResults } from './check'
+import { calibrationSummary, checkStatus, preregister } from './run'
 import { errorTolerance, planningPower } from './stats'
-import { clauses, families, generateStream, materialize, partialSolution } from './tasks'
+import { clauses, families, generateStream, materialize, partialSolution, solutions } from './tasks'
 
 async function fixture(
   family: (typeof families)[number],
@@ -155,3 +155,104 @@ test('five-family fixed sample scales coverage and primary planning power withou
     await rm(dir, { recursive: true, force: true })
   }
 }, 30000)
+
+test('a never-settling repair fails its deadline group with clauses and later groups still run', async () => {
+  // Ignoring invalidation keeps the old pending promise: this reproduces train-17.
+  const source = solutions['single-flight'].replace(
+    'invalidate(key){this.entries.delete(key);}',
+    'invalidate(key){}',
+  )
+  await fixture('single-flight', source, async (repo) => {
+    const result = await command(
+      [
+        process.execPath,
+        '--no-env-file',
+        path.join(import.meta.dir, 'check.ts'),
+        repo,
+        'single-flight',
+        '1017',
+      ],
+      repo,
+      { PATH: process.env.PATH },
+      30000,
+    )
+    expect(result.timed_out).toBe(false)
+    expect(result.code).toBe(1)
+    expect(checkStatus(result)).toBe('FAIL')
+    const groups = parseHiddenResults(result.stdout)
+    expect(groups.length).toBe(hiddenGroups['single-flight'].length)
+    const pending = groups.find((group) => group.id === 'pending-invalidation-generations')
+    expect(pending?.passed).toBe(false)
+    expect(pending?.message).toContain(`exceeded ${GROUP_TIMEOUT_MS}ms`)
+    expect(pending?.clause_ids).toEqual([
+      'single-flight.pending',
+      'single-flight.expiry',
+      'single-flight.invalidation',
+    ])
+    expect(groups.find((group) => group.id === 'synchronous-rejection-retry')?.passed).toBe(true)
+  })
+}, 30000)
+
+test('oracle-internal exceptions and missing grader input are ERROR, not task failures', async () => {
+  await fixture('single-flight', solutions['single-flight'], async (repo) => {
+    const checker = path.join(repo, 'crashing-check.ts')
+    const source = (await readFile(path.join(import.meta.dir, 'check.ts'), 'utf8'))
+      .replace("from './tasks'", `from ${JSON.stringify(path.join(import.meta.dir, 'tasks.ts'))}`)
+      .replace(
+        'group.run(m, random, controller.signal)',
+        "(() => { throw new Error('oracle regression sentinel') })()",
+      )
+    await writeFile(checker, source)
+    const result = await command(
+      [process.execPath, '--no-env-file', checker, repo, 'single-flight', '1017'],
+      repo,
+      { PATH: process.env.PATH },
+      10000,
+    )
+    expect(result.code).toBe(2)
+    expect(result.stderr).toContain('oracle regression sentinel')
+    expect(checkStatus(result)).toBe('ERROR')
+    expect(parseHiddenResults(result.stdout)).toEqual([])
+    const missing = await command(
+      [
+        process.execPath,
+        '--no-env-file',
+        path.join(import.meta.dir, 'check.ts'),
+        path.join(repo, 'missing'),
+        'single-flight',
+        '1017',
+      ],
+      repo,
+      { PATH: process.env.PATH },
+      10000,
+    )
+    expect(missing.code).toBe(2)
+    expect(checkStatus(missing)).toBe('ERROR')
+    await expect(command([path.join(repo, 'missing-executable')], repo, {}, 1000)).rejects.toThrow()
+    // A load error in submitted code is not a crash in the grader itself.
+    await writeFile(path.join(repo, 'src/subject.ts'), 'export class Cache { invalid syntax')
+    const invalid = await command(
+      [
+        process.execPath,
+        '--no-env-file',
+        path.join(import.meta.dir, 'check.ts'),
+        repo,
+        'single-flight',
+        '1018',
+      ],
+      repo,
+      { PATH: process.env.PATH },
+      10000,
+    )
+    expect(invalid.code).toBe(1)
+    expect(checkStatus(invalid)).toBe('FAIL')
+  })
+})
+
+test('outer verifier timeouts grade submitted code FAIL; unexpected kills and grader crashes are ERROR', () => {
+  const timeout = { code: 143, stdout: '', stderr: '', timed_out: true, signal: 'SIGTERM' }
+  // The same helper classifies first-repair replays and final hidden/public checks.
+  expect(checkStatus(timeout)).toBe('FAIL')
+  expect(checkStatus({ ...timeout, timed_out: false })).toBe('ERROR')
+  expect(checkStatus({ ...timeout, code: 2, timed_out: false, signal: null })).toBe('ERROR')
+})

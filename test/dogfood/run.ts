@@ -18,7 +18,7 @@ import path from 'node:path'
 import { Command } from 'commander'
 import { isKnownJournalEvent, parseJournalEvent } from '../../src/memory/events'
 import { loadAllRulesIncludingArchived } from '../../src/memory/rules/store'
-import { command, parseOutput } from '../eval/run'
+import { type CommandResult, command, parseOutput } from '../eval/run'
 import { CALIBRATION_RULE, calibrationGate } from './calibration'
 import { hiddenGroups, parseHiddenResults } from './check'
 import { sessionStatus } from './endpoint'
@@ -265,6 +265,13 @@ export function sessionEnvironment(
   return env
 }
 
+/** A verifier deadline grades nonterminating submitted code; grader crashes stay operational. */
+export function checkStatus(result: CommandResult): 'PASS' | 'FAIL' | 'ERROR' {
+  if (result.timed_out) return 'FAIL'
+  if (result.signal || (result.code !== 0 && result.code !== 1)) return 'ERROR'
+  return result.code === 0 ? 'PASS' : 'FAIL'
+}
+
 async function runSession(
   dir: string,
   job: Job,
@@ -342,12 +349,7 @@ async function runSession(
         30000,
       )
       await jsonFile(path.join(workspace, 'public.json'), publicResult)
-      row.public_status =
-        publicResult.timed_out || publicResult.signal || publicResult.code > 1
-          ? 'ERROR'
-          : publicResult.code === 0
-            ? 'PASS'
-            : 'FAIL'
+      row.public_status = checkStatus(publicResult)
     }
     // This child is started after the agent exits. No oracle path, source or env is passed to it.
     const check = await command(
@@ -365,13 +367,12 @@ async function runSession(
     )
     await jsonFile(path.join(workspace, 'check.json'), check)
     row.hidden_groups = parseHiddenResults(check.stdout)
-    row.hidden_status =
-      check.timed_out || check.signal || check.code > 1
-        ? 'ERROR'
-        : check.code === 0
-          ? 'PASS'
-          : 'FAIL'
-    row.status = sessionStatus(cli, check, row.output)
+    row.hidden_status = checkStatus(check)
+    row.status = sessionStatus(
+      cli,
+      check.timed_out ? { ...check, code: 1, timed_out: false, signal: null } : check,
+      row.output,
+    )
     if (row.status === 'ERROR')
       row.error ??= `Session/check operational failure (CLI ${cli.code}, check ${check.code})`
     let snapshots: { source: string; started_at: string }[] = []
@@ -419,16 +420,10 @@ async function runSession(
       )
       await jsonFile(path.join(workspace, 'first-public.json'), publicCheck)
       await jsonFile(path.join(workspace, 'first-check.json'), hiddenCheck)
-      const status = (result: typeof publicCheck) =>
-        result.timed_out || result.signal || result.code > 1
-          ? ('ERROR' as const)
-          : result.code === 0
-            ? ('PASS' as const)
-            : ('FAIL' as const)
       row.first_attempt = {
         source_hash: digest(first.source),
-        public_status: status(publicCheck),
-        hidden_status: status(hiddenCheck),
+        public_status: checkStatus(publicCheck),
+        hidden_status: checkStatus(hiddenCheck),
       }
       if (
         row.first_attempt.public_status === 'ERROR' ||

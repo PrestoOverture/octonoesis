@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { type Family, clauses, families, specifications } from './tasks'
@@ -29,7 +30,7 @@ interface Subject {
 interface AssertionGroup {
   id: string
   requires: readonly string[]
-  run(subject: Subject, random: (n: number) => number): void | Promise<void>
+  run(subject: Subject, random: (n: number) => number, signal: AbortSignal): void | Promise<void>
 }
 
 function deferred() {
@@ -41,8 +42,11 @@ function deferred() {
   })
   return { promise, resolve, reject }
 }
-async function until(predicate: () => boolean): Promise<void> {
-  while (!predicate()) await new Promise<void>((resolve) => setImmediate(resolve))
+async function until(predicate: () => boolean, signal: AbortSignal): Promise<void> {
+  while (!predicate()) {
+    signal.throwIfAborted()
+    await new Promise<void>((resolve) => setImmediate(resolve))
+  }
 }
 
 /** Every executable assertion belongs to a group linked to verbatim agent-visible clauses. */
@@ -266,7 +270,7 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
         clauses['single-flight'].expiry,
         clauses['single-flight'].invalidation,
       ],
-      async run(m, random) {
+      async run(m, random, signal) {
         const deferred = () => {
           let resolve!: (v: unknown) => void
           let reject!: (e: Error) => void
@@ -287,9 +291,9 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
             () => time,
           )
           // The contract does not require a particular microtask scheduling strategy.
-          // The outer checker process owns the deadline if a loader never starts.
+          // The group deadline bounds a loader that never starts.
           const started = async (count: number) => {
-            while (calls < count) await new Promise<void>((resolve) => setImmediate(resolve))
+            await until(() => calls >= count, signal)
             assert.equal(calls, count)
           }
           const p = c.get('x')
@@ -468,7 +472,7 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
     {
       id: 'pool-capacity-and-fifo',
       requires: [clauses['async-pool'].capacity, clauses['async-pool'].fifo],
-      async run(m) {
+      async run(m, _random, signal) {
         for (const limit of [0, -1, 1.5, Number.POSITIVE_INFINITY, Number.NaN])
           assert.throws(() => new m.Pool(limit), RangeError)
         const pool = new m.Pool(1)
@@ -486,12 +490,12 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
           seen.push('b')
           return 9
         })
-        await until(() => seen.length > 0)
+        await until(() => seen.length > 0, signal)
         assert.deepEqual(seen, ['a'])
         first.resolve(undefined)
         assert.equal(await a, 'rejected')
         assert.equal(await b, 9)
-        await until(() => seen.includes('nested'))
+        await until(() => seen.includes('nested'), signal)
         assert.deepEqual(seen, ['a', 'b', 'nested'])
         const separate = new m.Pool(1)
         assert.equal(await separate.run(() => 3), 3)
@@ -556,7 +560,7 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
     {
       id: 'running-abort-is-ignored',
       requires: [clauses['async-pool'].capacity, clauses['async-pool'].cancellation],
-      async run(m) {
+      async run(m, _random, signal) {
         const pool = new m.Pool(1)
         const gate = deferred()
         const controller = new AbortController()
@@ -568,7 +572,7 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
             return gate.promise
           }, controller.signal)
           .catch((error) => error)
-        await until(() => started)
+        await until(() => started, signal)
         const next = pool.run(() => {
           nextStarted = true
           return 12
@@ -610,6 +614,10 @@ export interface HiddenGroupResult {
   message?: string
 }
 
+export const GROUP_TIMEOUT_MS = 4000
+class GroupTimeout extends Error {}
+class SubjectLoadError extends Error {}
+
 /** Run every independent group; results stay outside the agent's process and context. */
 export async function inspectHidden(
   repo: string,
@@ -618,9 +626,14 @@ export async function inspectHidden(
   emit?: (event: unknown) => void,
 ): Promise<HiddenGroupResult[]> {
   assertSpecCoverage()
-  const m = (await import(
-    `${pathToFileURL(path.join(repo, 'src/subject.ts')).href}?seed=${seed}`
-  )) as Subject
+  const subjectPath = path.join(repo, 'src/subject.ts')
+  await access(subjectPath) // Missing grader input is infrastructure failure, not an assertion.
+  let m: Subject
+  try {
+    m = (await import(`${pathToFileURL(subjectPath).href}?seed=${seed}`)) as Subject
+  } catch (error) {
+    throw new SubjectLoadError('Submitted implementation could not load', { cause: error })
+  }
   let state = seed >>> 0
   const random = (n: number) => {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0
@@ -633,9 +646,29 @@ export async function inspectHidden(
       .map(([id]) => `${family}.${id}`)
     emit?.({ kind: 'group_start', id: group.id, clause_ids })
     let result: HiddenGroupResult = { id: group.id, clause_ids, passed: true }
+    const controller = new AbortController()
+    let timer: ReturnType<typeof setTimeout> | undefined
     try {
-      await group.run(m, random)
+      await Promise.race([
+        Promise.resolve().then(() => group.run(m, random, controller.signal)),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            const error = new GroupTimeout(`Assertion group exceeded ${GROUP_TIMEOUT_MS}ms`)
+            controller.abort(error)
+            reject(error)
+          }, GROUP_TIMEOUT_MS)
+        }),
+      ])
     } catch (error) {
+      // Assertion/deadline failures and exceptions originating in the submitted code
+      // are task failures. An unexpected exception in the oracle must not grade it FAIL.
+      if (
+        error instanceof Error &&
+        !(error instanceof assert.AssertionError) &&
+        !(error instanceof GroupTimeout) &&
+        !error.stack?.includes(subjectPath)
+      )
+        throw error
       result = {
         ...result,
         passed: false,
@@ -644,6 +677,8 @@ export async function inspectHidden(
           800,
         ),
       }
+    } finally {
+      clearTimeout(timer)
     }
     results.push(result)
     emit?.({ kind: 'group_result', ...result })
@@ -687,10 +722,11 @@ if (import.meta.main) {
     console.log(JSON.stringify(event)),
   )
     .then((results) => {
-      if (results.some((result) => !result.passed)) process.exitCode = 1
+      // Submitted code may leave live handles behind after a failed group.
+      process.exit(results.some((result) => !result.passed) ? 1 : 0)
     })
-    .catch(() => {
-      console.error('Hidden contract check could not complete')
-      process.exitCode = 1
+    .catch((error) => {
+      console.error('Hidden contract check could not complete:', error)
+      process.exit(error instanceof SubjectLoadError ? 1 : 2)
     })
 }
