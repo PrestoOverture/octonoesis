@@ -1,0 +1,9 @@
+--- a/src/range.ts
++++ b/src/range.ts
+@@ -1,5 +1,5 @@
+ export function range(count: number): number[] {
+   const result: number[] = []
+-  for (let i = 0; i <= count; i++) result.push(i)
++  for (let i = 0; i < count; i++) result.push(i)
+   return result
+ }

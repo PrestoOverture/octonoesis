@@ -105,6 +105,12 @@ export const truncationEventSchema = z.object({
   ),
 })
 
+export const intentNudgeEventSchema = z.object({
+  ...baseEventFields,
+  kind: z.literal('intent_nudge'),
+  turn: z.number(),
+})
+
 export const memoryWriteEventSchema = z.object({
   ...baseEventFields,
   kind: z.literal('memory_write'),
@@ -148,6 +154,7 @@ export const journalEventSchema = z.discriminatedUnion('kind', [
   userEventSchema,
   compactEventSchema,
   truncationEventSchema,
+  intentNudgeEventSchema,
   memoryWriteEventSchema,
   skillEventSchema,
   taskEventSchema,
@@ -165,6 +172,7 @@ export const EVENT_SCHEMA_VERSIONS: Record<JournalEvent['kind'], 1 | 2> = {
   user: 1,
   compact: 2,
   truncation: 2,
+  intent_nudge: 2,
   memory_write: 2,
   skill: 2,
   task: 2,

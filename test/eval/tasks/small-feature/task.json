@@ -1,0 +1,5 @@
+{
+  "prompt": "Add the small feature specified by src/slug.test.ts: slugify trims input, lowercases it, replaces runs of non-ASCII-alphanumeric characters with a single hyphen, and removes leading/trailing hyphens.",
+  "check": "bun test",
+  "timeout_s": 120
+}

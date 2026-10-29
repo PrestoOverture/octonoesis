@@ -18,6 +18,7 @@ export function buildStaticPrompt(): string {
 - Report outcomes faithfully: if tests fail or work is incomplete, state it plainly. Never claim success unless verified.`
 
   const toolRules = `## Using Your Tools
+- Act through tool calls directly instead of announcing what you are about to do.
 - Do NOT use the Bash tool to run commands when a relevant dedicated tool is provided (e.g., Read, Edit, Write, Glob, Grep).
 - To read files, use Read instead of cat, head, tail, or sed.
 - To edit files, use Edit instead of sed or awk.

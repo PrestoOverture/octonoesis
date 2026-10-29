@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
+import { z } from 'zod'
 import { HookRegistry } from '../../../src/hooks/registry'
 import { getRepoRoot } from '../../../src/query'
 import { bashTool } from '../../../src/tools/Bash'
@@ -43,6 +44,76 @@ describe('execute pipeline (runTool)', () => {
       expect(result.error).toContain('invalid_input')
       expect(result.error).toContain('path')
     }
+  })
+
+  it('retries top-level numeric and boolean strings without mutating the raw input', async () => {
+    const inputSchema = z.object({ count: z.number(), delta: z.number(), enabled: z.boolean() })
+    registerTool({
+      name: 'ScalarInput',
+      description: 'scalar test',
+      inputSchema,
+      isConcurrencySafe: () => true,
+      isReadOnly: () => true,
+      async call(input) {
+        return { ok: true, value: input }
+      },
+    })
+    const input = { count: '50000', delta: '-1.5', enabled: 'false' }
+    expect(await runTool('ScalarInput', input, ctx)).toEqual({
+      ok: true,
+      value: { count: 50000, delta: -1.5, enabled: false },
+    })
+    expect(input).toEqual({ count: '50000', delta: '-1.5', enabled: 'false' })
+    expect(await runTool('ScalarInput', { count: '1', delta: '0', enabled: 'true' }, ctx)).toEqual({
+      ok: true,
+      value: { count: 1, delta: 0, enabled: true },
+    })
+  })
+
+  it('keeps the original validation error when coercion cannot validate the whole input', async () => {
+    const inputSchema = z.object({ count: z.number(), nested: z.object({ count: z.number() }) })
+    registerTool({
+      name: 'InvalidScalarInput',
+      description: 'scalar test',
+      inputSchema,
+      isConcurrencySafe: () => true,
+      isReadOnly: () => true,
+      async call() {
+        throw new Error('invalid input must not execute')
+      },
+    })
+    for (const input of [
+      { count: 'abc', nested: { count: 1 } },
+      { count: '50000', nested: { count: '1' } },
+      ...['+1', '1e2', ' 1', '.5', '1.'].map((count) => ({ count, nested: { count: 1 } })),
+    ]) {
+      const original = inputSchema.safeParse(input)
+      if (original.success) throw new Error('fixture must fail original validation')
+      const message = original.error.issues
+        .map((issue) => `${issue.path.join('.')}: ${issue.message}`)
+        .join('; ')
+      expect(await runTool('InvalidScalarInput', input, ctx)).toEqual({
+        ok: false,
+        error: `invalid_input: ${message}`,
+      })
+    }
+  })
+
+  it('does not coerce already valid string fields', async () => {
+    registerTool({
+      name: 'StringInput',
+      description: 'string test',
+      inputSchema: z.object({ text: z.string() }),
+      isConcurrencySafe: () => true,
+      isReadOnly: () => true,
+      async call(input) {
+        return { ok: true, value: input }
+      },
+    })
+    expect(await runTool('StringInput', { text: '50000' }, ctx)).toEqual({
+      ok: true,
+      value: { text: '50000' },
+    })
   })
 
   it('rejects execution if preToolUseHook returns deny', async () => {

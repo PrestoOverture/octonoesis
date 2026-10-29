@@ -2,7 +2,7 @@
 import crypto from 'node:crypto'
 import fs from 'node:fs/promises'
 import path from 'node:path'
-import { Command } from 'commander'
+import { Command, Option } from 'commander'
 import { render } from 'ink'
 import React from 'react'
 import { version } from '../package.json'
@@ -10,6 +10,7 @@ import { getConfigTrustWarning, loadConfig } from './config/load.ts'
 import type { OctonoesisConfig } from './config/schema.ts'
 import { appendExperimentRecord, readExperiments } from './experiments/registry.ts'
 import type { ExperimentRecord } from './experiments/schema.ts'
+import { runJsonQuery } from './headless.ts'
 import {
   formatMemoryUnavailableNotice,
   initializeMemoryAvailability,
@@ -17,6 +18,7 @@ import {
 import { flushJournal, formatJournalFailureNotice } from './memory/journal.ts'
 import { rebuildRules } from './memory/rules/rebuild.ts'
 import { getRulesDir } from './memory/rules/store.ts'
+import { configureOneShotPermissions } from './permissions/confirm.ts'
 import { claimProcessSignals } from './providers/fork.ts'
 import { getResolvedModel, setConfiguredModel } from './providers/index.ts'
 import { type ToolContext, runQuery } from './query'
@@ -230,6 +232,26 @@ program
   })
 
 program
+  .command('rewind')
+  .description('List file checkpoints or restore files to before a recorded change')
+  .option('--list', 'List recent file history sessions for this repository')
+  .option('--session <id>', 'Select a session (default: most recent for this repository)')
+  .option('--to <seq>', 'Restore files touched at or after this change number')
+  .option('--yes', 'Skip restore confirmation')
+  .option('--force', 'Restore even when files changed after the session')
+  .action(async (options) => {
+    try {
+      const { runRewind } = await import('./state/rewind.ts')
+      await runRewind(options, startupRepoRoot, getMemoryDir())
+    } catch (error) {
+      console.error(
+        `Error rewinding files: ${error instanceof Error ? error.message : String(error)}`,
+      )
+      process.exit(1)
+    }
+  })
+
+program
   .command('experiments')
   .description('List preregistered experiments, or register one with --register <jsonFile>')
   .option('--register <jsonFile>', 'Register a new experiment from a JSON file')
@@ -267,9 +289,23 @@ program
   .option('-c, --continue', 'Resume the most recent saved session for this repository')
   .option('--resume <sessionId>', 'Resume a specific saved session')
   .option('--save-session', 'Persist this one-shot session for later resume')
+  .addOption(
+    new Option('--output-format <format>', 'One-shot output format')
+      .choices(['text', 'json'])
+      .default('text'),
+  )
+  .addOption(
+    new Option('--permission-mode <mode>', 'One-shot tool permission policy')
+      .choices(['ask', 'accept-edits', 'bypass'])
+      .default('ask'),
+  )
   .argument('[prompt]', 'One-shot prompt to send to the model')
   .action(async (prompt?: string) => {
     const options = program.opts()
+    if (!prompt && (options.outputFormat === 'json' || options.permissionMode !== 'ask')) {
+      console.error('Error: --output-format json and --permission-mode require a one-shot prompt.')
+      process.exit(1)
+    }
     const memoryDir = getMemoryDir()
     await initializeMemoryAvailability(memoryDir)
     let resumedSession: StoredSession | undefined
@@ -414,6 +450,31 @@ program
       }
 
       try {
+        configureOneShotPermissions(
+          options.permissionMode,
+          options.outputFormat === 'json' ? process.stderr : process.stdout,
+        )
+        if (options.outputFormat === 'json') {
+          const sessionId = crypto.randomUUID()
+          await runJsonQuery(
+            await rewriteSkillSlashCommand(prompt, startupRepoRoot),
+            {
+              repoRoot: startupRepoRoot,
+              memoryDir,
+              messages: structuredClone(resumedSession?.messages ?? []),
+              persistSession:
+                resumedSession !== undefined ||
+                options.continue === true ||
+                options.saveSession === true,
+              sessionId,
+              sessionState: createSessionState(sessionId, getResolvedModel()),
+              sandbox,
+              config: startupConfig,
+            },
+            controller.signal,
+          )
+          return
+        }
         await runQuery(
           await rewriteSkillSlashCommand(prompt, startupRepoRoot),
           sandbox,
@@ -436,6 +497,8 @@ program
         } else {
           throw error
         }
+      } finally {
+        configureOneShotPermissions()
       }
     } finally {
       if (signalExitCode !== undefined) process.exit(signalExitCode)

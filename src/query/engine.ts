@@ -52,8 +52,9 @@ import { SendMessageTool } from '../tools/SendMessageTool'
 import { SkillTool } from '../tools/SkillTool'
 import { todoWriteTool } from '../tools/TodoWrite'
 import type { ToolContext } from '../tools/Tool'
+import { webFetchTool } from '../tools/WebFetch'
 import { writeTool } from '../tools/Write'
-import { runTool } from '../tools/execute'
+import { runTool, safeParseToolInput } from '../tools/execute'
 import { getAllTools, registerTool, unregisterTool } from '../tools/registry'
 import { createMarkdownStream } from '../ui/markdown'
 import { estimateCost } from '../utils/cost'
@@ -96,6 +97,7 @@ registerTool(writeTool)
 registerTool(editTool)
 registerTool(grepTool)
 registerTool(todoWriteTool)
+registerTool(webFetchTool)
 
 const sessionAgentTools = new WeakMap<QueryLoopContext, [AgentTool, SendMessageTool]>()
 
@@ -919,7 +921,7 @@ export async function* executeTools(
   const canBatch = (call: (typeof toolUses)[number]): boolean => {
     try {
       const tool = getAllTools().find((tool) => tool.name === call.name)
-      const input = tool?.inputSchema.safeParse(call.input)
+      const input = tool ? safeParseToolInput(tool, call.input) : undefined
       return (
         tool !== undefined &&
         input?.success === true &&
@@ -1182,6 +1184,7 @@ export async function* query(
     }
 
     let consecutiveTruncations = 0
+    let intentNudged = false
     while (readyState.turn < ctx.config.maxTurns) {
       if (ctx.abortSignal?.aborted) {
         exitReason = 'user_cancel'
@@ -1230,19 +1233,45 @@ export async function* query(
         }
       }
 
-      const stop = !streamResult.recoveryNote && shouldStop(streamResult.assistantBlocks)
+      let stop = !streamResult.recoveryNote && shouldStop(streamResult.assistantBlocks)
       if (stop) {
-        await executeStopHooks(readyState, ctx)
         const assistantText = streamResult.assistantBlocks
           .filter((block) => block.type === 'text')
           .map((block) => block.text)
           .join('\n')
-        exitReason = 'completed'
-        return {
-          exit_reason: 'completed',
-          usage: readyState.usage,
-          turns: readyState.turn,
-          final_message: assistantText,
+        const text = assistantText.trim()
+        const lastSentence =
+          text
+            .replace(/[.!。！\s]+$/u, '')
+            .split(/(?<=[.!])\s+|[。！]\s*|\n+/u)
+            .at(-1)
+            ?.trim() ?? ''
+        // Conservative, bounded recovery for short action announcements only.
+        const intentOnly =
+          text.length < 400 &&
+          !/[?？]/u.test(text) &&
+          /^(?:(?:(?:now|first)[,\s]+)?(?:i(?:['’]ll|\s+will|['’]m\s+going\s+to|\s+am\s+going\s+to)|let\s+me)\b|first,\s+i\s+(?:need\s+to|am\s+\w+ing)\b|我来|我将|让我|我会|接下来我)/iu.test(
+            lastSentence,
+          )
+        if (ctx.config.intentNudge && !intentNudged && intentOnly) {
+          readyState.messages.push({
+            role: 'user',
+            content:
+              'You described what you will do but made no tool call, so nothing happened. If you intend to act, call the tools now. If you are done or need the user, say so explicitly.',
+          })
+          intentNudged = true
+          appendJournal({ kind: 'intent_nudge', turn: readyState.turn })
+          stop = false
+        }
+        if (stop) {
+          await executeStopHooks(readyState, ctx)
+          exitReason = 'completed'
+          return {
+            exit_reason: 'completed',
+            usage: readyState.usage,
+            turns: readyState.turn,
+            final_message: assistantText,
+          }
         }
       }
 

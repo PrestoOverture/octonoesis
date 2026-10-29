@@ -106,10 +106,15 @@ export const octonoesisConfigSchema = z
     model: z.string().optional(),
     maxTurns: positiveIntegerSchema.default(50),
     maxOutputTokens: positiveIntegerSchema.default(16384),
+    intentNudge: z.boolean().default(true),
     sandbox: sandboxSchema.default({ enabled: false }),
     mcpServers: z.record(z.string(), mcpServerSchema).default({}),
     hooks: z.array(hookSchema).default([]),
     permissions: permissionsSchema.default({ allowPatterns: [], denyPatterns: [] }),
+    webFetch: z
+      .object({ allowPrivateNetwork: z.boolean().default(false) })
+      .strict()
+      .optional(),
     projectInstructions: z.enum(['on', 'off']).default('on'),
     compaction: compactionSchema.default({ cooldownTurns: 0, minShrinkPercent: 0 }),
     trustTrackedConfig: z.boolean().default(false),

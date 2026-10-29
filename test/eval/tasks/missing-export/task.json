@@ -1,0 +1,5 @@
+{
+  "prompt": "Expose the existing double function through src/index.ts so consumers can use the public API.",
+  "check": "bun test",
+  "timeout_s": 120
+}

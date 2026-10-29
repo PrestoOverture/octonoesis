@@ -1,0 +1,44 @@
+diff --git a/src/lru.ts b/src/lru.ts
+index 336ce12..5cbc5ba 100644
+--- a/src/lru.ts
++++ b/src/lru.ts
+@@ -1 +1,24 @@
+-export {}
++export class LRU<K, V> {
++  private entries = new Map<K, V>()
++  constructor(private capacity: number) {
++    if (!Number.isInteger(capacity) || capacity < 1) throw new RangeError('capacity')
++  }
++  get size(): number { return this.entries.size }
++  get(key: K): V | undefined {
++    if (!this.entries.has(key)) return undefined
++    const value = this.entries.get(key) as V
++    this.entries.delete(key)
++    this.entries.set(key, value)
++    return value
++  }
++  set(key: K, value: V): this {
++    this.entries.delete(key)
++    this.entries.set(key, value)
++    if (this.size > this.capacity) this.entries.delete(this.entries.keys().next().value as K)
++    return this
++  }
++  has(key: K): boolean { return this.entries.has(key) }
++  delete(key: K): boolean { return this.entries.delete(key) }
++  clear(): void { this.entries.clear() }
++  keys(): K[] { return [...this.entries.keys()].reverse() }
++}
+diff --git a/lru.test.ts b/lru.test.ts
+new file mode 100644
+--- /dev/null
++++ b/lru.test.ts
+@@ -0,0 +1,9 @@
++import { expect, test } from 'bun:test'
++import { LRU } from './src/lru'
++test('get refreshes recency before eviction', () => {
++  const cache = new LRU<string, number>(2)
++  cache.set('a', 1).set('b', 2)
++  expect(cache.get('a')).toBe(1)
++  cache.set('c', 3)
++  expect(cache.has('b')).toBe(false)
++})

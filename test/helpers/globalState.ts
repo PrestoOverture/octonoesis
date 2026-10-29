@@ -26,6 +26,7 @@ export const BUILTIN_TOOL_NAMES = [
   'Edit',
   'Grep',
   'TodoWrite',
+  'WebFetch',
 ] as const
 
 /** Captures the current registry contents for a later restoreRegistry(). */

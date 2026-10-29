@@ -1,0 +1,2 @@
+# LRU contract
+Export generic class LRU<K,V> from src/lru.ts. Constructor capacity must be a positive integer or throw RangeError. size is a getter. set(key,value) returns this and makes key most recent; evict least recent on overflow. get returns value or undefined, refreshing only existing keys (including stored undefined). has does not refresh. delete returns boolean. clear empties the cache. keys() returns a fresh array, most recent first. Add tests covering eviction, updates and invalid capacities.

@@ -1,0 +1,24 @@
+diff --git a/src/config.ts b/src/config.ts
+index 277750a..19e81c3 100644
+--- a/src/config.ts
++++ b/src/config.ts
+@@ -1,7 +1,18 @@
+ export function parse(input: string): Record<string, string> {
+   const result: Record<string, string> = {}
+   for (const line of input.split('\n')) {
+-    const content = line.split('#')[0]?.trim() ?? ''
++    let quoted = false
++    let escaped = false
++    let end = line.length
++    for (let i = 0; i < line.length; i++) {
++      const char = line[i]
++      if (escaped) { escaped = false; continue }
++      if (quoted && char === '\\') { escaped = true; continue }
++      if (char === '"') quoted = !quoted
++      if (char === '#' && !quoted) { end = i; break }
++    }
++    if (quoted) throw new Error('unterminated quote')
++    const content = line.slice(0, end).trim()
+     if (!content) continue
+     const equal = content.indexOf('=')
+     if (equal < 1) throw new Error('invalid assignment')

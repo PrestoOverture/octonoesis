@@ -152,6 +152,43 @@ test('three 200ms read-only calls finish under 400ms and retain call order', asy
   ])
 })
 
+test('scheduler and executor both accept shallow scalar strings for safe read-only calls', async () => {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  let ready!: () => void
+  const bothStarted = new Promise<void>((resolve) => {
+    ready = resolve
+  })
+  const started: string[] = []
+  mockTool('CoercedConcurrentRead', async (input) => {
+    expect(input.delay).toBe(0)
+    expect(input.write).toBe(false)
+    started.push(input.id)
+    if (started.length === 2) ready()
+    await gate
+    return { ok: true, value: input.id }
+  })
+  const h = harness()
+  const running = h.run(
+    ['one', 'two'].map((id) => ({
+      type: 'tool_use' as const,
+      id,
+      name: 'CoercedConcurrentRead',
+      input: { id, delay: '0', write: 'false' },
+    })),
+  )
+  try {
+    await Promise.race([bothStarted, sleep(1000)])
+    expect(started).toEqual(['one', 'two'])
+  } finally {
+    release()
+    await running
+  }
+  expect(results(h.state).map((message) => message.content)).toEqual(['one', 'two'])
+})
+
 test('Read, Edit, Read executes strictly across the non-safe barrier', async () => {
   const order: string[] = []
   const execute = async ({ id }: Input): Promise<ToolResult> => {

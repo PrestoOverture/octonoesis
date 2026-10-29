@@ -1,0 +1,5 @@
+{
+  "prompt": "Implement the LRU cache described in README.md and add your own tests.",
+  "check": "cp \"$EVAL_TASK_DIR/hidden.test.ts\" ./hidden.test.ts && bun test",
+  "timeout_s": 240
+}
