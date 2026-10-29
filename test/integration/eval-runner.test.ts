@@ -84,6 +84,12 @@ test('eval runs isolated repetitions concurrently, checks fixes, and saves a sco
       expect(path.dirname(resultsPath)).toBe(path.join(projectRoot, 'test/eval/results'))
       expect(report.model).toBe('eval-mock-model')
       expect(report.results.length).toBe(2)
+      expect(result.stdout).toContain('Summary:')
+      expect(report.summary.tasks).toEqual({ 'off-by-one': { pass: 2, fail: 0, error: 0 } })
+      expect(report.summary.pass_rate).toBe(1)
+      expect(report.summary.median_turns).toBe(2)
+      expect(report.summary.median_output_tokens).toBe(6)
+      expect(report.summary.median_seconds).toBeGreaterThan(0)
       expect(modelNames).toEqual(Array(4).fill('eval-mock-model'))
       for (const row of report.results) {
         expect(row.task).toBe('off-by-one')

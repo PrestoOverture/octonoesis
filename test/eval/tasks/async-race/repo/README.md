@@ -1,0 +1,1 @@
+Queue.add(job) returns the result of that job. Jobs start in submission order, one at a time, even across await points. A rejected job must reject its own result without preventing later jobs from running.

@@ -1,0 +1,20 @@
+diff --git a/src/ranges.ts b/src/ranges.ts
+index 4200766..54c722f 100644
+--- a/src/ranges.ts
++++ b/src/ranges.ts
+@@ -1,2 +1,14 @@
+ // @ts-nocheck -- standalone eval fixture
+-export function coalesce(ranges) { return ranges }
++export function coalesce(ranges) {
++ const sorted=ranges.map(([start,end])=>{
++  if (!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start>end) throw new RangeError('invalid range')
++  return [start,end]
++ }).sort((a,b)=>a[0]-b[0] || a[1]-b[1])
++ const result=[]
++ for (const [start,end] of sorted) {
++  const last=result[result.length-1]
++  if (last && start<=last[1]) last[1]=Math.max(last[1],end)
++  else result.push([start,end])
++ }
++ return result
++}

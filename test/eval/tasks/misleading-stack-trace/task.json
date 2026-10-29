@@ -1,0 +1,5 @@
+{
+  "prompt": "Fix the checkout crash. Follow README.md and preserve explicit currency overrides.",
+  "check": "cp \"$EVAL_TASK_DIR/hidden.test.ts\" ./hidden.test.ts && bun test",
+  "timeout_s": 240
+}

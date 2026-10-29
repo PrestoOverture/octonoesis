@@ -1,0 +1,5 @@
+{
+  "prompt": "Split src/metrics.ts into validation, formatting and parsing modules. Preserve the complete public API and exact behavior, including error messages. Keep src/metrics.ts as a compatible re-export entry point.",
+  "check": "cp \"$EVAL_TASK_DIR/hidden.test.ts\" ./hidden.test.ts && bun test",
+  "timeout_s": 420
+}

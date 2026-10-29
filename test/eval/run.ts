@@ -15,14 +15,16 @@ interface Task {
   timeout_s: number
 }
 
-interface CommandResult {
+export interface CommandResult {
+  signal?: string | null
   code: number
   stdout: string
   stderr: string
   timed_out: boolean
 }
 
-interface EvalResult {
+export interface EvalResult {
+  status: 'PASS' | 'FAIL' | 'ERROR'
   task: string
   repetition: number
   passed: boolean
@@ -43,7 +45,7 @@ function positiveInteger(value: string): number {
 }
 
 /** Kill the whole command group so a timed-out shell cannot leave a check running. */
-async function command(
+export async function command(
   cmd: string[],
   cwd: string,
   env: NodeJS.ProcessEnv,
@@ -77,7 +79,7 @@ async function command(
       new Response(child.stderr).text(),
       child.exited,
     ])
-    return { stdout, stderr, code, timed_out: timedOut }
+    return { stdout, stderr, code, signal: child.signalCode, timed_out: timedOut }
   } finally {
     clearTimeout(timeout)
     if (hardTimeout) clearTimeout(hardTimeout)
@@ -101,14 +103,21 @@ function parseOutput(stdout: string): HeadlessResult {
   return value
 }
 
-async function evaluate(
+export async function evaluate(
   id: string,
   task: Task,
   repetition: number,
   model?: string,
+  execute = command,
 ): Promise<EvalResult> {
   const start = performance.now()
-  const result: EvalResult = { task: id, repetition, passed: false, duration_ms: 0 }
+  const result: EvalResult = {
+    task: id,
+    repetition,
+    passed: false,
+    status: 'ERROR',
+    duration_ms: 0,
+  }
   const temp = await realpath(await mkdtemp(path.join(os.tmpdir(), 'octonoesis-eval-')))
   const repo = path.join(temp, 'repo')
   const env = {
@@ -125,10 +134,10 @@ async function evaluate(
       ['add', '.'],
       ['-c', 'user.name=Eval', '-c', 'user.email=eval@localhost', 'commit', '-qm', 'fixture'],
     ]) {
-      const git = await command(['git', ...args], repo, env, 10_000)
+      const git = await execute(['git', ...args], repo, env, 10_000)
       if (git.code !== 0 || git.timed_out) throw new Error(`git ${args[0]} failed: ${git.stderr}`)
     }
-    const cli = await command(
+    const cli = await execute(
       [
         process.execPath,
         '--no-env-file',
@@ -156,8 +165,16 @@ async function evaluate(
     for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'SPARK_API_KEY']) {
       Reflect.deleteProperty(checkEnv, key)
     }
-    result.check = await command(['bash', '-c', task.check], repo, checkEnv, task.timeout_s * 1000)
-    result.passed = result.check.code === 0 && !result.check.timed_out
+    result.check = await execute(['bash', '-c', task.check], repo, checkEnv, task.timeout_s * 1000)
+    result.status = classify(cli, result.check, Boolean(result.output), result.output?.exit_reason)
+    result.passed = result.status === 'PASS'
+    if (result.status === 'ERROR') {
+      result.error =
+        !cli.timed_out &&
+        (cli.signal || cli.code >= 128 || result.output?.exit_reason === 'user_cancel')
+          ? `CLI terminated externally (code ${cli.code}, signal ${cli.signal ?? 'none'}, exit_reason ${result.output?.exit_reason ?? 'unavailable'})`
+          : `Check terminated externally (code ${result.check.code}, signal ${result.check.signal ?? 'none'})`
+    }
   } catch (error) {
     result.error = error instanceof Error ? error.message : String(error)
   } finally {
@@ -165,6 +182,55 @@ async function evaluate(
     await rm(temp, { recursive: true, force: true })
   }
   return result
+}
+
+export function classify(
+  cli: CommandResult,
+  check: CommandResult,
+  validOutput = true,
+  exitReason?: HeadlessResult['exit_reason'],
+): EvalResult['status'] {
+  if (cli.timed_out) return check.code === 0 && !check.timed_out ? 'PASS' : 'FAIL'
+  if (cli.signal || cli.code >= 128 || exitReason === 'user_cancel') return 'ERROR'
+  if (!validOutput) return 'FAIL'
+  if (check.signal && !check.timed_out) return 'ERROR'
+  return check.code === 0 && !check.timed_out ? 'PASS' : 'FAIL'
+}
+
+export function exitCode(results: EvalResult[]): number {
+  return results.some((r) => r.status === 'FAIL')
+    ? 1
+    : results.some((r) => r.status === 'ERROR')
+      ? 2
+      : 0
+}
+
+export function summarize(results: EvalResult[]) {
+  const tasks: Record<string, { pass: number; fail: number; error: number }> = {}
+  for (const row of results) {
+    const counts = tasks[row.task] ?? { pass: 0, fail: 0, error: 0 }
+    tasks[row.task] = counts
+    counts[row.status === 'PASS' ? 'pass' : row.status === 'FAIL' ? 'fail' : 'error']++
+  }
+  const scored = results.filter((r) => r.status !== 'ERROR')
+  const median = (values: number[]) => {
+    values.sort((a, b) => a - b)
+    const middle = Math.floor(values.length / 2)
+    return values.length
+      ? ((values[middle - (values.length % 2 === 0 ? 1 : 0)] ?? 0) + (values[middle] ?? 0)) / 2
+      : null
+  }
+  return {
+    tasks,
+    pass_rate: scored.length
+      ? scored.filter((r) => r.status === 'PASS').length / scored.length
+      : null,
+    median_turns: median(scored.flatMap((r) => (r.output ? [r.output.turns] : []))),
+    median_output_tokens: median(
+      scored.flatMap((r) => (r.output ? [r.output.usage.output_tokens] : [])),
+    ),
+    median_seconds: median(scored.map((r) => (r.output?.duration_ms ?? r.duration_ms) / 1000)),
+  }
 }
 
 function scorecard(results: EvalResult[]): string {
@@ -186,7 +252,7 @@ function scorecard(results: EvalResult[]): string {
     return [
       row.task,
       String(row.repetition),
-      row.passed ? 'PASS' : 'FAIL',
+      row.status,
       String(row.output?.turns ?? '-'),
       String(row.output?.usage.output_tokens ?? '-'),
       ((row.output?.duration_ms ?? row.duration_ms) / 1000).toFixed(2),
@@ -250,16 +316,18 @@ async function main(): Promise<void> {
   const resultsDir = path.join(import.meta.dir, 'results')
   await mkdir(resultsDir, { recursive: true })
   const resultsPath = path.join(resultsDir, `${timestamp}-${crypto.randomUUID().slice(0, 8)}.json`)
+  const summary = summarize(results)
   await writeFile(
     resultsPath,
-    `${JSON.stringify({ timestamp, model: options.model ?? process.env.MODEL ?? null, results }, null, 2)}\n`,
+    `${JSON.stringify({ timestamp, model: options.model ?? process.env.MODEL ?? null, results, summary }, null, 2)}\n`,
   )
   console.log(scorecard(results))
+  console.log(`Summary: ${JSON.stringify(summary, null, 2)}`)
   console.log(`Results: ${resultsPath}`)
-  if (results.some((result) => !result.passed)) process.exitCode = 1
+  process.exitCode = exitCode(results)
 }
 
-// This script is invoked explicitly; bun test never imports or executes it.
+// Unit tests import the helpers without starting the eval CLI.
 if (import.meta.main) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error))
