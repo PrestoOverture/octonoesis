@@ -138,3 +138,23 @@ it('lists recent sessions and numbered changes, selecting only this repo by defa
   expect(explicit.stdout).toBe(changes.stdout)
   expect((await rewind(['--session', 'other-session', '--to', '1', '--yes'])).code).toBe(1)
 })
+
+it('wires --prune --days through the CLI', async () => {
+  const directory = path.join(memoryDir, 'file-history', 'expired')
+  await fs.mkdir(directory)
+  await fs.writeFile(
+    path.join(directory, 'manifest.json'),
+    JSON.stringify({
+      repoRoot: root,
+      entries: [],
+      commands: [{ afterSeq: 0, ts: '2000-01-01T00:00:00.000Z', command: 'true' }],
+    }),
+  )
+  const keep = await rewind(['--prune', '--days', '0'])
+  expect(keep.code).toBe(0)
+  expect(existsSync(directory)).toBe(true)
+  const prune = await rewind(['--prune', '--days', '30'])
+  expect(prune.code).toBe(0)
+  expect(prune.stdout).toContain('Removed expired')
+  expect(existsSync(directory)).toBe(false)
+})

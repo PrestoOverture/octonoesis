@@ -106,6 +106,10 @@ export const octonoesisConfigSchema = z
     model: z.string().optional(),
     maxTurns: positiveIntegerSchema.default(50),
     maxOutputTokens: positiveIntegerSchema.default(16384),
+    fileHistory: z
+      .object({ retentionDays: nonNegativeIntegerSchema.default(30) })
+      .strict()
+      .default({ retentionDays: 30 }),
     intentNudge: z.boolean().default(true),
     sandbox: sandboxSchema.default({ enabled: false }),
     mcpServers: z.record(z.string(), mcpServerSchema).default({}),

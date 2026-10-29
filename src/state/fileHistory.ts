@@ -15,7 +15,16 @@ const entrySchema = z.object({
   snapshot: z.union([z.literal('absent'), z.string().regex(/^\d+-[a-f0-9-]+\.snapshot$/)]),
   after: z.object({ hash: z.string(), mtimeMs: z.number(), ctimeMs: z.number() }),
 })
-const manifestSchema = z.object({ repoRoot: z.string(), entries: z.array(entrySchema) })
+const commandSchema = z.object({
+  afterSeq: z.number().int().nonnegative(),
+  ts: z.iso.datetime(),
+  command: z.string(),
+})
+const manifestSchema = z.object({
+  repoRoot: z.string(),
+  entries: z.array(entrySchema),
+  commands: z.array(commandSchema).optional(),
+})
 export type FileHistoryEntry = z.infer<typeof entrySchema>
 export type FileHistory = z.infer<typeof manifestSchema>
 const lockOptions = { timeoutMs: 3000, staleMs: 600_000 }
@@ -70,6 +79,100 @@ function warn(error: unknown): void {
   console.error(`Warning: file checkpoint unavailable: ${message.replace(/[\r\n]+/g, ' ')}`)
 }
 
+let pruningStarted = false
+
+/** Best-effort retention, with nonblocking exclusion and no traversal through symlink directories. */
+export async function pruneFileHistory(
+  memoryDir: string,
+  days: number,
+  currentSession?: string,
+): Promise<string[]> {
+  const removed: string[] = []
+  if (days === 0) return removed
+  try {
+    if (!Number.isSafeInteger(days) || days < 0) throw new Error('Invalid retention days')
+    const root = path.join(memoryDir, 'file-history')
+    if (!(await fs.lstat(root)).isDirectory()) return removed
+    const cutoff = Date.now() - days * 86_400_000
+    for (const id of await fs.readdir(root)) {
+      if (id === currentSession) continue
+      try {
+        const directory = sessionDirectory(memoryDir, id)
+        const info = await fs.lstat(directory)
+        if (!info.isDirectory()) continue
+        const lockPath = path.join(directory, '.lock')
+        let lock: Awaited<ReturnType<typeof fs.open>>
+        try {
+          lock = await fs.open(lockPath, 'wx')
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'EEXIST') continue
+          throw error
+        }
+        try {
+          let newest = info.mtimeMs
+          try {
+            const manifest = await readManifest(directory)
+            const timestamps = [...manifest.entries, ...(manifest.commands ?? [])].map((item) =>
+              Date.parse(item.ts),
+            )
+            if (timestamps.length) newest = Math.max(...timestamps)
+          } catch {
+            // Invalid or missing manifests use the directory mtime captured before locking.
+          }
+          if (newest < cutoff) {
+            await fs.rm(directory, { recursive: true })
+            removed.push(id)
+          }
+        } finally {
+          await lock.close()
+          await fs.rm(lockPath, { force: true })
+        }
+      } catch (error) {
+        warn(error)
+      }
+    }
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') warn(error)
+  }
+  return removed
+}
+
+/** Record shell intent before spawning; history failures must not prevent execution. */
+export async function recordFileHistoryCommand(ctx: ToolContext, command: string): Promise<void> {
+  try {
+    ctx.sessionId ??= randomUUID()
+    const directory = sessionDirectory(ctx.memoryDir ?? getMemoryDir(), ctx.sessionId)
+    await withFileLock(
+      path.join(directory, '.lock'),
+      async () => {
+        const repoRoot = await fs.realpath(ctx.repoRoot)
+        let manifest: FileHistory
+        try {
+          manifest = await readManifest(directory)
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+          manifest = { repoRoot, entries: [] }
+        }
+        if (manifest.repoRoot !== repoRoot)
+          throw new Error('File history belongs to another repository')
+        manifest.commands ??= []
+        manifest.commands.push({
+          afterSeq: manifest.entries.length,
+          ts: new Date().toISOString(),
+          command: Array.from(command).slice(0, 200).join(''),
+        })
+        await writeFileAtomic(
+          path.join(directory, 'manifest.json'),
+          `${JSON.stringify(manifest)}\n`,
+        )
+      },
+      lockOptions,
+    )
+  } catch (error) {
+    warn(error)
+  }
+}
+
 /** Stage prior bytes before writing, publishing the manifest only after a successful write. */
 export async function writeWithCheckpoint(
   ctx: ToolContext,
@@ -81,7 +184,12 @@ export async function writeWithCheckpoint(
   let writeError: unknown
   try {
     ctx.sessionId ??= randomUUID()
-    const directory = sessionDirectory(ctx.memoryDir ?? getMemoryDir(), ctx.sessionId)
+    const memoryDir = ctx.memoryDir ?? getMemoryDir()
+    if (!pruningStarted) {
+      pruningStarted = true
+      await pruneFileHistory(memoryDir, ctx.config?.fileHistory?.retentionDays ?? 30, ctx.sessionId)
+    }
+    const directory = sessionDirectory(memoryDir, ctx.sessionId)
     await withFileLock(
       path.join(directory, '.lock'),
       async () => {
@@ -195,9 +303,15 @@ export async function listFileHistory(memoryDir: string, repoRoot: string) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
       throw error
     }
-    const last = manifest.entries.at(-1)
+    const last = [...manifest.entries, ...(manifest.commands ?? [])]
+      .sort((a, b) => a.ts.localeCompare(b.ts))
+      .at(-1)
     if (manifest.repoRoot === realRoot && last)
-      sessions.push({ id, ts: last.ts, count: manifest.entries.length })
+      sessions.push({
+        id,
+        ts: last.ts,
+        count: manifest.entries.length + (manifest.commands?.length ?? 0),
+      })
   }
   return sessions.sort(
     (left, right) => right.ts.localeCompare(left.ts) || left.id.localeCompare(right.id),

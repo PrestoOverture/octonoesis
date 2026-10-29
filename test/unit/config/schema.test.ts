@@ -36,6 +36,7 @@ describe('Octonoesis config schema', () => {
       ui: { animation: 'on' },
       maxTurns: 50,
       maxOutputTokens: 16384,
+      fileHistory: { retentionDays: 30 },
       intentNudge: true,
       sandbox: { enabled: false },
       mcpServers: {},
