@@ -103,11 +103,12 @@ function parseOutput(stdout: string): HeadlessResult {
   return value
 }
 
-async function evaluate(
+export async function evaluate(
   id: string,
   task: Task,
   repetition: number,
   model?: string,
+  execute = command,
 ): Promise<EvalResult> {
   const start = performance.now()
   const result: EvalResult = {
@@ -133,10 +134,10 @@ async function evaluate(
       ['add', '.'],
       ['-c', 'user.name=Eval', '-c', 'user.email=eval@localhost', 'commit', '-qm', 'fixture'],
     ]) {
-      const git = await command(['git', ...args], repo, env, 10_000)
+      const git = await execute(['git', ...args], repo, env, 10_000)
       if (git.code !== 0 || git.timed_out) throw new Error(`git ${args[0]} failed: ${git.stderr}`)
     }
-    const cli = await command(
+    const cli = await execute(
       [
         process.execPath,
         '--no-env-file',
@@ -164,10 +165,16 @@ async function evaluate(
     for (const key of ['ANTHROPIC_API_KEY', 'OPENAI_API_KEY', 'SPARK_API_KEY']) {
       Reflect.deleteProperty(checkEnv, key)
     }
-    result.check = await command(['bash', '-c', task.check], repo, checkEnv, task.timeout_s * 1000)
-    result.status = classify(cli, result.check, Boolean(result.output))
+    result.check = await execute(['bash', '-c', task.check], repo, checkEnv, task.timeout_s * 1000)
+    result.status = classify(cli, result.check, Boolean(result.output), result.output?.exit_reason)
     result.passed = result.status === 'PASS'
-    if (cli.signal && !cli.timed_out) result.error = `CLI killed by ${cli.signal}`
+    if (result.status === 'ERROR') {
+      result.error =
+        !cli.timed_out &&
+        (cli.signal || cli.code >= 128 || result.output?.exit_reason === 'user_cancel')
+          ? `CLI terminated externally (code ${cli.code}, signal ${cli.signal ?? 'none'}, exit_reason ${result.output?.exit_reason ?? 'unavailable'})`
+          : `Check terminated externally (code ${result.check.code}, signal ${result.check.signal ?? 'none'})`
+    }
   } catch (error) {
     result.error = error instanceof Error ? error.message : String(error)
   } finally {
@@ -181,9 +188,11 @@ export function classify(
   cli: CommandResult,
   check: CommandResult,
   validOutput = true,
+  exitReason?: HeadlessResult['exit_reason'],
 ): EvalResult['status'] {
-  if (cli.timed_out) return 'FAIL'
-  if (cli.signal || !validOutput) return 'ERROR'
+  if (cli.timed_out) return check.code === 0 && !check.timed_out ? 'PASS' : 'FAIL'
+  if (cli.signal || cli.code >= 128 || exitReason === 'user_cancel') return 'ERROR'
+  if (!validOutput) return 'FAIL'
   if (check.signal && !check.timed_out) return 'ERROR'
   return check.code === 0 && !check.timed_out ? 'PASS' : 'FAIL'
 }

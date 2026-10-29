@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test'
-import { type EvalResult, classify, command, exitCode, summarize } from '../eval/run'
+import { type EvalResult, classify, command, evaluate, exitCode, summarize } from '../eval/run'
 
 const ok = { code: 0, stdout: '', stderr: '', timed_out: false }
 const failed = { ...ok, code: 1 }
@@ -28,11 +28,38 @@ test('classifies failures, unsolicited signals, invalid output and runner timeou
   expect(classify(failed, ok)).toBe('PASS')
   expect(classify(killed, failed)).toBe('ERROR')
   expect(classify(killed, ok)).toBe('ERROR')
-  expect(classify(timeout, ok)).toBe('FAIL')
+  expect(classify(timeout, ok)).toBe('PASS')
   expect(classify(timeout, failed, false)).toBe('FAIL')
-  expect(classify(ok, ok, false)).toBe('ERROR')
+  expect(classify(ok, ok, false)).toBe('FAIL')
   expect(classify(ok, killed)).toBe('ERROR')
   expect(classify(ok, timeout)).toBe('FAIL')
+})
+
+test('trapped external signals and user cancellation are infrastructure errors', () => {
+  for (const code of [128, 129, 130, 143, 255]) {
+    const trapped = { ...ok, code, signal: null }
+    expect(classify(trapped, failed, true, 'user_cancel')).toBe('ERROR')
+    expect(classify(trapped, ok, true, 'completed')).toBe('ERROR')
+    expect(classify(trapped, failed, false)).toBe('ERROR')
+  }
+  expect(classify(ok, ok, true, 'user_cancel')).toBe('ERROR')
+  expect(classify(ok, failed, true, 'user_cancel')).toBe('ERROR')
+})
+
+test('normal CLI exits with invalid output remain agent failures', () => {
+  for (const code of [0, 1, 127]) {
+    expect(classify({ ...ok, code }, ok, false)).toBe('FAIL')
+    expect(classify({ ...ok, code }, failed, false)).toBe('FAIL')
+  }
+})
+
+test('runner timeouts preserve check-based partial-attempt credit', () => {
+  for (const cli of [timeout, { ...timeout, signal: null }]) {
+    expect(classify(cli, ok, false)).toBe('PASS')
+    expect(classify(cli, ok, true, 'user_cancel')).toBe('PASS')
+    expect(classify(cli, failed, true, 'user_cancel')).toBe('FAIL')
+    expect(classify(cli, timeout)).toBe('FAIL')
+  }
 })
 
 test('real command signal differs from a runner timeout', async () => {
@@ -42,6 +69,48 @@ test('real command signal differs from a runner timeout', async () => {
   const deadline = await command(['bash', '-c', 'sleep 10'], process.cwd(), process.env, 30)
   expect(deadline.timed_out).toBe(true)
   expect(classify(deadline, failed)).toBe('FAIL')
+})
+
+test('evaluate records clear diagnostics for every external termination', async () => {
+  for (const cli of [
+    { ...killed, stdout: JSON.stringify(row('PASS').output) },
+    {
+      ...ok,
+      code: 143,
+      signal: null,
+      stdout: JSON.stringify({ ...row('PASS').output, exit_reason: 'user_cancel' }),
+    },
+    { ...ok, stdout: JSON.stringify({ ...row('PASS').output, exit_reason: 'user_cancel' }) },
+  ]) {
+    let calls = 0
+    const result = await evaluate(
+      'off-by-one',
+      { prompt: 'unused', check: 'unused', timeout_s: 1 },
+      1,
+      undefined,
+      async () => (++calls === 4 ? cli : ok),
+    )
+    expect(result.status).toBe('ERROR')
+    expect(result.passed).toBe(false)
+    expect(result.error).toContain('CLI terminated externally')
+    expect(result.error).toContain(`code ${cli.code}`)
+    expect(result.error).toContain('exit_reason')
+  }
+  let calls = 0
+  const result = await evaluate(
+    'off-by-one',
+    { prompt: 'unused', check: 'unused', timeout_s: 1 },
+    1,
+    undefined,
+    async () =>
+      ++calls === 4
+        ? { ...ok, stdout: JSON.stringify(row('PASS').output) }
+        : calls === 5
+          ? killed
+          : ok,
+  )
+  expect(result.status).toBe('ERROR')
+  expect(result.error).toContain('Check terminated externally')
 })
 
 test('exit codes prioritize FAIL over ERROR', () => {
