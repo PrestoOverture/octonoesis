@@ -17,6 +17,8 @@ export interface Observation {
   rules_before: number
   error?: string
   ledger: string
+  duration_ms?: number
+  public_status?: 'PASS' | 'FAIL' | 'ERROR'
 }
 export interface Plan {
   version: 1
@@ -33,6 +35,12 @@ export interface Plan {
   test: string
   sample_size: { training: number; pairs: number }
   stopping_rule: string
+  evaluation_concurrency: number
+  error_tolerance: {
+    max_pair_fraction: number
+    max_arm_count_difference: number
+    max_training_fraction: number
+  }
   calibration: {
     min_failure_rate: number
     max_failure_rate: number

@@ -25,6 +25,12 @@ function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
     test: 'McNemar',
     sample_size: { training: 24, pairs: 120 },
     stopping_rule: 'fixed',
+    evaluation_concurrency: 1,
+    error_tolerance: {
+      max_pair_fraction: 0.05,
+      max_arm_count_difference: 1,
+      max_training_fraction: 0.05,
+    },
     calibration: { min_failure_rate: 0.1, max_failure_rate: 0.9, min_recurring_sessions: 2 },
   }
   const rows: Observation[] = jobs.map((job) => {
@@ -129,7 +135,7 @@ test('incomplete, uncalibrated, mock, missing-rule and operational-error runs ca
   expect(
     report(
       plan,
-      rows.map((r, i) => (i === 0 ? { ...r, status: 'ERROR' } : r)),
+      rows.map((r, i) => (i < 2 ? { ...r, status: 'ERROR' } : r)),
     ).verdict,
   ).toBe('inconclusive')
   expect(() =>
@@ -149,4 +155,43 @@ test('exact McNemar sanity checks and preregistered sample power', () => {
   expect(power).toBeGreaterThan(0.8)
   expect(power).toBeLessThan(0.95)
   expect(planningPower(120, 0)).toBeLessThan(0.05)
+})
+
+test('error tolerance is inclusive at 5% of pairs and rejects the next pair or arm imbalance', () => {
+  const { plan, rows } = synthetic(
+    (i) => i < 96,
+    (i) => i < 36,
+  )
+  const withErrors = (count: number, onCount = Math.ceil(count / 2)) =>
+    rows.map((r) => {
+      const i = Number(r.job.task.id.split('-')[1])
+      const error =
+        r.job.arm === 'rules-on'
+          ? i < onCount
+          : r.job.arm === 'rules-off' && i >= onCount && i < count
+      return error ? { ...r, status: 'ERROR' as const } : r
+    })
+  const boundary = report(plan, withErrors(6))
+  expect(boundary.error_tolerance.affected_pairs).toBe(6)
+  expect(boundary.error_tolerance.eligible).toBe(true)
+  expect(boundary.primary.pairs).toBe(120)
+  expect(boundary.primary.on_successes).toBe(93)
+  expect(boundary.primary.off_successes).toBe(33)
+  expect(boundary.sensitivity.pairs).toBe(114)
+  expect(boundary.verdict).toBe('helps')
+  expect(report(plan, withErrors(7)).error_tolerance.eligible).toBe(false)
+  expect(report(plan, withErrors(7)).verdict).toBe('inconclusive')
+  expect(report(plan, withErrors(6, 4)).error_tolerance.eligible).toBe(false)
+  expect(
+    report(
+      plan,
+      rows.map((r, i) => (i === 0 ? { ...r, status: 'ERROR' } : r)),
+    ).error_tolerance.eligible,
+  ).toBe(true)
+  expect(
+    report(
+      plan,
+      rows.map((r, i) => (i < 2 ? { ...r, status: 'ERROR' } : r)),
+    ).error_tolerance.eligible,
+  ).toBe(false)
 })

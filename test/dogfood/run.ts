@@ -29,11 +29,20 @@ export interface Options {
   dryRun?: boolean
   provider?: string
   model?: string
+  concurrency?: number
+  calibrate?: boolean
+  perFamily?: number
 }
 type Event =
   | { kind: 'started'; job: Job; ledger: string; plan_hash: string }
   | { kind: 'result'; observation: Observation }
   | { kind: 'recovered-tail'; fragment_hash: string }
+
+function positiveInteger(value: string | number): number {
+  const number = Number(value)
+  if (!Number.isSafeInteger(number) || number < 1) throw new Error('Expected a positive integer')
+  return number
+}
 
 async function jsonFile(file: string, value: unknown): Promise<void> {
   const handle = await open(file, 'wx')
@@ -101,16 +110,19 @@ async function sourceHash(): Promise<string> {
 }
 
 export async function preregister(dir: string, options: Options): Promise<Plan> {
+  if (options.calibrate) throw new Error('Calibration must never create a preregistration')
   const file = path.join(dir, 'preregistration.json')
   const mode = options.dryRun ? 'dry-run' : 'live'
   const provider = options.provider ?? 'spark'
   const model = options.dryRun ? 'scripted-provider-v1' : options.model
   if (!model) throw new Error('Live runs require --model to pin the provider model')
   if (!['spark', 'openai', 'anthropic'].includes(provider)) throw new Error('Unsupported provider')
+  const concurrency = positiveInteger(options.concurrency ?? 1)
   const hash = await sourceHash()
   try {
     const plan = JSON.parse(await readFile(file, 'utf8')) as Plan
     if (
+      plan.evaluation_concurrency !== concurrency ||
       plan.mode !== mode ||
       plan.provider !== provider ||
       plan.model !== model ||
@@ -155,13 +167,19 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
       rule_hit_rate:
         'production rule hit deltas / (hit + miss deltas); undefined without accounted outcomes',
     },
-    test: 'Two-sided exact McNemar alpha .05 on complete matched task pairs; risk difference on minus off; conservative 95% Bonferroni-Wilson CI. All operational errors retained as failures, invalidate confirmatory verdict. Secondary metrics descriptive only.',
+    test: 'Two-sided exact McNemar alpha .05 on complete matched task pairs; risk difference on minus off; conservative 95% Bonferroni-Wilson CI. ERROR counts as failure in primary analysis. Sensitivity drops all ERROR-containing pairs; confirmation requires both analyses significant in the same direction. Operational tolerance: at most 5% of planned evaluation pairs affected, arm error counts differing by at most one, and at most 5% training errors. Secondary metrics descriptive only.',
     sample_size: {
       training: tasks.filter((t) => t.split === 'train').length,
       pairs: tasks.filter((t) => t.split === 'heldout').length,
     },
     stopping_rule:
-      'Run all planned jobs exactly once, in order. No efficacy peeking, no early success or sample extension. Resume skips committed jobs; an interrupted started job becomes ERROR, never rerun. Final inference only after fixed sample; calibration failure or any ERROR => inconclusive.',
+      'Run all planned jobs exactly once. Training stays sequential; evaluation uses the registered concurrency with hashed within-pair order. No efficacy peeking, no early success or sample extension. Resume skips committed jobs; an interrupted started job becomes ERROR, never rerun. Final inference only after fixed sample; calibration failure, operational tolerance exceeded, or sensitivity disagreement => inconclusive.',
+    evaluation_concurrency: concurrency,
+    error_tolerance: {
+      max_pair_fraction: 0.05,
+      max_arm_count_difference: 1,
+      max_training_fraction: 0.05,
+    },
     calibration: { min_failure_rate: 0.1, max_failure_rate: 0.9, min_recurring_sessions: 2 },
   }
   // Both artifacts are durable before the first session is scheduled.

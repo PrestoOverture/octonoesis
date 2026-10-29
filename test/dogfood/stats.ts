@@ -89,6 +89,33 @@ export function pairedStats(rows: Observation[]) {
   }
 }
 
+/** Fixed operational eligibility; ERROR remains an unsuccessful primary outcome. */
+export function errorTolerance(plan: Plan, rows: Observation[]) {
+  const evaluation = rows.filter((r) => r.job.arm !== 'train')
+  const affected = new Set(evaluation.filter((r) => r.status === 'ERROR').map((r) => r.job.task.id))
+  const on = evaluation.filter((r) => r.job.arm === 'rules-on' && r.status === 'ERROR').length
+  const off = evaluation.filter((r) => r.job.arm === 'rules-off' && r.status === 'ERROR').length
+  const training = rows.filter((r) => r.job.arm === 'train' && r.status === 'ERROR').length
+  const maxPairs = Math.floor(plan.sample_size.pairs * plan.error_tolerance.max_pair_fraction)
+  const maxTraining = Math.floor(
+    plan.sample_size.training * plan.error_tolerance.max_training_fraction,
+  )
+  return {
+    affected_pairs: affected.size,
+    max_affected_pairs: maxPairs,
+    rules_on_errors: on,
+    rules_off_errors: off,
+    arm_count_difference: Math.abs(on - off),
+    max_arm_count_difference: plan.error_tolerance.max_arm_count_difference,
+    training_errors: training,
+    max_training_errors: maxTraining,
+    eligible:
+      affected.size <= maxPairs &&
+      Math.abs(on - off) <= plan.error_tolerance.max_arm_count_difference &&
+      training <= maxTraining,
+  }
+}
+
 export function report(plan: Plan, rows: Observation[]) {
   for (const row of rows) {
     const expected = plan.jobs.find((job) => job.id === row.job.id)
@@ -96,19 +123,27 @@ export function report(plan: Plan, rows: Observation[]) {
       throw new Error('Observation does not match preregistered arm/task')
   }
   const primary = pairedStats(rows)
+  const errorPairs = new Set(
+    rows.filter((r) => r.job.arm !== 'train' && r.status === 'ERROR').map((r) => r.job.task.id),
+  )
+  const sensitivity = pairedStats(
+    rows.filter((r) => r.job.arm === 'train' || !errorPairs.has(r.job.task.id)),
+  )
+  const tolerance = errorTolerance(plan, rows)
   const training = rows.filter((r) => r.job.arm === 'train')
   const reasons: string[] = []
   if (plan.mode === 'dry-run')
     reasons.push('Scripted mock provider: pipeline demonstration, not model efficacy evidence.')
   if (rows.length !== plan.jobs.length || primary.pairs !== plan.sample_size.pairs)
     reasons.push('Fixed sample incomplete.')
-  if (rows.some((r) => r.status === 'ERROR'))
-    reasons.push('Operational errors or interrupted sessions: no confirmatory verdict.')
+  if (!tolerance.eligible)
+    reasons.push('Operational errors exceed preregistered pair, arm-balance or training tolerance.')
   const calibration = Object.fromEntries(
     [...new Set(plan.tasks.map((t) => t.family))].map((family) => {
       const group = training.filter((r) => r.job.task.family === family)
-      const failures = group.filter((r) => r.status !== 'PASS').length
-      const rate = group.length ? failures / group.length : null
+      const valid = group.filter((r) => r.status !== 'ERROR')
+      const failures = valid.filter((r) => r.status === 'FAIL').length
+      const rate = valid.length ? failures / valid.length : null
       const sessions = new Map<string, Set<string>>()
       for (const row of group)
         for (const fp of row.fingerprints) {
@@ -131,7 +166,14 @@ export function report(plan: Plan, rows: Observation[]) {
         reasons.push(`${family}: no observed recurring production fingerprint class.`)
       return [
         family,
-        { sessions: group.length, failures, failure_rate: rate, recurring_fingerprints: recurring },
+        {
+          sessions: group.length,
+          valid_sessions: valid.length,
+          errors: group.length - valid.length,
+          failures,
+          failure_rate: rate,
+          recurring_fingerprints: recurring,
+        },
       ]
     }),
   )
@@ -171,6 +213,15 @@ export function report(plan: Plan, rows: Observation[]) {
     }),
   )
   const significant = primary.p_value !== null && primary.p_value < 0.05
+  if (
+    significant &&
+    (sensitivity.p_value === null ||
+      sensitivity.p_value >= 0.05 ||
+      Math.sign(sensitivity.risk_difference ?? 0) !== Math.sign(primary.risk_difference ?? 0))
+  )
+    reasons.push(
+      'Dropping operational-error pairs does not confirm the primary direction and significance.',
+    )
   const verdict =
     reasons.length || !significant
       ? 'inconclusive'
@@ -183,6 +234,8 @@ export function report(plan: Plan, rows: Observation[]) {
     verdict,
     reasons,
     primary,
+    sensitivity,
+    error_tolerance: tolerance,
     arms,
     calibration,
     planned_jobs: plan.jobs.length,
@@ -207,5 +260,5 @@ export function markdown(result: ReturnType<typeof report>): string {
     )
     .join(
       '\n',
-    )}\n\n## Calibration\n\n\`\`\`json\n${JSON.stringify(result.calibration, null, 2)}\n\`\`\`\n\n## Interpretation\n\n${result.limitations.join('\n\n')}\n\nThe CI uses ${p.method}. A null result is inconclusive, not evidence of equivalence. See preregistration.json for the fixed plan and events.jsonl for every attempted session.\n`
+    )}\n\n## Operational-error sensitivity\n\nPrimary analysis counts ERROR as failure. After dropping every pair containing ERROR: ${result.sensitivity.pairs} pairs, lift ${result.sensitivity.risk_difference ?? 'unavailable'}, p = ${result.sensitivity.p_value ?? 'unavailable'}, 95% CI ${JSON.stringify(result.sensitivity.ci95)}.\n\nAffected pairs: ${result.error_tolerance.affected_pairs}/${result.error_tolerance.max_affected_pairs} allowed; arm errors on/off: ${result.error_tolerance.rules_on_errors}/${result.error_tolerance.rules_off_errors}; training errors: ${result.error_tolerance.training_errors}/${result.error_tolerance.max_training_errors} allowed. Operational eligibility: ${result.error_tolerance.eligible}.\n\n## Calibration\n\n\`\`\`json\n${JSON.stringify(result.calibration, null, 2)}\n\`\`\`\n\n## Interpretation\n\n${result.limitations.join('\n\n')}\n\nThe CI uses ${p.method}. A null result is inconclusive, not evidence of equivalence. See preregistration.json for the fixed plan and events.jsonl for every attempted session.\n`
 }
