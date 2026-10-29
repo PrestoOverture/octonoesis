@@ -18,15 +18,16 @@ import path from 'node:path'
 import { Command } from 'commander'
 import { isKnownJournalEvent, parseJournalEvent } from '../../src/memory/events'
 import { loadAllRulesIncludingArchived } from '../../src/memory/rules/store'
-import {
-  DEFAULT_ANTHROPIC_MODEL,
-  DEFAULT_OPENAI_MODEL,
-  DEFAULT_SPARK_MODEL,
-} from '../../src/providers'
 import { classify, command, parseOutput } from '../eval/run'
 import type { Job, Observation, Plan } from './model'
 import { markdown, report } from './stats'
 import { digest, families, generateStream, loadStream, materialize } from './tasks'
+
+// Keep imports credential-neutral: src/providers captures and scrubs process.env keys.
+// credentials.test.ts pins these pure copies to the production defaults.
+const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-4-5-20251001'
+const DEFAULT_OPENAI_MODEL = 'gpt-5-nano'
+const DEFAULT_SPARK_MODEL = 'spark-x2.6'
 
 export const projectRoot = path.resolve(import.meta.dir, '../..')
 export interface Options {
@@ -47,6 +48,24 @@ function positiveInteger(value: string | number): number {
   const number = Number(value)
   if (!Number.isSafeInteger(number) || number < 1) throw new Error('Expected a positive integer')
   return number
+}
+
+function requireProviderCredential(options: Options): void {
+  if (options.dryRun) return
+  const keys: Record<string, string> = {
+    spark: 'SPARK_API_KEY',
+    openai: 'OPENAI_API_KEY',
+    anthropic: 'ANTHROPIC_API_KEY',
+  }
+  const key = keys[options.provider ?? 'spark']
+  if (!key) throw new Error('Unsupported provider')
+  if (!process.env[key]?.trim())
+    throw new Error(`${key} is not set. Export it before starting a live dogfood run.`)
+}
+
+/** Public/hidden graders and fixture setup never receive provider credentials. */
+export function verificationEnvironment(): NodeJS.ProcessEnv {
+  return { PATH: process.env.PATH, TMPDIR: os.tmpdir() }
 }
 
 async function jsonFile(file: string, value: unknown): Promise<void> {
@@ -263,7 +282,7 @@ async function runSession(
       ['add', '.'],
       ['-c', 'user.name=Dogfood', '-c', 'user.email=dogfood@localhost', 'commit', '-qm', 'fixture'],
     ]) {
-      const git = await command(['git', ...args], repo, env, 10000)
+      const git = await command(['git', ...args], repo, verificationEnvironment(), 10000)
       if (git.code !== 0 || git.timed_out) throw new Error(`git ${args[0]} failed: ${git.stderr}`)
     }
     const args =
@@ -293,7 +312,7 @@ async function runSession(
       const publicResult = await command(
         [process.execPath, '--no-env-file', 'test', path.join(workspace, 'public.test.ts')],
         repo,
-        { PATH: process.env.PATH, TMPDIR: os.tmpdir() },
+        verificationEnvironment(),
         30000,
       )
       await jsonFile(path.join(workspace, 'public.json'), publicResult)
@@ -315,7 +334,7 @@ async function runSession(
         String(job.task.seed),
       ],
       repo,
-      { PATH: process.env.PATH, TMPDIR: os.tmpdir() },
+      verificationEnvironment(),
       30000,
     )
     await jsonFile(path.join(workspace, 'check.json'), check)
@@ -531,6 +550,7 @@ export async function run(
 ): Promise<{ dir: string; result: ReturnType<typeof report> }> {
   if (options.calibrate || options.perFamily !== undefined)
     throw new Error('Use --calibrate for calibration options')
+  requireProviderCredential(options)
   const dir = await assertIsolatedOutput(
     options.output ?? (await mkdtemp(path.join(os.tmpdir(), 'octonoesis-dogfood-'))),
   )
@@ -648,6 +668,7 @@ export function calibrationSummary(rows: Observation[]) {
 }
 
 export async function calibrate(options: Options) {
+  requireProviderCredential(options)
   const dir = await assertIsolatedOutput(
     options.output ?? (await mkdtemp(path.join(os.tmpdir(), 'octonoesis-calibration-'))),
   )

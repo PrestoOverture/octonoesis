@@ -139,7 +139,7 @@ test('running lock and changed preregistration/config fail closed before session
   await expect(run({ dryRun: true, output: dir })).rejects.toThrow('active')
   await rm(path.join(dir, '.run-lock'))
   const plan = await preregister(dir, { dryRun: true })
-  await expect(run({ output: dir, provider: 'spark', model: 'spark-x2.6' })).rejects.toThrow(
+  await expect(preregister(dir, { provider: 'spark', model: 'spark-x2.6' })).rejects.toThrow(
     'differs',
   )
   await appendFile(
