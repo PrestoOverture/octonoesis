@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { getProvider } from '../../providers/index.ts'
 import type { CanonicalMessage, StreamEvent } from '../../providers/types.ts'
+import { normalizeTool } from './signature'
 
 export type Fingerprint = {
   tool: string
@@ -162,7 +163,7 @@ export function assembleFingerprint(
   expression: string,
 ): Fingerprint {
   // Replace pipe delimiters to prevent layout breakdown in downstream rules
-  const cleanTool = tool.replace(/\|/g, '-')
+  const cleanTool = normalizeTool(tool).replace(/\|/g, '-')
   const cleanClass = errorClass.replace(/\|/g, '-')
   const cleanFile = file.replace(/\|/g, '-')
   const cleanExpr = expression.replace(/\|/g, '-')

@@ -367,7 +367,11 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
           promise = retry.get('a')
         })
         await assert.rejects(promise as Promise<unknown>)
-        assert.equal(await retry.get('a'), 9)
+        // A retained rejection contains the oracle loader's creation stack,
+        // but returning it again violates the submitted cache's retry contract.
+        await assert.doesNotReject(async () => {
+          assert.equal(await retry.get('a'), 9)
+        })
       },
     },
   ],

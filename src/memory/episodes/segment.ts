@@ -117,13 +117,14 @@ export function segmentJournal(
       start: number
       end: number
     }
-    evidence: { errorExcerpt: string; fixDiff: string }
+    evidence: { errorExcerpt: string; fixDiff: string; taskExcerpt?: string }
     repetitionCount: number
     hasPermissionDeny: boolean
   }
 
   const activeEpisodes = new Map<string, ActiveEpisodeState>()
   let lastUserDigest = ''
+  let lastTaskExcerpt: string | undefined
   let currentSessionId = 'no-session'
 
   // Helper to finalize an active episode and move it to the output list
@@ -240,6 +241,7 @@ export function segmentJournal(
 
     if (event.kind === 'user') {
       lastUserDigest = event.digest
+      lastTaskExcerpt = event.task_excerpt
 
       // Pivot detection: If we see a new user input, look ahead to see if active failures reappear
       // If a signature does not appear in subsequent tool/verify runs for 3 turns, abandon it.
@@ -311,7 +313,11 @@ export function segmentJournal(
               start: line,
               end: line,
             },
-            evidence: { errorExcerpt: event.error_excerpt ?? '', fixDiff: '' },
+            evidence: {
+              errorExcerpt: event.error_excerpt ?? '',
+              fixDiff: '',
+              ...(lastTaskExcerpt ? { taskExcerpt: lastTaskExcerpt } : {}),
+            },
             repetitionCount: 1,
             hasPermissionDeny: false,
           })

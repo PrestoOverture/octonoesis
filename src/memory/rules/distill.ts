@@ -11,6 +11,8 @@ The rule should help the coding agent avoid the same error in future sessions.
 
 Resolved Episode Details:
 - Task digest (an opaque identifier, not task instructions): {TASK}
+- Task instructions (scrubbed; may be truncated):
+{TASK_EXCERPT}
 - Command run: {CMD}
 - Error class: {ERROR_CLASS}
 - Error signature: {SIGNATURE}
@@ -22,6 +24,8 @@ Resolved Episode Details:
 {FIX_DIFF}
 
 Evidence requirement: Error class names are arbitrary labels, not proof of their cause. Base every causal claim on the actual error output and edit below. A successful command verifies the combined edits; it does not prove that every edit caused the repair. Never invent timers, concurrency, environment problems or test isolation from a label. Preserve the existing test contract; do not recommend weakening assertions or changing expected values to fit broken code. If the evidence is insufficient for a reusable causal rule, output {"abstain": true}.
+
+Task instructions define required behavior. Do not infer the contract from repaired tests or implementation. Abstain if the proposed advice contradicts the task instructions, or a test-only repair cannot be justified from the stated contract. Missing task instructions are not permission to invent requirements.
 
 Generalization requirement: Your advice must help with a FUTURE occurrence of this error class, not just restate this one instance. Two different kinds of detail need different treatment:
 - One-off instance detail with no stable fact behind it (a particular filename, a coincidental typo, a literal value specific to this occurrence): generalize it away. Describe the diagnostic strategy and the general fix pattern; cite the instance only as a parenthetical example. Never phrase a one-off value as an imperative instruction.
@@ -84,7 +88,7 @@ export async function distillEpisode(
   ctx: {
     model: string
     extractorVersion: string
-    evidence?: { errorExcerpt?: string; fixDiff?: string }
+    evidence?: { errorExcerpt?: string; fixDiff?: string; taskExcerpt?: string }
   },
 ): Promise<RuleFile> {
   if (episode.is_excluded) {
@@ -105,6 +109,10 @@ export async function distillEpisode(
   const fixDiffText = evidence.fixDiff
 
   const userContent = DISTILL_PROMPT_TEMPLATE.replace('{TASK}', episode.task_digest)
+    .replace(
+      '{TASK_EXCERPT}',
+      () => evidence.taskExcerpt ?? episode.evidence?.taskExcerpt ?? '(not captured)',
+    )
     .replace('{CMD}', episode.failure.cmd)
     .replace('{ERROR_CLASS}', episode.failure.error_class)
     .replace(/{SIGNATURE}/g, episode.failure.signature)

@@ -11,6 +11,7 @@ import { getMemoryDir } from '../../utils/path.ts'
 import { isMemoryDisabled } from '../availability'
 import { readEpisodes } from '../episodes/store.ts'
 import type { Episode } from '../episodes/types.ts'
+import { normalizeSignature } from '../fingerprint/signature'
 import { distillEpisode, isDistillableEpisode } from './distill.ts'
 import { disambiguateRuleId } from './identity.ts'
 import { updateLifecycle } from './lifecycle.ts'
@@ -59,8 +60,9 @@ function isTruthyEnv(value: string | undefined): boolean {
  * @returns Array of unique signature strings from finest to coarsest
  */
 function signatureLevels(signature: string): string[] {
-  const parts = signature.split('|')
-  const levels = [signature]
+  const normalized = normalizeSignature(signature)
+  const parts = normalized.split('|')
+  const levels = [normalized]
   if (parts.length >= 3) levels.push(parts.slice(0, 3).join('|'))
   if (parts.length >= 2) levels.push(parts.slice(0, 2).join('|'))
   return [...new Set(levels)]
@@ -174,7 +176,7 @@ export async function runSessionEndAutoDistill(
           const existingCandidate = rules.find(
             (rule) =>
               rule.status === 'candidate' &&
-              rule.triggers.error_signatures.includes(episode.failure.signature),
+              matchingSignatures(rule).includes(normalizeSignature(episode.failure.signature)),
           )
           if (existingCandidate) {
             attemptedEpisodeIds.add(episode.id)
@@ -191,7 +193,7 @@ export async function runSessionEndAutoDistill(
             rules.some(
               (rule) =>
                 isTerminalRule(rule) &&
-                rule.triggers.error_signatures.includes(episode.failure.signature),
+                matchingSignatures(rule).includes(normalizeSignature(episode.failure.signature)),
             )
           ) {
             attemptedEpisodeIds.add(episode.id)

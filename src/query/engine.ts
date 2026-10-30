@@ -13,6 +13,7 @@ import { loadMemories } from '../memory/auto/store'
 import { formatMemoryUnavailableNotice, isMemoryDisabled } from '../memory/availability'
 import { runSessionEndCalibration } from '../memory/calibration/hook'
 import { runSessionEndEpisodes } from '../memory/episodes/hook'
+import { scrub } from '../memory/fingerprint/scrub'
 import {
   appendJournal,
   flushJournal,
@@ -355,7 +356,12 @@ export async function initQueryState(
   }
 
   const inputDigest = crypto.createHash('sha256').update(input).digest('hex')
-  appendJournal({ kind: 'user', digest: inputDigest, cancel: false })
+  appendJournal({
+    kind: 'user',
+    digest: inputDigest,
+    task_excerpt: scrub(input, ctx.repoRoot).slice(0, 6000),
+    cancel: false,
+  })
 
   ctx.messages = ctx.messages || []
   if (signal) {

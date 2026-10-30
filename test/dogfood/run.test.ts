@@ -72,6 +72,8 @@ test('keyless end-to-end: preregistration precedes sessions, training accumulate
     process.env.OCTONOESIS_DISABLE_AUTO_DISTILL = '1'
     const plan = await preregister(dir, { dryRun: true })
     expect((await readdir(dir)).sort()).toEqual(['preregistration.json', 'stream.json'])
+    expect(plan.test).toContain('agent wall-clock budget exhaustion are task FAIL')
+    expect(plan.test).toContain('Spawn/provider failures')
     const environment = sessionEnvironment('/fixture', path.join(dir, 'ledger'), plan)
     expect(environment.OCTONOESIS_DISABLE_MEMORY).toBeUndefined()
     expect(environment.OCTONOESIS_DISABLE_AUTO_DISTILL).toBeUndefined()

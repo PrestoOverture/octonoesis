@@ -39,7 +39,7 @@ export function serializeRule(rule: RuleFile): string {
     '  command_prefix:',
     ...rule.triggers.command_prefix.map((p) => `    - ${p}`),
     '  error_signatures:',
-    ...rule.triggers.error_signatures.map((s) => `    - ${s}`),
+    ...rule.triggers.error_signatures.map((s) => `    - ${JSON.stringify(s)}`),
     `scope: ${rule.scope}`,
     `alpha: ${rule.alpha}`,
     `beta: ${rule.beta}`,
@@ -113,7 +113,20 @@ export function parseRule(content: string): RuleFile {
       if (currentKey === 'triggers') {
         if (subKey === 'tools') result.triggers.tools.push(cleanVal)
         else if (subKey === 'command_prefix') result.triggers.command_prefix.push(cleanVal)
-        else if (subKey === 'error_signatures') result.triggers.error_signatures.push(cleanVal)
+        else if (subKey === 'error_signatures') {
+          // New signatures use JSON string scalars to preserve newlines and escapes.
+          // Keep historical unquoted/single-quoted frontmatter readable.
+          let signature = cleanVal
+          if (val.startsWith('"')) {
+            try {
+              const decoded = JSON.parse(val)
+              if (typeof decoded === 'string') signature = decoded
+            } catch {
+              // Legacy literals can contain unescaped quotes or backslashes.
+            }
+          }
+          result.triggers.error_signatures.push(signature)
+        }
       } else if (currentKey === 'evidence') {
         result.evidence.push(cleanVal)
       } else if (currentKey === 'challenged_by') {

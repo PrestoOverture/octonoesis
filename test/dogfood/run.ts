@@ -215,7 +215,7 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
       rule_hit_rate:
         'production verified-recovery hits / (hits + misses) on the next non-stale same-command verification; descriptive, not causal benefit',
     },
-    test: 'Two-sided exact McNemar alpha .05 on complete matched task pairs; risk difference on minus off; conservative 95% Bonferroni-Wilson CI. max_turns is task FAIL; infrastructure ERROR counts as failure in primary analysis. Sensitivity drops all ERROR-containing pairs; confirmation requires both analyses significant in the same direction. Operational tolerance: at most 5% of planned evaluation pairs affected, arm error counts differing by at most one, and at most 5% training errors. Secondary metrics descriptive only.',
+    test: 'Two-sided exact McNemar alpha .05 on complete matched task pairs; risk difference on minus off; conservative 95% Bonferroni-Wilson CI. max_turns and agent wall-clock budget exhaustion are task FAIL, including deadline termination without headless JSON or a journal. Spawn/provider failures, external kills, invalid JSON outside deadline exhaustion and grader infrastructure failures remain ERROR. Infrastructure ERROR counts as failure in primary analysis. Sensitivity drops all ERROR-containing pairs; confirmation requires both analyses significant in the same direction. Operational tolerance: at most 5% of planned evaluation pairs affected, arm error counts differing by at most one, and at most 5% training errors. Secondary metrics descriptive only.',
     sample_size: {
       training: tasks.filter((t) => t.split === 'train').length,
       pairs: tasks.filter((t) => t.split === 'heldout').length,
@@ -276,12 +276,13 @@ export function checkStatus(result: CommandResult): 'PASS' | 'FAIL' | 'ERROR' {
   return result.code === 0 ? 'PASS' : 'FAIL'
 }
 
-async function runSession(
+export async function runSession(
   dir: string,
   job: Job,
   plan: SessionConfig,
   ledger: string,
   measurePublic = false,
+  execute = command,
 ): Promise<Observation> {
   const start = performance.now()
   const workspace = path.join(dir, 'sessions', job.id)
@@ -318,7 +319,7 @@ async function runSession(
       ['add', '.'],
       ['-c', 'user.name=Dogfood', '-c', 'user.email=dogfood@localhost', 'commit', '-qm', 'fixture'],
     ]) {
-      const git = await command(['git', ...args], repo, verificationEnvironment(), 10000)
+      const git = await execute(['git', ...args], repo, verificationEnvironment(), 10000)
       if (git.code !== 0 || git.timed_out) throw new Error(`git ${args[0]} failed: ${git.stderr}`)
     }
     const args =
@@ -332,13 +333,21 @@ async function runSession(
             'bypass',
             job.task.prompt,
           ]
-    const cli = await command(
+    const cli = await execute(
       [process.execPath, '--no-env-file', ...args],
       repo,
       env,
       job.task.timeout_s * 1000,
     )
     await jsonFile(path.join(workspace, 'cli.json'), cli)
+    // Exhausting the agent's budget is already a failed submission. A killed
+    // agent need not have flushed JSON, snapshots or a learning journal.
+    if (cli.timed_out) {
+      row.status = 'FAIL'
+      row.error = `Agent wall-clock budget exhausted after ${job.task.timeout_s}s`
+      row.duration_ms = Math.round(performance.now() - start)
+      return row
+    }
     try {
       row.output = parseOutput(cli.stdout)
       row.error = row.output.error

@@ -4,6 +4,7 @@ import { getCheapestModel } from '../../providers/index.ts'
 import { RULES_LOCK_OPTIONS, withFileLock } from '../../utils/fileLock'
 import { getRepoRoot } from '../../utils/path.ts'
 import { readEpisodes } from '../episodes/store.ts'
+import { normalizeSignature } from '../fingerprint/signature'
 import { distillEpisode, isDistillableEpisode } from './distill.ts'
 import { disambiguateRuleId } from './identity.ts'
 import { updateLifecycle } from './lifecycle.ts'
@@ -50,7 +51,7 @@ export async function rebuildRules(
       for (const r of existingRules) {
         const sig = r.triggers.error_signatures[0]
         if (sig) {
-          existingRulesMap.set(sig, r)
+          existingRulesMap.set(normalizeSignature(sig), r)
         }
       }
 
@@ -77,11 +78,11 @@ export async function rebuildRules(
       const rebuiltRules: RuleFile[] = []
 
       for (const episode of eligibleEpisodes) {
-        const sig = episode.failure.signature
+        const sig = normalizeSignature(episode.failure.signature)
 
         // Check if we've already created a rule for this signature in the current rebuild list
         const existingRebuiltRule = rebuiltRules.find((r) =>
-          r.triggers.error_signatures.includes(sig),
+          r.triggers.error_signatures.some((signature) => normalizeSignature(signature) === sig),
         )
         if (existingRebuiltRule) {
           if (!existingRebuiltRule.evidence.includes(episode.id)) {

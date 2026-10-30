@@ -1,4 +1,5 @@
 import type { Fingerprint } from '../fingerprint/extract.ts'
+import { normalizeSignature } from '../fingerprint/signature'
 import type { RuleFile } from './types.ts'
 
 export type MatchLevel = 'fine' | 'medium' | 'coarse'
@@ -43,7 +44,7 @@ export function findMatchingRules(fingerprints: Fingerprint[], rules: RuleFile[]
               ? fingerprint.medium
               : fingerprint.coarse
 
-        if (matchingSignatures(rule).includes(signature)) {
+        if (matchingSignatures(rule).includes(normalizeSignature(signature))) {
           matchedRuleIds.add(rule.id)
           results.push({
             rule,
@@ -86,5 +87,7 @@ export function matchingSignatures(rule: RuleFile): string[] {
   const specificity = Math.max(
     ...signatures.map((signature) => Math.min(4, signature.split('|').length)),
   )
-  return signatures.filter((signature) => Math.min(4, signature.split('|').length) === specificity)
+  return signatures
+    .filter((signature) => Math.min(4, signature.split('|').length) === specificity)
+    .map(normalizeSignature)
 }

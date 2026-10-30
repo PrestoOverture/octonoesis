@@ -81,6 +81,7 @@ export const userEventSchema = z.object({
   ...baseEventFields,
   kind: z.literal('user'),
   digest: z.string(),
+  task_excerpt: z.string().optional(),
   cancel: z.boolean(),
 })
 

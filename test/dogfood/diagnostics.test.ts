@@ -256,3 +256,31 @@ test('outer verifier timeouts grade submitted code FAIL; unexpected kills and gr
   expect(checkStatus({ ...timeout, timed_out: false })).toBe('ERROR')
   expect(checkStatus({ ...timeout, code: 2, timed_out: false, signal: null })).toBe('ERROR')
 })
+
+test('a cached rejection on retry is a task FAIL even when its Error originated in the oracle loader', async () => {
+  const source = solutions['single-flight'].replace(
+    'error=>{if(this.entries.get(key)===e)this.entries.delete(key);throw error;}',
+    'error=>{throw error;}',
+  )
+  expect(source).not.toBe(solutions['single-flight'])
+  await fixture('single-flight', source, async (repo) => {
+    const result = await command(
+      [
+        process.execPath,
+        '--no-env-file',
+        path.join(import.meta.dir, 'check.ts'),
+        repo,
+        'single-flight',
+        '1017',
+      ],
+      repo,
+      { PATH: process.env.PATH },
+      10000,
+    )
+    expect(result.code).toBe(1)
+    expect(checkStatus(result)).toBe('FAIL')
+    const groups = parseHiddenResults(result.stdout)
+    expect(groups.length).toBe(hiddenGroups['single-flight'].length)
+    expect(groups.find((group) => group.id === 'synchronous-rejection-retry')?.passed).toBe(false)
+  })
+})

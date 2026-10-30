@@ -700,3 +700,38 @@ it('does not reinforce candidates with unverified or evidence-free historical ep
   await runSessionEndAutoDistill(source.session_id, tempDir)
   expect((await loadAllRules())[0]?.evidence).toEqual(['ep_original'])
 })
+
+it('runner spelling reuses verified candidate evidence without another distillation', async () => {
+  await createAnchorFiles(1)
+  const source = episode(1)
+  source.failure.signature = 'bun-test|TypeError|src/bug-1.ts|value.name'
+  const candidate = { ...coveringRule(source), status: 'candidate' as const }
+  candidate.triggers.error_signatures = ['bun test|TypeError|src/bug-1.ts|value.name']
+  await saveRule(candidate)
+  await appendEpisodes([source])
+  let calls = 0
+  setProvider(distillProvider(() => calls++))
+  await runSessionEndAutoDistill(source.session_id, tempDir)
+  const rules = await loadAllRules()
+  expect(calls).toBe(0)
+  expect(rules.length).toBe(1)
+  expect(rules[0]?.evidence).toEqual(['ep_existing', source.id])
+})
+
+it('rebuild preserves a banned legacy rule across runner spelling changes', async () => {
+  await createAnchorFiles(1)
+  const source = episode(1)
+  source.failure.signature = 'bun-test|TypeError|src/bug-1.ts|value.name'
+  const banned = { ...coveringRule(source), status: 'banned' as const }
+  banned.triggers.error_signatures = ['bun test|TypeError|src/bug-1.ts|value.name']
+  await saveRule(banned)
+  await appendEpisodes([source])
+  let calls = 0
+  setProvider(distillProvider(() => calls++))
+  await rebuildRules(path.join(tempDir, 'episodes.jsonl'), path.join(tempDir, 'rules'), {
+    extractorVersion: 'test',
+    repoRoot: tempDir,
+  })
+  expect(calls).toBe(0)
+  expect((await loadAllRules())[0]?.status).toBe('banned')
+})

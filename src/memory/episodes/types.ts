@@ -29,7 +29,7 @@ export interface Episode {
     primary?: string
     confidence: number
   }
-  evidence?: { errorExcerpt: string; fixDiff: string }
+  evidence?: { errorExcerpt: string; fixDiff: string; taskExcerpt?: string }
   verification?: {
     cmd: string
     exit_code: number

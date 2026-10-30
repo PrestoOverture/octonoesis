@@ -7,14 +7,14 @@ import { command } from '../eval/run'
 import { calibrationGate } from './calibration'
 import { sessionStatus } from './endpoint'
 import type { Observation } from './model'
-import { preregister } from './run'
+import { preregister, runSession } from './run'
 import { families, generateStream, materialize } from './tasks'
 
 const result = { code: 0, stdout: '', stderr: '', timed_out: false }
-test('turn exhaustion is task failure; fatal errors, kills and timeouts remain operational', () => {
+test('turn and wall-clock exhaustion are task failures; provider failures and external kills are operational', () => {
   const output = { exit_reason: 'max_turns' } as HeadlessResult
   expect(sessionStatus({ ...result, code: 1 }, result, output)).toBe('FAIL')
-  expect(sessionStatus({ ...result, code: 1, timed_out: true }, result, output)).toBe('ERROR')
+  expect(sessionStatus({ ...result, code: 1, timed_out: true }, result)).toBe('FAIL')
   expect(
     sessionStatus({ ...result, code: 1 }, result, { ...output, exit_reason: 'fatal_error' }),
   ).toBe('ERROR')
@@ -22,6 +22,40 @@ test('turn exhaustion is task failure; fatal errors, kills and timeouts remain o
   expect(
     sessionStatus(result, { ...result, code: 1 }, { ...output, exit_reason: 'completed' }),
   ).toBe('FAIL')
+})
+
+test('a deadline-killed session without JSON/journal is FAIL; a CLI spawn failure is ERROR', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'dogfood-deadline-'))
+  try {
+    const plan = { mode: 'dry-run' as const, provider: 'spark', model: 'scripted-provider-v1' }
+    const task = generateStream()[0]
+    if (!task) throw new Error('Missing task')
+    const job = { id: 'deadline', task: { ...task, timeout_s: 0.001 }, arm: 'train' as const }
+    const timedOut = await runSession(dir, job, plan, path.join(dir, 'deadline-ledger'))
+    expect(timedOut.status).toBe('FAIL')
+    expect(timedOut.error).toContain('wall-clock budget exhausted')
+    const cli = JSON.parse(await readFile(path.join(dir, 'sessions/deadline/cli.json'), 'utf8'))
+    expect(cli.timed_out).toBe(true)
+    expect(timedOut.output).toBeUndefined()
+    const failedSpawn = await runSession(
+      dir,
+      { ...job, id: 'spawn' },
+      plan,
+      path.join(dir, 'spawn-ledger'),
+      false,
+      (args, cwd, env, deadline) =>
+        command(
+          args[0] === process.execPath ? ['/nonexistent-dogfood-cli'] : args,
+          cwd,
+          env,
+          deadline,
+        ),
+    )
+    expect(failedSpawn.status).toBe('ERROR')
+    expect(failedSpawn.error).toContain('nonexistent-dogfood-cli')
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })
 
 function rows(failures: number): Observation[] {
