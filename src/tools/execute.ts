@@ -183,6 +183,7 @@ export async function runTool(
   const startTime = performance.now()
   const inputDigest = crypto.createHash('sha256').update(JSON.stringify(rawInput)).digest('hex')
 
+  let executedInput: unknown = rawInput
   const getResult = async (): Promise<ToolResult> => {
     // 1. Resolve tool from registry
     const tool = getTool(name)
@@ -247,6 +248,8 @@ export async function runTool(
         }
       }
     }
+
+    executedInput = validatedInput
 
     // 5. Execute actual tool callback
     try {
@@ -382,10 +385,16 @@ export async function runTool(
   const errorClass = result.ok ? null : result.error.split(':')[0] || 'unknown_error'
 
   let fingerprints: Fingerprint[] | undefined = undefined
+  let errorExcerpt: string | undefined
   let exitCode: number | undefined = undefined
   if (name === 'Bash') {
     const vr = ctx._lastVerifyResult
     if (vr) {
+      if (vr.exit_code !== 0)
+        errorExcerpt =
+          scrub(`${vr.stderr ?? ''}\n${vr.stdout ?? ''}`, ctx.repoRoot)
+            .trim()
+            .slice(0, 6000) || undefined
       exitCode = vr.exit_code
       fingerprints = vr.fingerprints.length > 0 ? vr.fingerprints : undefined
       if (vr.isVerificationRun) {
@@ -399,19 +408,30 @@ export async function runTool(
   }
 
   let targetPath: string | undefined = undefined
-  if (rawInput && typeof rawInput === 'object' && 'path' in rawInput) {
-    const p = (rawInput as { path?: unknown }).path
+  if (executedInput && typeof executedInput === 'object' && 'path' in executedInput) {
+    const p = (executedInput as { path?: unknown }).path
     if (typeof p === 'string') {
       targetPath = p
     }
   }
 
   let targetCmd: string | undefined = undefined
-  if (rawInput && typeof rawInput === 'object' && 'command' in rawInput) {
-    const c = (rawInput as { command?: unknown }).command
+  if (executedInput && typeof executedInput === 'object' && 'command' in executedInput) {
+    const c = (executedInput as { command?: unknown }).command
     if (typeof c === 'string') {
       targetCmd = c
     }
+  }
+
+  // Store bounded concrete edits, rather than asking the distiller to infer a fix from a hash.
+  let fixDiff: string | undefined
+  if (result.ok && (name === 'Edit' || name === 'Write')) {
+    const input = executedInput as { old_string?: string; new_string?: string; content?: string }
+    fixDiff =
+      name === 'Edit'
+        ? `--- before\n${input.old_string ?? ''}\n+++ after\n${input.new_string ?? ''}`
+        : `+++ written contents\n${input.content ?? ''}`
+    fixDiff = `${targetPath}\n${fixDiff}`.slice(0, 12000)
   }
 
   appendJournal({
@@ -426,6 +446,8 @@ export async function runTool(
     sandboxed: name === 'Bash' && ctx.sandbox?.enabled === true ? true : undefined,
     exit_code: exitCode,
     fingerprints,
+    error_excerpt: errorExcerpt,
+    fix_diff: fixDiff,
   })
 
   return result

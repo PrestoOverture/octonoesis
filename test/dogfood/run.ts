@@ -51,6 +51,7 @@ export interface Options {
   concurrency?: number
   calibrate?: boolean
   perFamily?: number
+  streamSeed?: number
 }
 type Event =
   | { kind: 'started'; job: Job; ledger: string; plan_hash: string }
@@ -160,6 +161,7 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
   try {
     const plan = JSON.parse(await readFile(file, 'utf8')) as Plan
     if (
+      plan.stream_seed !== (options.streamSeed ?? 1) ||
       plan.evaluation_concurrency !== concurrency ||
       plan.mode !== mode ||
       plan.provider !== provider ||
@@ -178,6 +180,7 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
     generateStream(
       (options.dryRun ? DRY_TRAINING_PER_FAMILY : TRAINING_PER_FAMILY) * families.length,
       (options.dryRun ? DRY_HELDOUT_PER_FAMILY : HELDOUT_PER_FAMILY) * families.length,
+      options.streamSeed ?? 1,
     ),
   )
   const jobs: Job[] = tasks
@@ -197,6 +200,7 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
     model,
     registered_at: new Date().toISOString(),
     source_hash: hash,
+    stream_seed: options.streamSeed ?? 1,
     stream_hash: digest(tasks),
     tasks,
     jobs,
@@ -209,7 +213,7 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
         'fraction of held-out sessions with a production coarse fingerprint observed during training',
       turns_tokens: 'mean headless turns and input+output tokens by arm (fork overhead excluded)',
       rule_hit_rate:
-        'production rule hit deltas / (hit + miss deltas); undefined without accounted outcomes',
+        'production verified-recovery hits / (hits + misses) on the next non-stale same-command verification; descriptive, not causal benefit',
     },
     test: 'Two-sided exact McNemar alpha .05 on complete matched task pairs; risk difference on minus off; conservative 95% Bonferroni-Wilson CI. max_turns is task FAIL; infrastructure ERROR counts as failure in primary analysis. Sensitivity drops all ERROR-containing pairs; confirmation requires both analyses significant in the same direction. Operational tolerance: at most 5% of planned evaluation pairs affected, arm error counts differing by at most one, and at most 5% training errors. Secondary metrics descriptive only.',
     sample_size: {
@@ -815,7 +819,9 @@ export async function calibrate(options: Options) {
     const perFamily = positiveInteger(options.perFamily ?? 3)
     const concurrency = positiveInteger(options.concurrency ?? 1)
     if (concurrency > 10) throw new Error('Concurrency cap is 10')
-    const tasks = generateStream(families.length * perFamily, 1).filter((t) => t.split === 'train')
+    const tasks = generateStream(families.length * perFamily, 1, options.streamSeed ?? 1).filter(
+      (t) => t.split === 'train',
+    )
     const config: CalibrationConfig = {
       mode: options.dryRun ? 'dry-run' : 'live',
       provider,
@@ -900,6 +906,7 @@ if (import.meta.main) {
   const program = new Command()
     .name('bun test/dogfood/run.ts')
     .option('--dry-run', 'Use scripted keyless provider through real query/tools/learning hooks')
+    .option('--stream-seed <N>', 'Disjoint task stream namespace (1-4294)', positiveInteger, 1)
     .option('--output <dir>', 'External persistent output directory; reuse to resume')
     .option('--provider <name>', 'spark, openai, or anthropic', 'spark')
     .option('--model <name>', 'Pin the live provider model')

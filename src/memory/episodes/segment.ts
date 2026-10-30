@@ -117,6 +117,7 @@ export function segmentJournal(
       start: number
       end: number
     }
+    evidence: { errorExcerpt: string; fixDiff: string }
     repetitionCount: number
     hasPermissionDeny: boolean
   }
@@ -205,6 +206,7 @@ export function segmentJournal(
           confidence,
         },
         verification,
+        evidence: active.evidence,
         outcome,
         journal_line_range: {
           start: active.journal_line_range.start,
@@ -309,6 +311,7 @@ export function segmentJournal(
               start: line,
               end: line,
             },
+            evidence: { errorExcerpt: event.error_excerpt ?? '', fixDiff: '' },
             repetitionCount: 1,
             hasPermissionDeny: false,
           })
@@ -340,6 +343,10 @@ export function segmentJournal(
                 })
               }
 
+              if (event.fix_diff)
+                active.evidence.fixDiff = `${active.evidence.fixDiff}\n${event.fix_diff}`.slice(
+                  -24000,
+                )
               active.journal_line_range.end = line
             }
           }
@@ -350,7 +357,7 @@ export function segmentJournal(
         // it could resolve active episodes.
         if (event.exit_code === 0) {
           for (const [sig, active] of activeEpisodes.entries()) {
-            if (active.state === 'FIXING') {
+            if (active.state === 'FIXING' && event.cmd?.trim() === active.failure.cmd.trim()) {
               finalizeEpisode(sig, 'resolved', line, {
                 cmd: event.cmd || '',
                 exit_code: 0,
@@ -364,28 +371,17 @@ export function segmentJournal(
     if (event.kind === 'verify') {
       const activeSignatures = getVerifySignatures(event)
 
-      if (event.verdict === 'PASS') {
-        // Transition all active episodes to RESOLVED
-        for (const signature of activeEpisodes.keys()) {
+      if (event.stale) continue
+      for (const [signature, active] of activeEpisodes.entries()) {
+        if (event.command.trim() !== active.failure.cmd.trim()) continue
+        if (event.verdict === 'PASS' && event.exit_code === 0) {
           finalizeEpisode(signature, 'resolved', line, {
             cmd: event.command,
             exit_code: event.exit_code,
           })
-        }
-      } else {
-        // FAIL or PARTIAL
-        for (const [signature, active] of activeEpisodes.entries()) {
-          if (!activeSignatures.includes(signature)) {
-            // Fingerprint is gone: transition to RESOLVED
-            finalizeEpisode(signature, 'resolved', line, {
-              cmd: event.command,
-              exit_code: event.exit_code,
-            })
-          } else if (active.state === 'FIXING') {
-            // Fingerprint still present: revert FIXING -> FAILING
-            active.state = 'FAILING'
-            active.journal_line_range.end = line
-          }
+        } else if (activeSignatures.includes(signature) && active.state === 'FIXING') {
+          active.state = 'FAILING'
+          active.journal_line_range.end = line
         }
       }
     }

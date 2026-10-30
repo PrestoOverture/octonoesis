@@ -1017,16 +1017,20 @@ export async function* executeTools(
       const recordedOutcomes = ctx.recordedRuleOutcomes
 
       if (injectedRulesList && injectedRulesList.length > 0 && recordedOutcomes) {
-        const postSigs = verifyResult.fingerprints.map((fingerprint) => fingerprint.fine)
-
-        for (const { rule, fingerprint } of injectedRulesList) {
-          if (recordedOutcomes.has(rule.id)) continue
+        for (const { rule, command } of injectedRulesList) {
+          if (
+            recordedOutcomes.has(rule.id) ||
+            verifyResult.stale ||
+            !command ||
+            command.trim() !== verifyResult.command.trim()
+          )
+            continue
 
           recordedOutcomes.add(rule.id)
           try {
             const outcome = await recordRuleOutcome(
               rule.id,
-              postSigs.includes(fingerprint.fine),
+              verifyResult.verdict !== 'PASS' || verifyResult.exit_code !== 0,
               ctx.repoRoot,
             )
             if (outcome && !isMemoryDisabled())
@@ -1052,7 +1056,12 @@ export async function* executeTools(
         toolResultContent += `\n\n<octo-memory>\n${adviceBlocks}\n</octo-memory>`
 
         for (const match of matches) {
-          ctx.injectedRules?.push({ rule: match.rule, fingerprint: match.fingerprint })
+          ctx.injectedRules?.push({
+            rule: match.rule,
+            fingerprint: match.fingerprint,
+            command:
+              toolUse.name === 'Bash' ? (toolUse.input as { command: string }).command : undefined,
+          })
         }
         try {
           if (!isMemoryDisabled())

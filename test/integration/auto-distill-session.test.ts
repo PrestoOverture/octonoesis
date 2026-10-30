@@ -70,6 +70,7 @@ test('a failed episode distillation is attempted once across TUI-style query cal
     fix_candidates: [{ tool: 'Edit', path: 'src/bug.ts', summary: 'fixed', role: 'direct' }],
     attribution: { status: 'single_direct', primary: 'src/bug.ts', confidence: 0.9 },
     verification: { cmd: 'bun test', exit_code: 0 },
+    evidence: { errorExcerpt: 'TypeError: missing value', fixDiff: 'value.name -> value?.name' },
     outcome: 'resolved',
     journal_line_range: { start: 1, end: 3 },
     value_score: 1,

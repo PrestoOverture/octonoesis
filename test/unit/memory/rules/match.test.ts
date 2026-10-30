@@ -159,3 +159,25 @@ describe('Fingerprint Rule Matcher', () => {
 function matchedRuleIds(matches: ReturnType<typeof findMatchingRules>): string[] {
   return matches.map((m) => m.rule.id)
 }
+
+it('does not reuse expanded legacy fallbacks for another failure or file', () => {
+  const observed = assembleFingerprint('test', 'AssertionError', 'alpha.test.ts', 'alpha()')
+  const legacy = {
+    id: 'rule-legacy',
+    status: 'active',
+    triggers: { error_signatures: [observed.fine, observed.medium, observed.coarse] },
+  } as RuleFile
+  expect(findMatchingRules([observed], [legacy]).length).toBe(1)
+  expect(
+    findMatchingRules(
+      [assembleFingerprint('test', 'AssertionError', 'beta.test.ts', 'beta()')],
+      [legacy],
+    ),
+  ).toEqual([])
+  expect(
+    findMatchingRules(
+      [assembleFingerprint('test', 'AssertionError', 'alpha.test.ts', 'other()')],
+      [legacy],
+    ),
+  ).toEqual([])
+})

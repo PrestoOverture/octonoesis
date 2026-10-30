@@ -22,6 +22,7 @@ import type { Episode } from './types'
  * @returns True if the episodes are equal, false otherwise.
  */
 function isEpisodeEqual(ep1: Episode, ep2: Episode): boolean {
+  if (JSON.stringify(ep1.evidence) !== JSON.stringify(ep2.evidence)) return false
   if (ep1.outcome !== ep2.outcome) return false
   if (ep1.value_score !== ep2.value_score) return false
   if (ep1.is_excluded !== ep2.is_excluded) return false

@@ -10,7 +10,7 @@ Your task is to analyze a resolved troubleshooting episode and distill a reusabl
 The rule should help the coding agent avoid the same error in future sessions.
 
 Resolved Episode Details:
-- Task: {TASK}
+- Task digest (an opaque identifier, not task instructions): {TASK}
 - Command run: {CMD}
 - Error class: {ERROR_CLASS}
 - Error signature: {SIGNATURE}
@@ -20,6 +20,8 @@ Resolved Episode Details:
 {ERROR_EXCERPT}
 - Actual fix applied (old -> new):
 {FIX_DIFF}
+
+Evidence requirement: Error class names are arbitrary labels, not proof of their cause. Base every causal claim on the actual error output and edit below. A successful command verifies the combined edits; it does not prove that every edit caused the repair. Never invent timers, concurrency, environment problems or test isolation from a label. Preserve the existing test contract; do not recommend weakening assertions or changing expected values to fit broken code. If the evidence is insufficient for a reusable causal rule, output {"abstain": true}.
 
 Generalization requirement: Your advice must help with a FUTURE occurrence of this error class, not just restate this one instance. Two different kinds of detail need different treatment:
 - One-off instance detail with no stable fact behind it (a particular filename, a coincidental typo, a literal value specific to this occurrence): generalize it away. Describe the diagnostic strategy and the general fix pattern; cite the instance only as a parenthetical example. Never phrase a one-off value as an imperative instruction.
@@ -47,8 +49,7 @@ export const PROMPT_HASH = createHash('sha256')
   .digest('hex')
   .slice(0, 8)
 
-const ERROR_EXCERPT_MAX_CHARS = 600
-const NOT_CAPTURED = '(not captured)'
+const ERROR_EXCERPT_MAX_CHARS = 6000
 
 /**
  * Truncates an error excerpt to a bounded length, appending an ellipsis marker when cut.
@@ -58,6 +59,17 @@ const NOT_CAPTURED = '(not captured)'
 function truncateErrorExcerpt(text: string): string {
   if (text.length <= ERROR_EXCERPT_MAX_CHARS) return text
   return `${text.slice(0, ERROR_EXCERPT_MAX_CHARS)}...`
+}
+
+/** Historical labels without a verified, captured repair cannot support learned advice. */
+export function isDistillableEpisode(episode: Episode): boolean {
+  return (
+    !episode.is_excluded &&
+    episode.outcome === 'resolved' &&
+    episode.verification?.exit_code === 0 &&
+    episode.verification.cmd.trim() === episode.failure.cmd.trim() &&
+    Boolean(episode.evidence?.errorExcerpt.trim() && episode.evidence.fixDiff.trim())
+  )
 }
 
 /**
@@ -79,16 +91,18 @@ export async function distillEpisode(
     throw new Error(`Cannot distill excluded episode: ${episode.exclusion_reason}`)
   }
 
+  const evidence = ctx.evidence ?? episode.evidence
+  if (!evidence?.errorExcerpt?.trim() || !evidence.fixDiff?.trim()) {
+    throw new Error('Cannot distill without captured error and fix evidence')
+  }
   const provider = getProvider()
 
   const candidatesText = episode.fix_candidates
     .map((c) => `- File: ${c.path} (Role: ${c.role}, Summary: ${c.summary})`)
     .join('\n')
 
-  const errorExcerptText = ctx.evidence?.errorExcerpt
-    ? truncateErrorExcerpt(ctx.evidence.errorExcerpt)
-    : NOT_CAPTURED
-  const fixDiffText = ctx.evidence?.fixDiff ? ctx.evidence.fixDiff : NOT_CAPTURED
+  const errorExcerptText = truncateErrorExcerpt(evidence.errorExcerpt)
+  const fixDiffText = evidence.fixDiff
 
   const userContent = DISTILL_PROMPT_TEMPLATE.replace('{TASK}', episode.task_digest)
     .replace('{CMD}', episode.failure.cmd)
@@ -120,6 +134,8 @@ export async function distillEpisode(
   const cleanedJson = cleanJsonString(responseText)
   const data = JSON.parse(cleanedJson)
 
+  if (data.abstain === true) throw new Error('Distiller abstained: insufficient causal evidence')
+
   const slug = (data.slug || `rule-${episode.id}`)
     .trim()
     .toLowerCase()
@@ -128,10 +144,8 @@ export async function distillEpisode(
   const commandPrefix = Array.isArray(data.triggers?.command_prefix)
     ? data.triggers.command_prefix
     : []
-  const errorSignatures = Array.isArray(data.triggers?.error_signatures)
-    ? data.triggers.error_signatures
-    : [episode.failure.signature]
-  const expandedSignatures = expandSignatures(errorSignatures)
+  // A single repair supports only its observed signature, never automatic broader fallbacks.
+  const errorSignatures = [episode.failure.signature]
   const anchorFile = (data.anchor_file || episode.attribution.primary || '').trim()
   const advice = (data.advice || '').trim()
 
@@ -144,7 +158,7 @@ export async function distillEpisode(
     triggers: {
       tools,
       command_prefix: commandPrefix,
-      error_signatures: expandedSignatures,
+      error_signatures: errorSignatures,
     },
     scope: 'repo',
     alpha,
@@ -167,26 +181,6 @@ export async function distillEpisode(
     last_rebuilt_at: null,
     advice,
   }
-}
-
-/**
- * Promotes error signatures to coarser categories to align with general repository patterns.
- * @param signatures The input array of fine signatures.
- * @returns The array of expanded signatures.
- */
-
-function expandSignatures(signatures: string[]): string[] {
-  const expanded = new Set(signatures)
-  for (const sig of signatures) {
-    const parts = sig.split('|')
-    if (parts.length >= 2) {
-      expanded.add(parts.slice(0, 2).join('|'))
-    }
-    if (parts.length >= 3) {
-      expanded.add(parts.slice(0, 3).join('|'))
-    }
-  }
-  return [...expanded]
 }
 
 /**

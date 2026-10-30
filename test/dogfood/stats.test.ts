@@ -13,6 +13,7 @@ function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
   )
   const plan: Plan = {
     version: 1,
+    stream_seed: 1,
     mode: 'live',
     provider: 'spark',
     model: 'synthetic',

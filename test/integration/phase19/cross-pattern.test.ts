@@ -75,7 +75,7 @@ let activeSession: ActiveSession | null = null
 const mockSpawnResults: Record<string, SpawnResult[]> = {}
 const createdRules: RuleFile[] = []
 let totalSessionsRun = 0
-let negativeTransferMisses = 0
+let negativeTransfersBlocked = 0
 
 function fingerprintFor(fixture: FixtureDef): Fingerprint {
   return assembleFingerprint(
@@ -440,6 +440,10 @@ async function ensureResolvedEpisode(env: TestEnv, fixture: FixtureDef, result: 
       cmd: COMMAND,
       exit_code: 0,
     },
+    evidence: {
+      errorExcerpt: fixture.stderrOutput,
+      fixDiff: `${fixture.fix.old} -> ${fixture.fix.new}`,
+    },
     outcome: 'resolved',
     journal_line_range: {
       start: 1,
@@ -460,19 +464,6 @@ function findRuleByFine(rules: RuleFile[], fixture: FixtureDef): RuleFile {
     throw new Error(`Could not find rule containing ${fine}`)
   }
   return rule
-}
-
-function assertInjectedWith(
-  result: SessionResult,
-  expectedRule: RuleFile,
-  expectedText: string,
-): void {
-  const joined = result.toolResults.join('\n')
-  expect(joined).toContain('<octo-memory>')
-  expect(joined).toContain(expectedText)
-  expect(joined).toContain(expectedRule.advice)
-  expect(result.injectedRules.length).toBeGreaterThan(0)
-  expect(result.injectedRules[0]?.rule.id).toBe(expectedRule.id)
 }
 
 // RepoQuirk fixtures don't follow the legacy A1/A2/B1... ID-suffix convention (each fixture has
@@ -532,7 +523,7 @@ describe('Phase 19.2 — Cross-Pattern Generalization', () => {
       const scenarioType = LEGACY_SCENARIO_TYPES[i]
       if (!scenarioType) continue
 
-      it(`${scenarioType}: creates rule, matches medium/coarse, isolates cross-bucket`, async () => {
+      it(`${scenarioType}: creates a specific rule and rejects unsupported broader matches`, async () => {
         const env = await createEnv(`part-a-${String(i).padStart(2, '0')}-${scenarioType}`)
         const createFixture = fixtureById(scenarioType, 'A1')
         const mediumFixture = fixtureById(scenarioType, 'A2')
@@ -546,17 +537,14 @@ describe('Phase 19.2 — Cross-Pattern Generalization', () => {
         const rulesAfterCreate = await loadRules(env)
         const createdRule = findRuleByFine(rulesAfterCreate, createFixture)
         const createFingerprint = fingerprintFor(createFixture)
-        expect(createdRule.triggers.error_signatures).toContain(createFingerprint.fine)
-        expect(createdRule.triggers.error_signatures).toContain(createFingerprint.medium)
-        expect(createdRule.triggers.error_signatures).toContain(createFingerprint.coarse)
+        expect(createdRule.triggers.error_signatures).toEqual([createFingerprint.fine])
         createdRules.push(createdRule)
 
         const mediumResult = await runSession(env, mediumFixture, 'fix')
-        assertInjectedWith(mediumResult, createdRule, 'matched your current error signature')
-        expect(mediumResult.toolResults.join('\n')).not.toContain('Low-confidence advice fallback')
+        expect(mediumResult.injectedRules).toEqual([])
 
         const coarseResult = await runSession(env, coarseFixture, 'fix')
-        assertInjectedWith(coarseResult, createdRule, 'Low-confidence advice fallback')
+        expect(coarseResult.injectedRules).toEqual([])
 
         const isolationResult = await runSession(env, isolationFixture, 'no-match')
         expect(isolationResult.toolResults.join('\n')).not.toContain('<octo-memory>')
@@ -567,7 +555,7 @@ describe('Phase 19.2 — Cross-Pattern Generalization', () => {
 
   describe('Part B — Negative transfer', () => {
     for (const [sourceScenario, targetScenario] of COLLISION_PAIRS) {
-      it(`${sourceScenario} rule -> ${targetScenario} error -> coarse match -> miss`, async () => {
+      it(`${sourceScenario} rule does not transfer to ${targetScenario} via a coarse collision`, async () => {
         const env = await createEnv(`negative-${sourceScenario}-${targetScenario}`)
         const sourceFixture = fixtureById(sourceScenario, 'A1')
         const targetFixture = fixtureById(targetScenario, 'A1')
@@ -581,18 +569,18 @@ describe('Phase 19.2 — Cross-Pattern Generalization', () => {
         const missesBefore = sourceRuleBefore.misses
 
         const missResult = await runSession(env, targetFixture, 'miss')
-        assertInjectedWith(missResult, sourceRuleBefore, 'Low-confidence advice fallback')
+        expect(missResult.injectedRules).toEqual([])
 
         const afterRules = await loadRules(env)
         const sourceRuleAfter = findRuleByFine(afterRules, sourceFixture)
-        expect(sourceRuleAfter.misses).toBe(missesBefore + 1)
-        negativeTransferMisses++
+        expect(sourceRuleAfter.misses).toBe(missesBefore)
+        negativeTransfersBlocked++
       })
     }
   })
 
   describe('Part C — Saturation', () => {
-    it('NullAccess accumulates hits correctly across 10 instances', async () => {
+    it('NullAccess records hits only for repetitions of the observed failure', async () => {
       const env = await createEnv('saturation-nullaccess')
       const nullAccessFixtures = byScenario('NullAccess')
       const createFixture = fixtureById('NullAccess', 'A1')
@@ -607,10 +595,14 @@ describe('Phase 19.2 — Cross-Pattern Generalization', () => {
 
       const rules = await loadRules(env)
       const nullAccessRule = findRuleByFine(rules, createFixture)
-      expect(nullAccessRule.hits).toBeGreaterThan(8)
+      expect(nullAccessRule.hits).toBe(
+        nullAccessFixtures.filter(
+          (fixture) => fingerprintFor(fixture).fine === fingerprintFor(createFixture).fine,
+        ).length,
+      )
 
       const nullAccessRules = rules.filter((rule) =>
-        rule.triggers.error_signatures.includes(fingerprintFor(createFixture).coarse),
+        rule.triggers.error_signatures.includes(fingerprintFor(createFixture).fine),
       )
       expect(nullAccessRules.length).toBe(1)
     })
@@ -630,7 +622,7 @@ describe('Phase 19.2 — Cross-Pattern Generalization', () => {
 
     it('records the expected session and negative-transfer counts', () => {
       expect(totalSessionsRun).toBe(15 * 4 + COLLISION_PAIRS.length * 2 + 11)
-      expect(negativeTransferMisses).toBe(COLLISION_PAIRS.length)
+      expect(negativeTransfersBlocked).toBe(COLLISION_PAIRS.length)
     })
   })
 })

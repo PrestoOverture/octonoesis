@@ -60,7 +60,10 @@ describe('Episode Integration Loop', () => {
         type: 'tool_use',
         id: 'toolu_bash_1',
         name: 'Bash',
-        input: { command: "echo 'TypeError: null pointer in src/temp.ts:2' >&2 && exit 1" },
+        input: {
+          command:
+            "if grep -q 'fixed content' src/temp.ts; then exit 0; else echo 'TypeError: null pointer in src/temp.ts:2' >&2; exit 1; fi",
+        },
       },
       { type: 'message_end', stopReason: 'other', usage: { input_tokens: 10, output_tokens: 5 } },
     ]
@@ -97,7 +100,10 @@ describe('Episode Integration Loop', () => {
         type: 'tool_use',
         id: 'toolu_bash_4',
         name: 'Bash',
-        input: { command: 'exit 0' },
+        input: {
+          command:
+            "if grep -q 'fixed content' src/temp.ts; then exit 0; else echo 'TypeError: null pointer in src/temp.ts:2' >&2; exit 1; fi",
+        },
       },
       { type: 'message_end', stopReason: 'other', usage: { input_tokens: 40, output_tokens: 20 } },
     ]

@@ -603,8 +603,8 @@ describe('live-ab seeded transfer mode skips distillation', () => {
   })
 })
 
-describe('live-ab cross-instance match level (core Experiment 2 claim)', () => {
-  it('a rule seeded from ParseError_A1 matches a different ParseError fixture at coarse level', () => {
+describe('live-ab legacy cross-instance matching', () => {
+  it('a legacy expanded ParseError rule does not match a different file or expression', () => {
     const seed = ALL_FIXTURES.find((f) => f.id === 'ParseError_A1')
     const other = ALL_FIXTURES.find((f) => f.id === 'ParseError_B1')
     if (!seed || !other) throw new Error('expected ParseError_A1 and ParseError_B1 in ALL_FIXTURES')
@@ -620,8 +620,7 @@ describe('live-ab cross-instance match level (core Experiment 2 claim)', () => {
       seed.extractorResponse.file,
       seed.extractorResponse.expression,
     )
-    // Build the rule's signatures the way distill.ts's expandSignatures() would: fine + its
-    // medium and coarse prefixes.
+    // Historical rules bundled the observed trigger with automatic broader prefixes.
     const rule: RuleFile = {
       id: 'rule-parseerror-a1',
       triggers: {
@@ -657,8 +656,8 @@ describe('live-ab cross-instance match level (core Experiment 2 claim)', () => {
     )
     const matches = findMatchingRules([otherFp], [rule])
 
-    expect(matches.length).toBe(1)
-    expect(matches[0]?.level).toBe('coarse')
+    expect(matches).toEqual([])
+    expect(findMatchingRules([seedFp], [rule])[0]?.level).toBe('fine')
   })
 })
 

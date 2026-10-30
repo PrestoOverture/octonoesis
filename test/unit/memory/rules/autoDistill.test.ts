@@ -59,6 +59,7 @@ function episode(index: number, overrides: Partial<Episode> = {}): Episode {
     outcome: 'resolved',
     journal_line_range: { start: index * 3 - 2, end: index * 3 },
     value_score: 1,
+    evidence: { errorExcerpt: 'TypeError: missing value', fixDiff: 'value.name -> value?.name' },
     is_excluded: false,
     exclusion_reason: null,
     ...overrides,
@@ -233,6 +234,39 @@ describe('session-end auto-distillation', () => {
 
     await runSessionEndAutoDistill('session-auto-distill', tempDir, { attemptedEpisodeIds })
     expect(calls).toBe(5)
+  })
+
+  it('passes captured evidence through automatic distillation', async () => {
+    await createAnchorFiles(1)
+    const source = episode(1)
+    await appendEpisodes([source])
+    let captured = ''
+    const provider = distillProvider()
+    setProvider({
+      ...provider,
+      createMessageStream: async function* (messages, tools, opts) {
+        captured = promptText(messages)
+        yield* provider.createMessageStream(messages, tools, opts)
+      },
+    })
+    await runSessionEndAutoDistill(source.session_id, tempDir)
+    expect(captured).toContain(source.evidence?.errorExcerpt ?? 'missing')
+    expect(captured).toContain(source.evidence?.fixDiff ?? 'missing')
+  })
+
+  it('a legacy broad fallback does not suppress learning a distinct failure', async () => {
+    await createAnchorFiles(2)
+    const first = episode(1)
+    const second = episode(2)
+    const legacy = coveringRule(first)
+    legacy.triggers.error_signatures.push('bash|TypeError')
+    await saveRule(legacy)
+    await appendEpisodes([second])
+    let calls = 0
+    setProvider(distillProvider(() => calls++))
+    await runSessionEndAutoDistill(second.session_id, tempDir)
+    expect(calls).toBe(1)
+    expect((await loadAllRules()).some((rule) => rule.evidence.includes(second.id))).toBe(true)
   })
 
   it('keeps distinct evidence in separate files when the distiller returns one slug', async () => {
@@ -648,4 +682,21 @@ describe('session-end auto-distillation', () => {
       expect(await loadAllRules()).toEqual([])
     })
   })
+})
+
+it('does not reinforce candidates with unverified or evidence-free historical episodes', async () => {
+  await createAnchorFiles(1)
+  const source = episode(1)
+  const candidate = {
+    ...coveringRule(source),
+    status: 'candidate' as const,
+    evidence: ['ep_original'],
+  }
+  await saveRule(candidate)
+  await appendEpisodes([
+    { ...source, evidence: undefined },
+    { ...source, id: 'ep_0002', verification: { cmd: 'bun test', exit_code: 1 } },
+  ])
+  await runSessionEndAutoDistill(source.session_id, tempDir)
+  expect((await loadAllRules())[0]?.evidence).toEqual(['ep_original'])
 })

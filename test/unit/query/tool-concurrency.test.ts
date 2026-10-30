@@ -490,3 +490,48 @@ test('real Read calls share the edit-safety cache across a subsequent Edit barri
   ])
   expect(results(h.state)[3]?.content).toBe('1\tafter')
 })
+
+test('rule outcomes require a fresh same-command verification and count changed failures as misses', async () => {
+  await fs.writeFile(path.join(directory, 'bug.txt'), 'broken')
+  const rule = seededRule()
+  await saveRule(rule)
+  const h = harness()
+  h.ctx.injectedRules?.push({
+    rule,
+    command: 'bun test',
+    fingerprint: {
+      tool: 'test',
+      error_class: 'TypeError',
+      file: 'bug.txt',
+      expression: 'broken',
+      coarse: 'test|TypeError',
+      medium: 'test|TypeError|bug.txt',
+      fine: 'test|TypeError|bug.txt|broken',
+    },
+  })
+  let verification = {
+    isVerificationRun: true,
+    command: 'bun test',
+    stale: true,
+    verdict: 'PASS' as 'PASS' | 'FAIL',
+    exit_code: 0,
+    fingerprints: [],
+  }
+  mockTool('VerifierResult', async (_input, ctx) => {
+    ctx._lastVerifyResultForQuery = verification
+    return { ok: true, value: 'verified' }
+  })
+  await h.run([call('stale', 'VerifierResult')])
+  expect(h.ctx.recordedRuleOutcomes?.size).toBe(0)
+  verification = { ...verification, stale: false, command: 'bun lint' }
+  await h.run([call('other-command', 'VerifierResult')])
+  expect(h.ctx.recordedRuleOutcomes?.size).toBe(0)
+  verification = { ...verification, command: 'bun test', verdict: 'FAIL', exit_code: 1 }
+  const { events } = await h.run([call('changed-failure', 'VerifierResult')])
+  expect(events.some((event) => event.type === 'rule_outcome' && !event.hit)).toBe(true)
+  expect((await loadRule(rule.id))?.hits).toBe(0)
+  expect((await loadRule(rule.id))?.misses).toBe(1)
+  verification = { ...verification, verdict: 'PASS', exit_code: 0 }
+  await h.run([call('eventual-pass', 'VerifierResult')])
+  expect((await loadRule(rule.id))?.hits).toBe(0)
+})

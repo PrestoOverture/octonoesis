@@ -22,6 +22,7 @@ export type ExitReason =
 export interface InjectedRule {
   rule: RuleFile
   fingerprint: Fingerprint
+  command?: string
 }
 
 /**

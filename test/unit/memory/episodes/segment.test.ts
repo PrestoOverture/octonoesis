@@ -57,7 +57,7 @@ describe('Episode Segmentation State Machine', () => {
           session_id: 'sess-123',
           verdict: 'PASS' as const,
           fingerprints: [],
-          command: 'bun test',
+          command: 'bun test test/buggy.test.ts',
           exit_code: 0,
           stale: false,
         },
@@ -79,7 +79,7 @@ describe('Episode Segmentation State Machine', () => {
     expect(ep?.attribution.status).toBe('single_direct')
     expect(ep?.attribution.primary).toBe('src/buggy.ts')
     expect(ep?.attribution.confidence).toBe(0.9)
-    expect(ep?.verification?.cmd).toBe('bun test')
+    expect(ep?.verification?.cmd).toBe('bun test test/buggy.test.ts')
     expect(ep?.verification?.exit_code).toBe(0)
     expect(ep?.journal_line_range.start).toBe(2)
     expect(ep?.journal_line_range.end).toBe(4)
@@ -177,6 +177,7 @@ describe('Episode Segmentation State Machine', () => {
           ts: '2026-06-20T10:01:00.000Z',
           session_id: 'sess-123',
           tool: 'Bash',
+          cmd: 'bun test',
           input_digest: 'digest-run-tests',
           outcome: 'failure' as const,
           error_class: 'SyntaxError',
@@ -212,6 +213,7 @@ describe('Episode Segmentation State Machine', () => {
           ts: '2026-06-20T10:01:00.000Z',
           session_id: 'sess-123',
           tool: 'Bash',
+          cmd: 'bun test',
           input_digest: 'digest-1',
           outcome: 'failure' as const,
           error_class: 'TypeError',
@@ -301,6 +303,7 @@ describe('Episode Segmentation State Machine', () => {
           ts: '2026-06-20T10:01:00.000Z',
           session_id: 'sess-123',
           tool: 'Bash',
+          cmd: 'bun test',
           input_digest: 'digest-1',
           outcome: 'failure' as const,
           error_class: 'TypeError',
@@ -331,6 +334,7 @@ describe('Episode Segmentation State Machine', () => {
           ts: '2026-06-20T10:02:00.000Z',
           session_id: 'sess-123',
           tool: 'Bash',
+          cmd: 'bun test',
           input_digest: 'digest-2',
           outcome: 'failure' as const,
           error_class: 'TypeError',
@@ -411,6 +415,7 @@ describe('Episode Segmentation State Machine', () => {
           ts: '2026-06-20T10:01:00.000Z',
           session_id: 'sess-123',
           tool: 'Bash',
+          cmd: 'bun test',
           input_digest: 'digest-1',
           outcome: 'failure' as const,
           error_class: 'TypeError',

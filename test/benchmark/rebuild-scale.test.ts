@@ -274,6 +274,7 @@ function generateEpisode(
     outcome,
     journal_line_range: { start: 1, end: 1 },
     value_score: excluded ? 0 : 1,
+    evidence: { errorExcerpt: 'TypeError: missing value', fixDiff: 'value.name -> value?.name' },
     is_excluded: Boolean(excluded),
     exclusion_reason: excluded ?? null,
   }

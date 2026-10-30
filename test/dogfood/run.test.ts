@@ -15,7 +15,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { restoreEnv } from '../helpers/env'
 import { assertIsolatedOutput, preregister, projectRoot, run, sessionEnvironment } from './run'
-import { digest } from './tasks'
+import { digest, generateStream } from './tasks'
 
 const dirs: string[] = []
 async function temporary() {
@@ -211,3 +211,14 @@ test('evaluation concurrency preserves pairs, outcomes, training lineage and has
     'differs',
   )
 }, 120000)
+
+test('preregisters the stream seed and rejects a changed stream on resume', async () => {
+  const dir = await temporary()
+  const plan = await preregister(dir, { dryRun: true, streamSeed: 2 })
+  expect(
+    JSON.parse(await readFile(path.join(dir, 'preregistration.json'), 'utf8')).stream_seed,
+  ).toBe(2)
+  expect(plan.tasks).toEqual(generateStream(10, 20, 2))
+  expect(await preregister(dir, { dryRun: true, streamSeed: 2 })).toEqual(plan)
+  await expect(preregister(dir, { dryRun: true })).rejects.toThrow('Resume')
+})

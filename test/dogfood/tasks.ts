@@ -148,11 +148,25 @@ export function partialSolution(family: Family): string {
 export function generateStream(
   train = TRAINING_PER_FAMILY * families.length,
   heldout = HELDOUT_PER_FAMILY * families.length,
+  streamSeed = 1,
 ): Task[] {
+  // Reserve disjoint numeric namespaces, including the oracle's uint32 PRNG input.
+  if (!Number.isSafeInteger(streamSeed) || streamSeed < 1 || streamSeed > 4294)
+    throw new Error('Stream seed must be an integer from 1 to 4294')
+  if (
+    !Number.isSafeInteger(train) ||
+    train < 1 ||
+    train > 99000 ||
+    !Number.isSafeInteger(heldout) ||
+    heldout < 1 ||
+    heldout > 900000
+  )
+    throw new Error('Task counts exceed the reserved stream namespace')
+  const offset = (streamSeed - 1) * 1000000
   return (['train', 'heldout'] as const).flatMap((split) =>
     Array.from({ length: split === 'train' ? train : heldout }, (_, i) => {
       const family = families[i % families.length] as Family
-      const seed = (split === 'train' ? 1000 : 100000) + i
+      const seed = offset + (split === 'train' ? 1000 : 100000) + i
       return taskSchema.parse({
         id: `${split}-${i}`,
         split,

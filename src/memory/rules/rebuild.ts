@@ -4,7 +4,7 @@ import { getCheapestModel } from '../../providers/index.ts'
 import { RULES_LOCK_OPTIONS, withFileLock } from '../../utils/fileLock'
 import { getRepoRoot } from '../../utils/path.ts'
 import { readEpisodes } from '../episodes/store.ts'
-import { distillEpisode } from './distill.ts'
+import { distillEpisode, isDistillableEpisode } from './distill.ts'
 import { disambiguateRuleId } from './identity.ts'
 import { updateLifecycle } from './lifecycle.ts'
 import { enforcePoolCap } from './pool.ts'
@@ -56,7 +56,7 @@ export async function rebuildRules(
 
       // 2. Read all episodes
       const episodes = await readEpisodes(episodesPath)
-      const eligibleEpisodes = episodes.filter((ep) => !ep.is_excluded)
+      const eligibleEpisodes = episodes.filter(isDistillableEpisode)
 
       // Sort episodes chronologically
       eligibleEpisodes.sort(

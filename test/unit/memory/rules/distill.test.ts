@@ -42,9 +42,11 @@ describe('Rule Distillation', () => {
       primary: 'src/buggy.ts',
       confidence: 0.9,
     },
+    verification: { cmd: 'bun test', exit_code: 0 },
     outcome: 'resolved',
     journal_line_range: { start: 1, end: 10 },
     value_score: 1.0,
+    evidence: { errorExcerpt: 'TypeError: missing value', fixDiff: 'value.name -> value?.name' },
     is_excluded: false,
     exclusion_reason: null,
   }
@@ -90,10 +92,7 @@ describe('Rule Distillation', () => {
     expect(rule.id).toBe('rule-optional-chaining-buggy')
     expect(rule.triggers.tools).toEqual(['Bash'])
     expect(rule.triggers.command_prefix).toEqual(['bun test'])
-    expect(rule.triggers.error_signatures).toEqual([
-      'bash|TypeError|src/buggy.ts',
-      'bash|TypeError',
-    ])
+    expect(rule.triggers.error_signatures).toEqual(['bash|TypeError|src/buggy.ts'])
     expect(rule.anchor.file).toBe('src/buggy.ts')
     expect(rule.advice).toBe(
       'Always use optional chaining when accessing property of potentially null object.',
@@ -151,47 +150,55 @@ describe('Rule Distillation', () => {
     expect(capturedPrompt).toContain('obj.foo -> obj?.foo')
   })
 
-  it('should render (not captured) fallback when evidence is absent', async () => {
-    const mockJson = {
-      slug: 'optional-chaining-buggy',
-      triggers: {
-        tools: ['Bash'],
-        command_prefix: ['bun test'],
-        error_signatures: ['bash|TypeError|src/buggy.ts'],
-      },
-      anchor_file: 'src/buggy.ts',
-      advice: 'Always use optional chaining when accessing property of potentially null object.',
-    }
-
-    let capturedPrompt = ''
-    const mockProvider: LLMProvider = {
+  it('rejects missing causal evidence before calling the provider', async () => {
+    let calls = 0
+    setProvider({
       name: 'anthropic',
-      createMessageStream: async function* (messages) {
-        const first = messages[0]
-        const content = first?.content
-        if (typeof content === 'string') {
-          capturedPrompt = content
-        } else if (Array.isArray(content)) {
-          const textPart = content.find(
-            (part): part is { type: 'text'; text: string } => part.type === 'text',
-          )
-          capturedPrompt = textPart?.text ?? ''
-        }
-        yield { type: 'text_delta', text: JSON.stringify(mockJson) }
+      createMessageStream: async function* () {
+        calls++
+        yield { type: 'text_delta', text: '{}' }
       },
-    }
-
-    setProvider(mockProvider)
-
+    })
     await expect(
-      distillEpisode(mockEpisode, {
-        model: 'mock-model',
-        extractorVersion: '0.2.0',
-      }),
-    ).resolves.toBeDefined()
+      distillEpisode(
+        { ...mockEpisode, evidence: undefined },
+        {
+          model: 'mock',
+          extractorVersion: '0.2.0',
+        },
+      ),
+    ).rejects.toThrow('captured error and fix evidence')
+    expect(calls).toBe(0)
+  })
 
-    const notCapturedCount = capturedPrompt.split('(not captured)').length - 1
-    expect(notCapturedCount).toBe(2)
+  it('never expands observed triggers even if the distiller requests a broad trigger', async () => {
+    setProvider({
+      name: 'anthropic',
+      createMessageStream: async function* () {
+        yield {
+          type: 'text_delta',
+          text: JSON.stringify({
+            slug: 'observed',
+            triggers: { error_signatures: ['bash|TypeError'] },
+            advice: 'Check the missing value.',
+          }),
+        }
+      },
+    })
+    const rule = await distillEpisode(mockEpisode, { model: 'mock', extractorVersion: '0.2.0' })
+    expect(rule.triggers.error_signatures).toEqual([mockEpisode.failure.signature])
+  })
+
+  it('honors distiller abstention', async () => {
+    setProvider({
+      name: 'anthropic',
+      createMessageStream: async function* () {
+        yield { type: 'text_delta', text: '{"abstain":true}' }
+      },
+    })
+    await expect(
+      distillEpisode(mockEpisode, { model: 'mock', extractorVersion: '0.2.0' }),
+    ).rejects.toThrow('Distiller abstained')
   })
 
   it('should include the generalization requirement in the prompt template', () => {

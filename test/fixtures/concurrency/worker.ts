@@ -27,6 +27,7 @@ for (let i = 0; i < 20; i++) {
       injectedRules: [
         {
           rule: snapshot,
+          command: 'test',
           fingerprint: {
             tool: 'Bash',
             error_class: 'Error',

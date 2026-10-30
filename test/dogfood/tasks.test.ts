@@ -87,3 +87,14 @@ test('all task families have visible learnable failures and independent hidden d
     await rm(dir, { recursive: true, force: true })
   }
 }, 30000)
+
+test('stream seed 2 is deterministic and disjoint from every default training and held-out seed', () => {
+  const original = new Set(generateStream().map((task) => task.seed))
+  const fresh = generateStream(undefined, undefined, 2)
+  expect(fresh).toEqual(generateStream(undefined, undefined, 2))
+  expect(fresh.every((task) => !original.has(task.seed))).toBe(true)
+  expect(new Set(fresh.map((task) => task.seed)).size).toBe(fresh.length)
+  expect(fresh.every((task) => task.seed === task.seed >>> 0)).toBe(true)
+  for (const seed of [0, -1, 1.5, 4295, Number.MAX_SAFE_INTEGER])
+    expect(() => generateStream(undefined, undefined, seed)).toThrow('Stream seed')
+})

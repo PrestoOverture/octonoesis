@@ -85,7 +85,13 @@ test('failure recall and hit preserve main ledger, messages, and model input', a
   if (!recall || !outcome) throw new Error('Missing learning events')
   expect(actual.events.indexOf(recall)).toBeLessThan(actual.events.indexOf(outcome))
   const normalize = (value: unknown) => JSON.parse(JSON.stringify(value).replaceAll(root, '<repo>'))
-  expect(normalize(actual.ledger)).toEqual(baseline.ledger)
+  const { journal, ...metrics } = actual.ledger
+  expect(journal.some((event) => event.error_excerpt?.includes('TypeError: broken'))).toBe(true)
+  expect(journal.some((event) => event.fix_diff?.includes('+++ after\nfixed'))).toBe(true)
+  const withoutEvidence = journal.map(
+    ({ error_excerpt: _error, fix_diff: _fix, ...event }) => event,
+  )
+  expect(normalize({ ...metrics, journal: withoutEvidence })).toEqual(baseline.ledger)
   expect(normalize(actual.messages)).toEqual(baseline.messages)
   // Compare the stable system prompt and canonical provider messages against main.
   const inputs = JSON.stringify(normalize(actual.inputs)).replace(/\d{4}-\d{2}-\d{2}/g, '<date>')
@@ -154,6 +160,7 @@ test('distillation yields persisted candidate before completion and reports late
     fix_candidates: [{ tool: 'Edit', path: 'bug.txt', summary: 'fixed', role: 'direct' as const }],
     attribution: { status: 'single_direct' as const, primary: 'bug.txt', confidence: 0.9 },
     verification: { cmd: 'bun test', exit_code: 0 },
+    evidence: { errorExcerpt: 'TypeError: broken', fixDiff: 'broken -> fixed' },
     outcome: 'resolved' as const,
     journal_line_range: { start: 1, end: 3 },
     value_score: 1,

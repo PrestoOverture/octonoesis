@@ -42,6 +42,7 @@ describe('Episode Session-End Hook', () => {
         session_id: sessionId,
         kind: 'tool',
         tool: 'Bash',
+        cmd: 'bun test',
         input_digest: 'input-1',
         outcome: 'failure',
         error_class: 'TypeError',

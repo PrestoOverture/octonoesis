@@ -68,9 +68,11 @@ describe('Rebuild rules capability', () => {
       primary: 'package.json',
       confidence: 0.9,
     },
+    verification: { cmd: 'bun test', exit_code: 0 },
     outcome: 'resolved',
     journal_line_range: { start: 1, end: 10 },
     value_score: 1.0,
+    evidence: { errorExcerpt: 'TypeError: missing value', fixDiff: 'value.name -> value?.name' },
     is_excluded: false,
     exclusion_reason: null,
   }
@@ -167,9 +169,14 @@ describe('Rebuild rules capability', () => {
         },
         fix_candidates: [{ tool: 'Edit', path: file, summary: 'fixed', role: 'direct' }],
         attribution: { status: 'single_direct', primary: file, confidence: 0.9 },
+        verification: { cmd: 'bun test', exit_code: 0 },
         outcome: 'resolved',
         journal_line_range: { start: 1, end: 1 },
         value_score: 1,
+        evidence: {
+          errorExcerpt: 'TypeError: missing value',
+          fixDiff: 'value.name -> value?.name',
+        },
         is_excluded: false,
         exclusion_reason: null,
       }

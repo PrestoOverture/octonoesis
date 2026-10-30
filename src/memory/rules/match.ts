@@ -43,7 +43,7 @@ export function findMatchingRules(fingerprints: Fingerprint[], rules: RuleFile[]
               ? fingerprint.medium
               : fingerprint.coarse
 
-        if (rule.triggers.error_signatures.includes(signature)) {
+        if (matchingSignatures(rule).includes(signature)) {
           matchedRuleIds.add(rule.id)
           results.push({
             rule,
@@ -78,4 +78,13 @@ ${match.rule.advice}`
   return `*The following rule matched your current error signature:*
 
 ${match.rule.advice}`
+}
+
+/** Legacy expanded rules retain only their most specific observed trigger(s). */
+export function matchingSignatures(rule: RuleFile): string[] {
+  const signatures = rule.triggers.error_signatures
+  const specificity = Math.max(
+    ...signatures.map((signature) => Math.min(4, signature.split('|').length)),
+  )
+  return signatures.filter((signature) => Math.min(4, signature.split('|').length) === specificity)
 }

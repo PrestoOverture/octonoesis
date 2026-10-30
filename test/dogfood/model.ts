@@ -37,6 +37,7 @@ export interface Plan {
   model: string
   registered_at: string
   source_hash: string
+  stream_seed: number
   stream_hash: string
   tasks: Task[]
   jobs: Job[]

@@ -11,9 +11,10 @@ import { getMemoryDir } from '../../utils/path.ts'
 import { isMemoryDisabled } from '../availability'
 import { readEpisodes } from '../episodes/store.ts'
 import type { Episode } from '../episodes/types.ts'
-import { distillEpisode } from './distill.ts'
+import { distillEpisode, isDistillableEpisode } from './distill.ts'
 import { disambiguateRuleId } from './identity.ts'
 import { updateLifecycle } from './lifecycle.ts'
+import { matchingSignatures } from './match.ts'
 import { enforcePoolCap } from './pool.ts'
 import { archiveRule, loadAllRules, loadAllRulesIncludingArchived, saveRule } from './store.ts'
 import type { RuleFile, RuleStatus } from './types.ts'
@@ -73,7 +74,7 @@ function signatureLevels(signature: string): string[] {
  * @returns True if the rule covers any level of the signature, false otherwise
  */
 function ruleCoversSignature(rule: RuleFile, signature: string): boolean {
-  return signatureLevels(signature).some((level) => rule.triggers.error_signatures.includes(level))
+  return signatureLevels(signature).some((level) => matchingSignatures(rule).includes(level))
 }
 
 /**
@@ -94,8 +95,7 @@ function isTerminalRule(rule: RuleFile): boolean {
  */
 function isAutoDistillEligible(episode: Episode): boolean {
   return (
-    !episode.is_excluded &&
-    episode.outcome === 'resolved' &&
+    isDistillableEpisode(episode) &&
     episode.attribution.status !== 'unattributable' &&
     episode.value_score > AUTO_DISTILL_MIN_VALUE_SCORE
   )
