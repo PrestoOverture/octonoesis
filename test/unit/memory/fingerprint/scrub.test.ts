@@ -59,6 +59,27 @@ describe('Universal Scrubber', () => {
     expect(scrub(input, repoRoot)).toBe(input)
   })
 
+  it('redacts credential assignments and standalone API tokens', () => {
+    const secret = 'sk-proj-syntheticCredentialForRedactionOnly'
+    const opaque = 'synthetic-opaque-credential-for-redaction-only'
+    for (const input of [
+      `API_KEY="${secret}"`,
+      `SERVICE_TOKEN=${opaque}`,
+      `const apiKey = '${opaque}';`,
+      `{"client_secret":"${opaque}"}`,
+      `Authorization: "Bearer ${opaque}"`,
+      `copied credential ${secret}`,
+    ]) {
+      const result = scrub(input, repoRoot)
+      expect(result).not.toContain(secret)
+      expect(result).not.toContain(opaque)
+      expect(result).toContain('[REDACTED]')
+    }
+    expect(scrub('const tokenCount = 3; const maxTokens = 20;', repoRoot)).toBe(
+      'const tokenCount = 3; const maxTokens = 20;',
+    )
+  })
+
   it('should handle empty or undefined input gracefully', () => {
     expect(scrub('', repoRoot)).toBe('')
   })

@@ -431,7 +431,7 @@ export async function runTool(
       name === 'Edit'
         ? `--- before\n${input.old_string ?? ''}\n+++ after\n${input.new_string ?? ''}`
         : `+++ written contents\n${input.content ?? ''}`
-    fixDiff = `${targetPath}\n${fixDiff}`.slice(0, 12000)
+    fixDiff = scrub(`${targetPath}\n${fixDiff}`, ctx.repoRoot).slice(0, 12000)
   }
 
   appendJournal({
