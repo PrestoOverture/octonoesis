@@ -1,11 +1,11 @@
 import { expect, test } from 'bun:test'
 import { CALIBRATION_RULE } from './calibration'
 import type { Observation, Plan } from './model'
-import { markdown, mcnemar, pairedStats, planningPower, report } from './stats'
-import { digest, generateStream } from './tasks'
+import { clusterStats, markdown, mcnemar, pairedStats, planningPower, report } from './stats'
+import { digest, families, generateStream } from './tasks'
 
 function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
-  const tasks = generateStream(30, 120)
+  const tasks = generateStream(6 * families.length, 120)
   const jobs: Plan['jobs'] = tasks.flatMap<Plan['jobs'][number]>((task) =>
     task.split === 'train'
       ? [{ id: task.id, task, arm: 'train' as const }]
@@ -25,7 +25,7 @@ function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
     hypothesis: 'synthetic',
     metrics: {},
     test: 'McNemar',
-    sample_size: { training: 30, pairs: 120 },
+    sample_size: { training: 6 * families.length, pairs: 120 },
     stopping_rule: 'fixed',
     evaluation_concurrency: 1,
     error_tolerance: {
@@ -37,8 +37,14 @@ function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
   }
   const rows: Observation[] = jobs.map((job) => {
     const i = Number(job.task.id.split('-')[1])
+    // Swap two variant positions to avoid an artificially zero family variance.
+    const k = i === 34 ? 38 : i === 38 ? 34 : i
     const pass =
-      job.arm === 'train' ? Math.floor(i / 3) % 2 === 0 : job.arm === 'rules-on' ? on(i) : off(i)
+      job.arm === 'train'
+        ? Math.floor(i / families.length) % 2 === 0
+        : job.arm === 'rules-on'
+          ? on(k)
+          : off(k)
     return {
       job,
       status: pass ? 'PASS' : 'FAIL',
@@ -145,13 +151,15 @@ test('incomplete, uncalibrated, mock, missing-rule and operational-error runs ca
   expect(
     report(
       plan,
-      rows.map((r, i) => (i < 2 ? { ...r, status: 'ERROR' } : r)),
+      rows.map((r, i) => (i < 4 ? { ...r, status: 'ERROR' } : r)),
     ).verdict,
   ).toBe('inconclusive')
   expect(() =>
     report(
       plan,
-      rows.map((r, i) => (i === 30 ? { ...r, job: { ...r.job, arm: 'train' } } : r)),
+      rows.map((r, i) =>
+        i === 6 * families.length ? { ...r, job: { ...r.job, arm: 'train' } } : r,
+      ),
     ),
   ).toThrow('preregistered')
 })
@@ -201,7 +209,68 @@ test('error tolerance is inclusive at 5% of pairs and rejects the next pair or a
   expect(
     report(
       plan,
-      rows.map((r, i) => (i < 2 ? { ...r, status: 'ERROR' } : r)),
+      rows.map((r, i) => (i < 4 ? { ...r, status: 'ERROR' } : r)),
     ).error_tolerance.eligible,
   ).toBe(false)
+})
+
+function clusterRows(effects: number[], pairsPerFamily = 40): Observation[] {
+  return generateStream(families.length, families.length * pairsPerFamily)
+    .filter((t) => t.split === 'heldout')
+    .flatMap((task) => {
+      const g = families.indexOf(task.family)
+      const effect = effects[g] as number
+      const i = Math.floor(Number(task.id.split('-')[1]) / families.length)
+      const discordant = i < Math.round(Math.abs(effect) * pairsPerFamily)
+      return (['rules-on', 'rules-off'] as const).map((arm) => ({
+        job: { id: `${task.id}-${arm}`, task, arm },
+        status:
+          discordant && (arm === 'rules-on') === effect > 0 ? ('PASS' as const) : ('FAIL' as const),
+        fingerprints: [],
+        hits: 0,
+        misses: 0,
+        rules_before: 1,
+        ledger: 'simulated',
+      }))
+    })
+}
+test('strong within-family correlation widens primary CI versus naive McNemar and reports family effects', () => {
+  const rows = clusterRows([1, 1, 1, 1, 1, 1, 1, -1, -1, -1], 100)
+  const clustered = clusterStats(rows)
+  const naive = pairedStats(rows)
+  expect(clustered.clusters).toBe(10)
+  expect(clustered.degrees_of_freedom).toBe(9)
+  expect(Object.keys(clustered.per_family).length).toBe(10)
+  expect(clustered.risk_difference).toBeCloseTo(0.4)
+  expect((clustered.ci95?.[1] as number) - (clustered.ci95?.[0] as number)).toBeGreaterThan(
+    (naive.ci95?.[1] as number) - (naive.ci95?.[0] as number),
+  )
+  expect(clustered.p_value).toBeGreaterThan(0.05)
+  expect(naive.p_value).toBeLessThan(0.001)
+})
+test('family-cluster test controls simulated null type-I error despite perfectly correlated variants', () => {
+  let state = 18433
+  const random = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    return state / 4294967296
+  }
+  let rejected = 0
+  const simulations = 2000
+  // Null draws independent families with symmetric effects, but all 20 paired
+  // differences within each family agree: ICC = 1. No outcome-driven tuning.
+  for (let run = 0; run < simulations; run++) {
+    const effects = families.map(() => (random() < 0.5 ? -1 : 1))
+    if ((clusterStats(clusterRows(effects, 20)).p_value as number) < 0.05) rejected++
+  }
+  // Exact null rejection probability for G=10 Rademacher means is 22/1024.
+  expect(rejected / simulations).toBeLessThan(0.05)
+  expect(rejected / simulations).toBeGreaterThan(0.005)
+})
+test('Student-t tails and critical values agree with tabulated values', async () => {
+  const { studentCritical, studentTwoSided } = await import('./distributions')
+  expect(studentCritical(9)).toBeCloseTo(2.2621571628, 8)
+  expect(studentCritical(1)).toBeCloseTo(12.7062047364, 8)
+  expect(studentTwoSided(1, 1)).toBeCloseTo(0.5, 10)
+  expect(studentTwoSided(0, 9)).toBe(1)
+  expect(studentTwoSided(2.2621571628, 9)).toBeCloseTo(0.05, 9)
 })
