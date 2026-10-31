@@ -200,3 +200,27 @@ not an observed rate. No live calibration was run. Keyless tests require starter
 to fail hidden groups, references to pass public and private checks, deterministic
 materialization and seeded replay (including stream seeds 4 and 5), and rejection
 of every individual visible-clause deletion by the coverage audit.
+
+## Additional semantic families (batch B)
+
+Five families in `extra-tasks3.ts` and private `extra-check3.ts` append to the
+stream without changing calibration policy. Their complete clauses are copied to
+both the prompt and generated README. Public examples expose a recurring failure;
+independent seeded hidden groups vary values and interactions and cite every clause.
+
+| Family | Intended recurring, learnable failure |
+|---|---|
+| money-allocate | Sorting equal remainders without preserving original index changes who receives the last minor unit. Allocate the absolute amount exactly, then apply its sign. |
+| token-bucket | Moving the refill timestamp backwards manufactures tokens when the clock recovers. Keep a high-water timestamp, including after failed takes. |
+| debounce-scheduler | Clearing pending state after invoking user code erases a reentrant call's timer. Detach the old burst before calling the callback. |
+| rational-math | Reducing terms without normalizing a negative denominator breaks canonical equality and comparison. Normalize signs before reduction, including zero. |
+| stable-heap | Assigning a new sequence number during priority updates breaks FIFO ties. Insertion age belongs to the handle's entire active lifetime. |
+
+The starter for each family is an otherwise plausible implementation containing
+that recurring defect. Public fixtures vary by seed; private models use integer
+entitlements, a high-water clock, an injected deterministic scheduler, exact
+fraction identities, and a sorted active-handle model respectively. Async fixtures
+use no real timers. Keyless tests exercise starter rejection, oracle public/hidden
+success, clause-deletion coverage, repeated materialization and replay for stream
+seeds 4 and 5. The intended first-tested-repair failure target is approximately
+30–60%; no live runs or empirical rate claim accompany this addition.

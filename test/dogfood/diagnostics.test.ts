@@ -220,7 +220,18 @@ test('oracle-internal exceptions and missing grader input are ERROR, not task fa
       "from './extra-check2'",
       `from ${JSON.stringify(path.join(import.meta.dir, 'extra-check2.ts'))}`,
     )
-    await writeFile(checker, wired)
+    await writeFile(
+      checker,
+      wired
+        .replace(
+          "from './extra-check3'",
+          `from ${JSON.stringify(path.join(import.meta.dir, 'extra-check3.ts'))}`,
+        )
+        .replace(
+          "from './extra-tasks3'",
+          `from ${JSON.stringify(path.join(import.meta.dir, 'extra-tasks3.ts'))}`,
+        ),
+    )
     const result = await command(
       [process.execPath, '--no-env-file', checker, repo, 'single-flight', '1017'],
       repo,

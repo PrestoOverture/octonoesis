@@ -4,13 +4,15 @@ import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { extraGroups } from './extra-check'
 import { extraGroups2 } from './extra-check2'
+import { extraGroups3 } from './extra-check3'
 import type { ExtraSubject } from './extra-tasks'
 import type { ExtraSubject2 } from './extra-tasks2'
+import type { ExtraSubject3 } from './extra-tasks3'
 import { type Family, clauses, families, specifications } from './tasks'
 
 type Layer = { start: number; end: number; tag: string | null }
 type Move = { from: string; to: string; amount: unknown; id?: unknown }
-interface Subject extends ExtraSubject, ExtraSubject2 {
+interface Subject extends ExtraSubject, ExtraSubject2, ExtraSubject3 {
   createBus(): {
     on(
       event: string,
@@ -57,6 +59,7 @@ async function until(predicate: () => boolean, signal: AbortSignal): Promise<voi
 export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
   ...extraGroups,
   ...extraGroups2,
+  ...extraGroups3,
   'interval-overlay': [
     {
       id: 'peel-history',

@@ -3,8 +3,9 @@ import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/pro
 import os from 'node:os'
 import path from 'node:path'
 import { command } from '../eval/run'
-import { inspectHidden } from './check'
+import { inspectHidden, parseHiddenResults } from './check'
 import { extraClauses2 } from './extra-tasks2'
+import { extraClauses3 } from './extra-tasks3'
 import {
   digest,
   families,
@@ -14,6 +15,8 @@ import {
   partialSolution,
   solutions,
 } from './tasks'
+
+const addedClauses = { ...extraClauses2, ...extraClauses3 }
 
 test('task stream loads deterministically, recurs across sessions, and separates seeds', () => {
   const stream = loadStream(JSON.parse(JSON.stringify(generateStream())))
@@ -53,9 +56,22 @@ test('all task families have visible learnable failures and independent hidden d
       )
       expect(visible.code).toBe(1)
       expect(visible.stderr).toContain('Error')
-      if (family in extraClauses2) {
-        const starterGroups = await inspectHidden(repo, family, task.seed)
-        expect(starterGroups.some((group) => !group.passed)).toBe(true)
+      if (family in addedClauses) {
+        const starterHidden = await command(
+          [
+            process.execPath,
+            '--no-env-file',
+            path.join(import.meta.dir, 'check.ts'),
+            repo,
+            family,
+            String(task.seed),
+          ],
+          repo,
+          { PATH: process.env.PATH },
+          10000,
+        )
+        expect(starterHidden.code).toBe(1)
+        expect(parseHiddenResults(starterHidden.stdout).some((g) => !g.passed)).toBe(true)
       }
       const files = await readdir(repo)
       expect(files.sort()).toEqual(['README.md', 'contract.test.ts', 'src'])
@@ -122,19 +138,32 @@ test('all families materialize deterministically and replay seeded oracles ident
           expect(await readFile(path.join(a, file), 'utf8')).toBe(
             await readFile(path.join(b, file), 'utf8'),
           )
-        if (family in extraClauses2) {
-          const starter = await inspectHidden(b, family, task.seed)
-          expect(starter.some((g) => !g.passed)).toBe(true)
+        if (family in addedClauses) {
+          const starter = await command(
+            [
+              process.execPath,
+              '--no-env-file',
+              path.join(import.meta.dir, 'check.ts'),
+              a,
+              family,
+              String(task.seed),
+            ],
+            a,
+            { PATH: process.env.PATH },
+            10000,
+          )
+          expect(starter.code).toBe(1)
+          expect(parseHiddenResults(starter.stdout).some((g) => !g.passed)).toBe(true)
         }
         await writeFile(path.join(a, 'src/subject.ts'), solutions[family])
-        if (family in extraClauses2) {
-          const visible = await command(
+        if (family in addedClauses) {
+          const publicResult = await command(
             [process.execPath, '--no-env-file', 'test'],
             a,
             { PATH: process.env.PATH },
             10000,
           )
-          expect(visible.code).toBe(0)
+          expect(publicResult.code).toBe(0)
         }
         const first = await inspectHidden(a, family, task.seed)
         expect(first.every((g) => g.passed)).toBe(true)
