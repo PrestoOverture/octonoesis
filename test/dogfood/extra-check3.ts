@@ -40,6 +40,43 @@ function scheduler() {
 export const extraGroups3: Record<ExtraFamily3, AssertionGroup[]> = {
   'money-allocate': [
     {
+      id: 'custom-remainder-tie-priority',
+      requires: [
+        c['money-allocate'].ties,
+        c['money-allocate'].remainder,
+        c['money-allocate'].split,
+      ],
+      run(m, random) {
+        for (let k = 0; k < 40; k++) {
+          const n = 2 + random(7)
+          const first = random(n)
+          const order = Array.from({ length: n }, (_, i) => (first + i) % n)
+          const units = 1 + random(n - 1)
+          const expected = Array.from({ length: n }, (_, i) => (order.indexOf(i) < units ? 1 : 0))
+          equal(m.allocate(units, Object.freeze(Array(n).fill(1)), Object.freeze(order)), expected)
+          equal(
+            m.allocate(-units, Array(n).fill(1), order),
+            expected.map((x) => (x ? -1 : 0)),
+          )
+        }
+        // Priority breaks only ties, never unequal remainders or output positions.
+        equal(m.allocate(2, [1, 3], [1, 0]), [0, 2])
+        equal(m.allocate(1, [1, 2], [0, 1]), [0, 1])
+        for (const order of [
+          [],
+          [0],
+          [0, 0],
+          [0, 2],
+          [0, -1],
+          [0, 0.5],
+          [0, Number.NaN],
+          Object.assign(Array(2), { 0: 0 }),
+        ])
+          for (const total of [0, 2])
+            assert.throws(() => m.allocate(total, [1, 1], order), RangeError)
+      },
+    },
+    {
       id: 'exact-signed-remainders',
       requires: Object.values(c['money-allocate']),
       run(m, random) {

@@ -2,7 +2,7 @@
 export const extraClauses = {
   'csv-records': {
     format:
-      'Export parseCSV(text), returning an array of rows of string fields. Commas separate fields; LF and CRLF separate records outside quotes. A quoted field starts with a double quote at field start, may contain commas, LF or CRLF verbatim, and escapes a double quote by doubling it. After its closing quote only a delimiter, record separator or end is legal. Quotes inside unquoted fields, bare CR outside quotes, and unterminated quotes throw SyntaxError. Spaces are ordinary data, never trimmed.',
+      'Export parseCSV(text), returning an array of rows of string fields. Commas separate fields; LF and CRLF separate records outside quotes. Track field state separately from accumulated text: an empty quoted field is still closed, and quoting is allowed after every comma, not only at row start. A quoted field starts with a double quote at field start, may contain commas, LF or CRLF verbatim, and escapes a double quote by doubling it. After its closing quote only a delimiter, record separator or end is legal. Quotes inside unquoted fields, bare CR outside quotes, and unterminated quotes throw SyntaxError. Spaces are ordinary data, never trimmed.',
     edges:
       'Empty input returns []. A final record separator does not add a phantom row. Empty fields and blank records are retained: comma yields [["",""]], LF yields [[""]], and a quoted empty field yields [[""]]. Do not mutate any external state.',
   },
@@ -18,7 +18,7 @@ export const extraClauses = {
     patch:
       'Export mergePatch(target, patch) for JSON values (null, booleans, finite numbers, strings, arrays and plain objects). A non-object patch, including null or an array, replaces the target with a deep copy of the patch. An object patch treats any non-object target (including arrays) as an empty object; for each own enumerable patch key, null deletes that key, otherwise recursively merge that value. Unmentioned target keys remain. Arrays are replaced, never merged by index.',
     ownership:
-      'Return a deep copy with no object or array shared with either input, even for untouched subtrees. Never mutate either input; frozen inputs are valid. All keys, including __proto__, constructor and toString, are own data properties, not prototype operations. Result objects may have Object.prototype or null prototype.',
+      'Return a deep copy with no object or array shared with either input, even for untouched subtrees. Never mutate either input; frozen inputs are valid. All keys, including __proto__, constructor and toString, are own data properties, not prototype operations. Use Object.defineProperty, Object.fromEntries or a null-prototype object for writes; ordinary assignment to __proto__ on {} invokes a setter. Test existing target keys with Object.hasOwn so inherited properties never become merge inputs. Result objects may have Object.prototype or null prototype.',
   },
   'civil-date': {
     calendar:
@@ -43,9 +43,20 @@ export interface ExtraSubject {
   elect(candidates: string[], ballots: string[][]): string | null
 }
 export const extraInitial: Record<ExtraFamily, string> = {
-  'csv-records': `export function parseCSV(text){return text.split('\\n').map(r=>r.split(','))}`,
+  'csv-records': `export function parseCSV(text){
+ if(text==='')return [];const rows=[];let row=[],field='',state='start';
+ for(let i=0;i<text.length;i++){const c=text[i];
+ if(state==='quoted'){if(c==='"'){if(text[i+1]==='"'){i++;}else state='closed';}else field+=c;continue;}
+ if(c===','){row.push(field);field='';state='start';continue;}
+ if(c==='\\n'||c==='\\r'){if(c==='\\r'){if(text[i+1]!=='\\n')throw new SyntaxError('CR');i++;}row.push(field);rows.push(row);row=[];field='';state='start';if(i===text.length-1)return rows;continue;}
+ if(state==='closed')throw new SyntaxError('after quote');if(c==='"'){if(state!=='start')throw new SyntaxError('quote');state='quoted';}else{field+=c;state='plain';}}
+ if(state==='quoted')throw new SyntaxError('unclosed');row.push(field);rows.push(row);return rows;}`,
   'dependency-plan': 'export function plan(nodes,edges){return [...nodes].sort()}',
-  'merge-patch': 'export function mergePatch(target,patch){return {...target,...patch}}',
+  'merge-patch': `const obj=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
+ const put=(o,k,v)=>Object.defineProperty(o,k,{value:v,enumerable:true,writable:true,configurable:true});
+ const clone=x=>Array.isArray(x)?x.map(clone):obj(x)?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,clone(v)])):x;
+ // TODO: apply recursive merge/delete semantics; clone and put preserve independent own data properties.
+ export function mergePatch(target,patch){return {...clone(target),...clone(patch)}}`,
   'civil-date':
     'export function addDays(date,delta){return new Date(Date.parse(date)+delta*86400000).toISOString().slice(0,10)}',
   'ranked-vote': 'export function elect(candidates,ballots){return candidates[0]??null}',
@@ -83,7 +94,7 @@ export function extraPublic(seed: number): Record<ExtraFamily, string> {
   return {
     'csv-records': `assert.deepEqual(m.parseCSV('${tag},"a,b"\\r\\n"x""y",'),[['${tag}','a,b'],['x"y','']]);`,
     'dependency-plan': `assert.deepEqual(m.plan(['z','${tag}','a'],[['z','a'],['z','a']]),['${tag}','z','a']);`,
-    'merge-patch': `assert.deepEqual(m.mergePatch({keep:{x:${seed}},drop:1},{drop:null,add:[2]}),{keep:{x:${seed}},add:[2]});`,
+    'merge-patch': `assert.deepEqual(JSON.parse(JSON.stringify(m.mergePatch({keep:{x:${seed}},drop:1},{drop:null,add:[2]}))),{keep:{x:${seed}},add:[2]});`,
     'civil-date': `assert.equal(m.addDays('2024-02-${String(day).padStart(2, '0')}',1),'2024-02-${String(day + 1).padStart(2, '0')}');assert.equal(m.addDays('2000-02-28',1),'2000-02-29');assert.throws(()=>m.addDays('1900-02-29',0),RangeError);`,
     'ranked-vote': `assert.equal(m.elect(['z','${tag}','a'],[['z','a'],['${tag}','a'],['a']]),'a');`,
   }

@@ -131,3 +131,48 @@ test('every family clause is covered and removing it fails the coverage audit', 
       ).toThrow('lacks an explicit spec clause')
     }
 })
+
+test('merge-patch public checks accept the specified null-prototype result (train-67)', async () => {
+  const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'dogfood-merge-prototype-')))
+  try {
+    const task = generateStream().find((t) => t.family === 'merge-patch')
+    if (!task) throw new Error('Missing merge-patch task')
+    await materialize(task, dir)
+    await writeFile(
+      path.join(dir, 'src/subject.ts'),
+      solutions['merge-patch'].replace(
+        'const out=obj(target)?clone(target):{};',
+        'const out=Object.assign(Object.create(null),obj(target)?clone(target):{});',
+      ),
+    )
+    expect(
+      (
+        await command(
+          [process.execPath, '--no-env-file', 'test'],
+          dir,
+          { PATH: process.env.PATH },
+          10000,
+        )
+      ).code,
+    ).toBe(0)
+    expect(
+      (
+        await command(
+          [
+            process.execPath,
+            '--no-env-file',
+            path.join(import.meta.dir, 'check.ts'),
+            dir,
+            task.family,
+            String(task.seed),
+          ],
+          dir,
+          { PATH: process.env.PATH },
+          10000,
+        )
+      ).code,
+    ).toBe(0)
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

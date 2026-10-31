@@ -1,9 +1,10 @@
 export const extraClauses3 = {
   'money-allocate': {
+    ties: 'An optional third argument tieOrder is a permutation of all ratio indices, listed from highest to lowest priority for equal fractional remainders. Default to original index order. The output always stays in original ratio order; apply the same tie priority for negative totals. A supplied order with missing, repeated, noninteger or out-of-range indices throws RangeError, even for zero total or when no remainder units remain. Never mutate tieOrder; frozen arrays are valid.',
     split:
       'Export allocate(total, ratios). total is a safe integer in minor units; ratios is a nonempty array of nonnegative safe integers with a positive sum. Otherwise throw RangeError. Use exact integer arithmetic even when the ratio sum or products exceed the safe Number range. Never mutate ratios.',
     remainder:
-      'Allocate abs(total) proportionally: floor each exact share, then distribute leftover units by descending fractional remainder, breaking ties by original index. For negative totals negate the positive allocation, returning ordinary zero rather than -0.',
+      'Allocate abs(total) proportionally: floor each exact share, then distribute leftover units by descending fractional remainder, breaking ties by tieOrder when supplied, otherwise by original index. For negative totals negate the positive allocation, returning ordinary zero rather than -0.',
   },
   'token-bucket': {
     clock:
@@ -43,7 +44,7 @@ export interface Debounced {
   flush(): unknown
 }
 export interface ExtraSubject3 {
-  allocate(total: number, ratios: readonly number[]): number[]
+  allocate(total: number, ratios: readonly number[], tieOrder?: readonly number[]): number[]
   TokenBucket: new (
     capacity: number,
     rate: number,
@@ -70,7 +71,7 @@ export interface ExtraSubject3 {
 }
 export const extraSolutions3: Record<ExtraFamily3, string> = {
   'money-allocate':
-    'export function allocate(total,ratios){if(!Number.isSafeInteger(total)||!ratios.length||ratios.some(x=>!Number.isSafeInteger(x)||x<0))throw new RangeError();const sum=ratios.reduce((a,b)=>a+BigInt(b),0n);if(!sum)throw new RangeError();const t=BigInt(Math.abs(total)),parts=ratios.map((r,i)=>({i,q:t*BigInt(r)/sum,r:t*BigInt(r)%sum}));let left=t-parts.reduce((a,b)=>a+b.q,0n);for(const p of [...parts].sort((a,b)=>a.r===b.r?a.i-b.i:a.r>b.r?-1:1)){if(left-->0n)p.q++;}return parts.map(p=>p.q===0n?0:Number(p.q)*(total<0?-1:1));}',
+    'export function allocate(total,ratios,tieOrder){if(!Number.isSafeInteger(total)||!ratios.length||ratios.some(x=>!Number.isSafeInteger(x)||x<0))throw new RangeError();const sum=ratios.reduce((a,b)=>a+BigInt(b),0n);if(!sum)throw new RangeError();const order=tieOrder===undefined?ratios.map((_,i)=>i):tieOrder;if(order.length!==ratios.length||new Set(order).size!==ratios.length||Array.from(order).some(i=>!Number.isInteger(i)||i<0||i>=ratios.length))throw new RangeError();const rank=[];order.forEach((i,r)=>rank[i]=r);const t=BigInt(Math.abs(total)),parts=ratios.map((r,i)=>({i,q:t*BigInt(r)/sum,r:t*BigInt(r)%sum}));let left=t-parts.reduce((a,b)=>a+b.q,0n);for(const p of [...parts].sort((a,b)=>a.r===b.r?rank[a.i]-rank[b.i]:a.r>b.r?-1:1)){if(left-->0n)p.q++;}return parts.map(p=>p.q===0n?0:Number(p.q)*(total<0?-1:1));}',
   'token-bucket':
     'export class TokenBucket{constructor(capacity,rate,now){if(!Number.isFinite(capacity)||capacity<=0||!Number.isFinite(rate)||rate<=0)throw new RangeError();Object.assign(this,{capacity,rate,now,tokens:capacity,time:now()});}take(amount=1){if(!Number.isFinite(amount)||amount<=0)throw new RangeError();const t=Math.max(this.time,this.now());this.tokens=Math.min(this.capacity,this.tokens+(t-this.time)*this.rate);this.time=t;if(this.tokens<amount)return false;this.tokens-=amount;return true;}}',
   'debounce-scheduler':
@@ -81,7 +82,7 @@ export const extraSolutions3: Record<ExtraFamily3, string> = {
 }
 export function extraPartial3(family: ExtraFamily3): string {
   const source = extraSolutions3[family]
-  if (family === 'money-allocate') return source.replace('a.i-b.i', 'b.i-a.i')
+  if (family === 'money-allocate') return source.replace('rank[a.i]-rank[b.i]', 'b.i-a.i')
   if (family === 'token-bucket')
     return source
       .replace('Math.max(this.time,this.now())', 'this.now()')

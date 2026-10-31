@@ -7,6 +7,7 @@ export const extraClauses2 = {
       'Unquoted values are trimmed and end at the first # or ;. Double-quoted values preserve spaces and comment characters. A backslash introduces exactly one of n, r, t, double quote or backslash, decoding to newline, carriage return, tab, double quote or backslash respectively. After a closing quote only whitespace or a comment is legal. Malformed headers, assignments, quotes and unknown or dangling quoted escapes throw SyntaxError. LF and CRLF separate lines; empty input returns {}.',
   },
   'utf8-codec': {
+    bom: 'decodeUTF8(bytes, {stripBOM=false}={}) optionally removes exactly one U+FEFF only when it is the first decoded code point. Preserve subsequent U+FEFF values, including a second leading BOM, and preserve every BOM by default. Validate the entire byte array even when stripping a BOM.',
     scalar:
       'Export encodeUTF8(points) returning a number array and decodeUTF8(bytes) returning a code point number array. Code points must be integers from 0 through 0x10ffff excluding surrogates 0xd800 through 0xdfff. Use canonical shortest UTF-8 with one through four bytes. Never mutate inputs; frozen arrays are valid.',
     errors:
@@ -35,7 +36,7 @@ export type ExtraFamily2 = keyof typeof extraClauses2
 export interface ExtraSubject2 {
   parseINI(text: string): Record<string, Record<string, string>>
   encodeUTF8(points: number[]): number[]
-  decodeUTF8(bytes: number[]): number[]
+  decodeUTF8(bytes: number[], options?: { stripBOM?: boolean }): number[]
   compareVersions(a: string, b: string): number
   satisfies(version: string, range: string): boolean
   parseQuery(text: string): Record<string, string[]>
@@ -46,7 +47,7 @@ export interface ExtraSubject2 {
 export const extraSolutions2: Record<ExtraFamily2, string> = {
   'ini-config': String.raw`export function parseINI(text){const out={};let section='';const put=(o,k,v)=>Object.defineProperty(o,k,{value:v,enumerable:true,writable:true,configurable:true});for(let line of text.split(/\r?\n/)){line=line.trim();if(!line||/^[#;]/.test(line))continue;if(line[0]==='['){if(!/^\[[^\]]+\]$/.test(line))throw new SyntaxError();section=line.slice(1,-1).trim();if(!section)throw new SyntaxError();if(!Object.hasOwn(out,section))put(out,section,{});continue;}const eq=line.indexOf('=');if(eq<1)throw new SyntaxError();const key=line.slice(0,eq).trim();if(!key)throw new SyntaxError();let raw=line.slice(eq+1).trim(),value='';if(raw[0]==='"'){let i=1,closed=false;for(;i<raw.length;i++){let c=raw[i];if(c==='"'){closed=true;i++;break;}if(c==='\\'){c=raw[++i];const escapes={n:'\n',r:'\r',t:'\t','"':'"','\\':'\\'};if(!Object.hasOwn(escapes,c))throw new SyntaxError();c=escapes[c];}value+=c;}if(!closed||!/^\s*(?:[#;].*)?$/.test(raw.slice(i)))throw new SyntaxError();}else value=raw.split(/[;#]/)[0].trim();if(!Object.hasOwn(out,section))put(out,section,{});put(out[section],key,value);}return out;}`,
   'utf8-codec': `export function encodeUTF8(points){const out=[];for(const p of points){if(!Number.isInteger(p)||p<0||p>0x10ffff||(p>=0xd800&&p<=0xdfff))throw new RangeError();if(p<128)out.push(p);else if(p<2048)out.push(192|(p>>6),128|(p&63));else if(p<65536)out.push(224|(p>>12),128|((p>>6)&63),128|(p&63));else out.push(240|(p>>18),128|((p>>12)&63),128|((p>>6)&63),128|(p&63));}return out;}
-export function decodeUTF8(bytes){const out=[];for(const b of bytes)if(!Number.isInteger(b)||b<0||b>255)throw new RangeError();for(let i=0;i<bytes.length;){const b=bytes[i++];let n,p,min;if(b<128){out.push(b);continue;}if(b>=194&&b<=223){n=1;p=b&31;min=128;}else if(b>=224&&b<=239){n=2;p=b&15;min=2048;}else if(b>=240&&b<=244){n=3;p=b&7;min=65536;}else throw new RangeError();while(n--){const c=bytes[i++];if(c===undefined||(c&192)!==128)throw new RangeError();p=p*64+(c&63);}if(p<min||p>0x10ffff||(p>=0xd800&&p<=0xdfff))throw new RangeError();out.push(p);}return out;}`,
+export function decodeUTF8(bytes,{stripBOM=false}={}){const out=[];for(const b of bytes)if(!Number.isInteger(b)||b<0||b>255)throw new RangeError();for(let i=0;i<bytes.length;){const b=bytes[i++];let n,p,min;if(b<128){out.push(b);continue;}if(b>=194&&b<=223){n=1;p=b&31;min=128;}else if(b>=224&&b<=239){n=2;p=b&15;min=2048;}else if(b>=240&&b<=244){n=3;p=b&7;min=65536;}else throw new RangeError();while(n--){const c=bytes[i++];if(c===undefined||(c&192)!==128)throw new RangeError();p=p*64+(c&63);}if(p<min||p>0x10ffff||(p>=0xd800&&p<=0xdfff))throw new RangeError();out.push(p);}if(stripBOM&&out[0]===0xfeff)out.shift();return out;}`,
   'semver-range': String.raw`function parse(s){const m=/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/.exec(s);if(!m||m[0]!==s)throw new RangeError();const core=m.slice(1,4).map(Number),pre=m[4]?.split('.')??[];if(core.some(n=>!Number.isSafeInteger(n))||pre.some(x=>/^\d+$/.test(x)&&x.length>1&&x[0]==='0'))throw new RangeError();return {core,pre};}
 function cmp(a,b){for(let i=0;i<3;i++)if(a.core[i]!==b.core[i])return a.core[i]<b.core[i]?-1:1;if(!a.pre.length||!b.pre.length)return a.pre.length===b.pre.length?0:a.pre.length?-1:1;for(let i=0;i<Math.max(a.pre.length,b.pre.length);i++){const x=a.pre[i],y=b.pre[i];if(x===y)continue;if(x===undefined)return -1;if(y===undefined)return 1;const nx=/^\d+$/.test(x),ny=/^\d+$/.test(y);if(nx&&ny)return BigInt(x)<BigInt(y)?-1:1;if(nx!==ny)return nx?-1:1;return x<y?-1:1;}return 0;}
 export function compareVersions(a,b){return cmp(parse(a),parse(b));}
@@ -66,7 +67,13 @@ export function extraPartial2(family: ExtraFamily2): string {
       'let raw=line.slice(eq+1).trim()',
       'let raw=line.slice(eq+1).trim().split(/[;#]/)[0].trim()',
     )
-  if (family === 'utf8-codec') return s.replace('p<min||', '')
+  if (family === 'utf8-codec')
+    return s
+      .replace('p<min||', '')
+      .replace(
+        'if(stripBOM&&out[0]===0xfeff)out.shift();',
+        'if(stripBOM)return out.filter(p=>p!==0xfeff);',
+      )
   if (family === 'semver-range')
     return s.replace(
       'if(v.pre.length&&!parts.some(p=>p.v.pre.length&&p.v.core.every((n,i)=>n===v.core[i])))return false;',

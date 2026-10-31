@@ -117,9 +117,9 @@ export const clauses = {
   'async-pool': {
     capacity:
       'new Pool(limit) requires a positive integer limit and otherwise throws RangeError. run(job, signal?) always returns a Promise. Each pool has independent capacity. Jobs are functions returning a value or Promise, or throwing synchronously; invoke them from a microtask and never exceed limit concurrently unsettled jobs.',
-    fifo: 'Start jobs in FIFO submission order, skipping cancelled entries. Synchronous throws and promise rejections release capacity exactly once and do not block later work. A job submitted reentrantly joins the tail behind older queued jobs.',
+    fifo: 'Start jobs in FIFO submission order, skipping cancelled entries. Synchronous throws and promise rejections REJECT the run caller with the original thrown value (never resolve with an Error); they release capacity exactly once and do not block later work. A job submitted reentrantly joins the tail behind older queued jobs.',
     cancellation:
-      'Cancellation applies only before a job starts. An already-aborted or queued-aborted signal rejects that caller immediately with signal.reason and never invokes its job. Aborting between run and the job-start microtask must also skip the job. Once the job starts, ignore its signal: its caller receives the underlying result or rejection, and its capacity stays occupied until settlement. Request pre-start abort rejection synchronously in the abort notification (or in run when already aborted); Promise reactions still run asynchronously.',
+      'Cancellation applies only before a job starts. An already-aborted or queued-aborted signal rejects that caller immediately with signal.reason and never invokes its job. A job starts only immediately before its function is invoked inside the microtask, not when a permit is reserved or an entry leaves the queue. Aborting between run and that invocation must still skip the job. Once the job starts, ignore its signal: its caller receives the underlying result or rejection, and its capacity stays occupied until settlement. Request pre-start abort rejection synchronously in the abort notification (or in run when already aborted); Promise reactions still run asynchronously.',
   },
 } as const
 
@@ -149,8 +149,14 @@ export const initialSources: Record<Family, string> = {
  invalidate(key){}
 }`,
   'event-bus': 'export function createBus(){ return { on(){return ()=>false}, emit(){return 0} } }',
-  'async-pool':
-    'export class Pool { constructor(limit){} run(job,signal){return Promise.resolve().then(job)} }',
+  'async-pool': `export class Pool {
+ constructor(limit){if(!Number.isInteger(limit)||limit<1)throw new RangeError('limit');this.limit=limit;this.active=0;this.queue=[];}
+ run(job,signal){return new Promise((resolve,reject)=>{const entry={job,signal,resolve,reject};this.queue.push(entry);this.pump();});}
+ pump(){while(this.active<this.limit&&this.queue.length){const entry=this.queue.shift();this.active++;
+ // Promise chaining preserves both synchronous throws and asynchronous rejection.
+ // TODO: handle cancellation before invocation (including while queued), and ignore it once running.
+ Promise.resolve().then(()=>entry.job()).then(entry.resolve,entry.reject).finally(()=>{this.active--;this.pump();});}}
+}`,
 }
 
 /** Reference implementations are used ONLY by the scripted mock provider and oracle tests. */

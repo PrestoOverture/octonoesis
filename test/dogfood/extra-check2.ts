@@ -67,6 +67,26 @@ export const extraGroups2: Record<ExtraFamily2, AssertionGroup[]> = {
   ],
   'utf8-codec': [
     {
+      id: 'utf8-strip-only-first-bom',
+      requires: [c['utf8-codec'].bom, c['utf8-codec'].errors],
+      run(m, random) {
+        const bom = [239, 187, 191]
+        for (let i = 0; i < 30; i++) {
+          const ascii = 32 + random(95)
+          const bytes = freeze([...bom, ...bom, ascii, ...bom])
+          assert.deepEqual(m.decodeUTF8(bytes), [0xfeff, 0xfeff, ascii, 0xfeff])
+          assert.deepEqual(m.decodeUTF8(bytes, { stripBOM: true }), [0xfeff, ascii, 0xfeff])
+          assert.deepEqual(m.decodeUTF8(freeze([ascii, ...bom]), { stripBOM: true }), [
+            ascii,
+            0xfeff,
+          ])
+        }
+        assert.deepEqual(m.decodeUTF8([], { stripBOM: true }), [])
+        assert.deepEqual(m.decodeUTF8(bom, { stripBOM: true }), [])
+        assert.throws(() => m.decodeUTF8([...bom, 224, 128, 128], { stripBOM: true }), RangeError)
+      },
+    },
+    {
       id: 'utf8-independent-scalar-encoding',
       requires: [c['utf8-codec'].scalar, c['utf8-codec'].errors],
       run(m, random) {

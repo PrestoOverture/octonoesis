@@ -17,6 +17,12 @@ import {
 } from './tasks'
 
 const addedClauses = { ...extraClauses2, ...extraClauses3 }
+const checkedStarters = new Set([
+  'async-pool',
+  'csv-records',
+  'merge-patch',
+  ...Object.keys(addedClauses),
+])
 
 test('task stream loads deterministically, recurs across sessions, and separates seeds', () => {
   const stream = loadStream(JSON.parse(JSON.stringify(generateStream())))
@@ -56,7 +62,7 @@ test('all task families have visible learnable failures and independent hidden d
       )
       expect(visible.code).toBe(1)
       expect(visible.stderr).toContain('Error')
-      if (family in addedClauses) {
+      if (checkedStarters.has(family)) {
         const starterHidden = await command(
           [
             process.execPath,
@@ -138,7 +144,7 @@ test('all families materialize deterministically and replay seeded oracles ident
           expect(await readFile(path.join(a, file), 'utf8')).toBe(
             await readFile(path.join(b, file), 'utf8'),
           )
-        if (family in addedClauses) {
+        if (checkedStarters.has(family)) {
           const starter = await command(
             [
               process.execPath,
@@ -156,7 +162,7 @@ test('all families materialize deterministically and replay seeded oracles ident
           expect(parseHiddenResults(starter.stdout).some((g) => !g.passed)).toBe(true)
         }
         await writeFile(path.join(a, 'src/subject.ts'), solutions[family])
-        if (family in addedClauses) {
+        if (checkedStarters.has(family)) {
           const publicResult = await command(
             [process.execPath, '--no-env-file', 'test'],
             a,
