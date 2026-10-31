@@ -123,7 +123,9 @@ test('ten-family power-computed fixed sample scales coverage and operational lim
     expect(plan.sample_size).toEqual({ training: 8 * families.length, pairs })
     expect(plan.jobs.length).toBe(8 * families.length + 2 * pairs)
     expect(errorTolerance(plan, []).max_affected_pairs).toBe(maxErrors)
-    expect(errorTolerance(plan, []).max_training_errors).toBe(4)
+    expect(errorTolerance(plan, []).max_training_errors).toBe(
+      Math.floor(8 * families.length * 0.05),
+    )
     expect(errorTolerance(plan, []).max_arm_count_difference).toBe(1)
     const errors = plan.tasks
       .filter((task) => task.split === 'heldout')
@@ -214,7 +216,18 @@ test('oracle-internal exceptions and missing grader input are ERROR, not task fa
         'group.run(m, random, controller.signal)',
         "(() => { throw new Error('oracle regression sentinel') })()",
       )
-    await writeFile(checker, source)
+    await writeFile(
+      checker,
+      source
+        .replace(
+          "from './extra-check3'",
+          `from ${JSON.stringify(path.join(import.meta.dir, 'extra-check3.ts'))}`,
+        )
+        .replace(
+          "from './extra-tasks3'",
+          `from ${JSON.stringify(path.join(import.meta.dir, 'extra-tasks3.ts'))}`,
+        ),
+    )
     const result = await command(
       [process.execPath, '--no-env-file', checker, repo, 'single-flight', '1017'],
       repo,

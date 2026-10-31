@@ -12,19 +12,20 @@ test('default +5pp cluster power target is minimal integer allocation and respon
   expect(design.alpha).toBe(0.05)
   expect(design.power).toBe(0.8)
   expect(design.design_effect).toBe(2)
-  expect(design.computed_pairs_per_family).toBe(397)
   expect(design.computed_power).toBeGreaterThan(0.8)
   expect(clusterPlanningPower(design.computed_pairs_per_family - 1, design)).toBeLessThan(0.8)
-  expect(planPower({ families: 10, mde: 0.1 }).computed_pairs_per_family).toBeLessThan(
+  expect(planPower({ families: families.length, mde: 0.1 }).computed_pairs_per_family).toBeLessThan(
     design.computed_pairs_per_family,
   )
-  expect(planPower({ families: 10, design_effect: 4 }).computed_pairs_per_family).toBeGreaterThan(
-    design.computed_pairs_per_family,
+  expect(
+    planPower({ families: families.length, design_effect: 4 }).computed_pairs_per_family,
+  ).toBeGreaterThan(design.computed_pairs_per_family)
+  expect(
+    planPower({ families: families.length, discordance: 0.25 }).computed_pairs_per_family,
+  ).toBeLessThan(design.computed_pairs_per_family)
+  expect(planPower({ families: families.length * 2 }).computed_pairs).toBeLessThan(
+    design.computed_pairs,
   )
-  expect(planPower({ families: 10, discordance: 0.25 }).computed_pairs_per_family).toBeLessThan(
-    design.computed_pairs_per_family,
-  )
-  expect(planPower({ families: 20 }).computed_pairs).toBeLessThan(design.computed_pairs)
   // With no effect, the integrated central-t rejection probability is alpha.
   expect(clusterPlanningPower(1, { ...design, mde: 0 })).toBeCloseTo(0.05, 6)
   for (const input of [
@@ -38,7 +39,7 @@ test('default +5pp cluster power target is minimal integer allocation and respon
     { power: 1 },
     { families: 2 },
   ])
-    expect(() => planPower({ families: 10, ...input })).toThrow()
+    expect(() => planPower({ families: families.length, ...input })).toThrow()
 })
 
 test('preregistration freezes power assumptions, computed and scheduled allocations, and rejects changed resume', async () => {
@@ -58,7 +59,7 @@ test('preregistration freezes power assumptions, computed and scheduled allocati
     expect(retained.power_design).toEqual(plan.power_design)
     expect(plan.sample_size.pairs).toBe(7 * families.length)
     expect(plan.power_design.scheduled_pairs_per_family).toBe(7)
-    expect(plan.power_design.scheduled_pairs).toBe(70)
+    expect(plan.power_design.scheduled_pairs).toBe(7 * families.length)
     expect(plan.power_design.meets_planning_target).toBe(false)
     expect(plan.power_design.computed_pairs).toBe(
       plan.power_design.computed_pairs_per_family * families.length,

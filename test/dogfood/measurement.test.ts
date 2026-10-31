@@ -58,8 +58,12 @@ test('a deadline-killed session without JSON/journal is FAIL; a CLI spawn failur
   }
 })
 
+const sampleSize = families.length * 10
+const lowerFailures = sampleSize / 5
+const upperFailures = (sampleSize * 7) / 10
+
 function rows(failures: number): Observation[] {
-  return generateStream(60, 1)
+  return generateStream(sampleSize, 1)
     .filter((t) => t.split === 'train')
     .map((task, i) => ({
       job: { id: task.id, task, arm: 'train' },
@@ -80,20 +84,22 @@ function rows(failures: number): Observation[] {
     }))
 }
 test('pooled calibration uses inclusive count boundaries, coverage and observable signal', () => {
-  expect(calibrationGate(rows(12)).eligible).toBe(true)
-  expect(calibrationGate(rows(42)).eligible).toBe(true)
-  expect(calibrationGate(rows(11)).eligible).toBe(false)
-  expect(calibrationGate(rows(43)).eligible).toBe(false)
-  expect(calibrationGate(rows(12).map((r) => ({ ...r, first_attempt: undefined }))).eligible).toBe(
-    false,
-  )
+  expect(calibrationGate(rows(lowerFailures)).eligible).toBe(true)
+  expect(calibrationGate(rows(upperFailures)).eligible).toBe(true)
+  expect(calibrationGate(rows(lowerFailures - 1)).eligible).toBe(false)
+  expect(calibrationGate(rows(upperFailures + 1)).eligible).toBe(false)
   expect(
-    calibrationGate(rows(12).map((r) => ({ ...r, observed_repair_failure: false }))).eligible,
+    calibrationGate(rows(lowerFailures).map((r) => ({ ...r, first_attempt: undefined }))).eligible,
   ).toBe(false)
   expect(
-    calibrationGate(rows(12).map((r) => ({ ...r, observed_repair_resolution: false }))).eligible,
+    calibrationGate(rows(lowerFailures).map((r) => ({ ...r, observed_repair_failure: false })))
+      .eligible,
   ).toBe(false)
-  const impossible = rows(12).map((r) =>
+  expect(
+    calibrationGate(rows(lowerFailures).map((r) => ({ ...r, observed_repair_resolution: false })))
+      .eligible,
+  ).toBe(false)
+  const impossible = rows(lowerFailures).map((r) =>
     r.job.task.family === families[0] ? { ...r, status: 'FAIL' as const } : r,
   )
   expect(
@@ -101,14 +107,15 @@ test('pooled calibration uses inclusive count boundaries, coverage and observabl
       reason.includes('all valid sessions failed'),
     ),
   ).toBe(true)
-  const twoSaturated = rows(60).map((r, i) => ({
+  const twoSaturated = rows(sampleSize).map((r, i) => ({
     ...r,
     status: i < 3 ? ('FAIL' as const) : ('PASS' as const),
   }))
-  // Give each of three informative families four failures: pooled 12/60.
+  // Retain enough informative families to meet the pooled lower bound while others saturate.
   for (const r of twoSaturated)
     r.status =
-      families.slice(0, 3).includes(r.job.task.family) && Number(r.job.id.split('-')[1]) < 40
+      families.slice(0, Math.ceil(families.length / 5) + 1).includes(r.job.task.family) &&
+      Number(r.job.id.split('-')[1]) < 8 * families.length
         ? 'FAIL'
         : 'PASS'
   expect(calibrationGate(twoSaturated).eligible).toBe(true)

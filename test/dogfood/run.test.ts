@@ -29,9 +29,11 @@ async function temporary() {
   dirs.push(dir)
   return dir
 }
-afterEach(async () => {
+// Larger family streams leave more fixture files; allow cleanup to finish.
+// The local bun:test declaration omits Bun's hook timeout argument.
+;(afterEach as (fn: () => Promise<void>, timeout: number) => void)(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
-})
+}, 30000)
 async function ledgerSnapshot(): Promise<string> {
   const files: Record<string, string> = {}
   async function visit(dir: string) {

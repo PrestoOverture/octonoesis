@@ -161,3 +161,27 @@ bun test/dogfood/run.ts --dry-run --stream-seed 4 --concurrency 3 --output /tmp/
 - The dry-run provider scripts partial/correct code based on real injected advice and uses real query, tools, verification, episodes, distillation and accounting. It suppresses auto-memory forks through the mock child's fork-depth setting because no fork provider exists. It proves plumbing and discriminating checks, not model behavior; **every dry-run verdict is inconclusive**. Unit statistics tests separately establish that a planted arm effect can be detected.
 
 Round 6 (`7b90238`, six sessions per family, concurrency 10) had an informative primary endpoint in every family: pooled 12/28 valid failures (42.9%). Its two reported operational errors were train-5 (a genuine 900-second agent-session timeout) and train-17 (a normally completed session whose first-repair cache implementation left a hidden promise pending). The latter is a task failure under the verifier deadline rule above, not infrastructure failure. Reclassifying only that row gives 1/30 operational errors and 13/29 valid failures (44.8%), satisfying the unchanged calibration screen. The saved artifacts establish the diagnosis; keyless deadline regressions verify the fix. No difficulty, endpoint, statistical test or tolerance is changed.
+
+## Additional semantic families (batch B)
+
+Five families in `extra-tasks3.ts` and private `extra-check3.ts` append to the
+stream without changing calibration policy. Their complete clauses are copied to
+both the prompt and generated README. Public examples expose a recurring failure;
+independent seeded hidden groups vary values and interactions and cite every clause.
+
+| Family | Intended recurring, learnable failure |
+|---|---|
+| money-allocate | Sorting equal remainders without preserving original index changes who receives the last minor unit. Allocate the absolute amount exactly, then apply its sign. |
+| token-bucket | Moving the refill timestamp backwards manufactures tokens when the clock recovers. Keep a high-water timestamp, including after failed takes. |
+| debounce-scheduler | Clearing pending state after invoking user code erases a reentrant call's timer. Detach the old burst before calling the callback. |
+| rational-math | Reducing terms without normalizing a negative denominator breaks canonical equality and comparison. Normalize signs before reduction, including zero. |
+| stable-heap | Assigning a new sequence number during priority updates breaks FIFO ties. Insertion age belongs to the handle's entire active lifetime. |
+
+The starter for each family is an otherwise plausible implementation containing
+that recurring defect. Public fixtures vary by seed; private models use integer
+entitlements, a high-water clock, an injected deterministic scheduler, exact
+fraction identities, and a sorted active-handle model respectively. Async fixtures
+use no real timers. Keyless tests exercise starter rejection, oracle public/hidden
+success, clause-deletion coverage, repeated materialization and replay for stream
+seeds 4 and 5. The intended first-tested-repair failure target is approximately
+30–60%; no live runs or empirical rate claim accompany this addition.

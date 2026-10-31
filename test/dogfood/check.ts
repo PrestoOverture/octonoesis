@@ -3,12 +3,14 @@ import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { extraGroups } from './extra-check'
+import { extraGroups3 } from './extra-check3'
 import type { ExtraSubject } from './extra-tasks'
+import type { ExtraSubject3 } from './extra-tasks3'
 import { type Family, clauses, families, specifications } from './tasks'
 
 type Layer = { start: number; end: number; tag: string | null }
 type Move = { from: string; to: string; amount: unknown; id?: unknown }
-interface Subject extends ExtraSubject {
+interface Subject extends ExtraSubject, ExtraSubject3 {
   createBus(): {
     on(
       event: string,
@@ -54,6 +56,7 @@ async function until(predicate: () => boolean, signal: AbortSignal): Promise<voi
 /** Every executable assertion belongs to a group linked to verbatim agent-visible clauses. */
 export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
   ...extraGroups,
+  ...extraGroups3,
   'interval-overlay': [
     {
       id: 'peel-history',
