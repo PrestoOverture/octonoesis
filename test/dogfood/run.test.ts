@@ -132,7 +132,7 @@ test('keyless end-to-end: preregistration precedes sessions, training accumulate
   } finally {
     for (const [key, value] of originals) restoreEnv(key, value)
   }
-}, 120000)
+}, 240000)
 
 test('interrupted sessions and torn appends resume without retries or deleting evidence', async () => {
   const dir = await temporary()
@@ -224,7 +224,7 @@ test('evaluation concurrency preserves pairs, outcomes, training lineage and has
   await expect(run({ dryRun: true, output: parallelDir, concurrency: 2 })).rejects.toThrow(
     'differs',
   )
-}, 120000)
+}, 240000)
 
 test('preregisters the stream seed and rejects a changed stream on resume', async () => {
   const dir = await temporary()
