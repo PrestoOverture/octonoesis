@@ -2,11 +2,13 @@ import assert from 'node:assert/strict'
 import { access } from 'node:fs/promises'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { extraGroups } from './extra-check'
+import type { ExtraSubject } from './extra-tasks'
 import { type Family, clauses, families, specifications } from './tasks'
 
 type Layer = { start: number; end: number; tag: string | null }
 type Move = { from: string; to: string; amount: unknown; id?: unknown }
-interface Subject {
+interface Subject extends ExtraSubject {
   createBus(): {
     on(
       event: string,
@@ -27,7 +29,7 @@ interface Subject {
     invalidate(key: string): void
   }
 }
-interface AssertionGroup {
+export interface AssertionGroup {
   id: string
   requires: readonly string[]
   run(subject: Subject, random: (n: number) => number, signal: AbortSignal): void | Promise<void>
@@ -51,6 +53,7 @@ async function until(predicate: () => boolean, signal: AbortSignal): Promise<voi
 
 /** Every executable assertion belongs to a group linked to verbatim agent-visible clauses. */
 export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
+  ...extraGroups,
   'interval-overlay': [
     {
       id: 'peel-history',
@@ -597,6 +600,10 @@ export const hiddenGroups: Record<Family, readonly AssertionGroup[]> = {
 
 export function assertSpecCoverage(specs: Record<Family, string> = specifications): void {
   for (const family of families) {
+    if (!hiddenGroups[family].length) throw new Error(`Missing groups: ${family}`)
+    const covered = new Set(hiddenGroups[family].flatMap((group) => [...group.requires]))
+    for (const clause of Object.values(clauses[family]))
+      if (!covered.has(clause)) throw new Error(`Uncovered clause: ${family}/${clause}`)
     const ids = new Set<string>()
     for (const group of hiddenGroups[family]) {
       if (ids.has(group.id) || !group.requires.length)

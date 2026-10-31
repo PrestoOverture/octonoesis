@@ -5,7 +5,7 @@ import path from 'node:path'
 import { command } from '../eval/run'
 import { GROUP_TIMEOUT_MS, hiddenGroups, parseHiddenResults } from './check'
 import { calibrationSummary, checkStatus, preregister } from './run'
-import { errorTolerance, planningPower } from './stats'
+import { errorTolerance } from './stats'
 import { clauses, families, generateStream, materialize, partialSolution, solutions } from './tasks'
 
 async function fixture(
@@ -114,18 +114,20 @@ test('wide exact-net group rejects floating-point accumulation missed by the old
   })
 })
 
-test('five-family fixed sample scales coverage and primary planning power without changing inference', async () => {
+test('ten-family power-computed fixed sample scales coverage and operational limits', async () => {
   const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'dogfood-scaled-plan-')))
   try {
     const plan = await preregister(dir, { provider: 'spark', model: 'test-only-plan' })
-    expect(plan.sample_size).toEqual({ training: 40, pairs: 200 })
-    expect(plan.jobs.length).toBe(440)
-    expect(errorTolerance(plan, []).max_affected_pairs).toBe(10)
-    expect(errorTolerance(plan, []).max_training_errors).toBe(2)
+    const pairs = plan.power_design.computed_pairs
+    const maxErrors = Math.floor(pairs * 0.05)
+    expect(plan.sample_size).toEqual({ training: 8 * families.length, pairs })
+    expect(plan.jobs.length).toBe(8 * families.length + 2 * pairs)
+    expect(errorTolerance(plan, []).max_affected_pairs).toBe(maxErrors)
+    expect(errorTolerance(plan, []).max_training_errors).toBe(4)
     expect(errorTolerance(plan, []).max_arm_count_difference).toBe(1)
     const errors = plan.tasks
       .filter((task) => task.split === 'heldout')
-      .slice(0, 11)
+      .slice(0, maxErrors + 1)
       .map((task, i) => {
         const job = plan.jobs.find(
           (job) => job.task.id === task.id && job.arm === (i % 2 ? 'rules-on' : 'rules-off'),
@@ -141,16 +143,18 @@ test('five-family fixed sample scales coverage and primary planning power withou
           rules_before: 0,
         }
       })
-    expect(errorTolerance(plan, errors.slice(0, 10)).eligible).toBe(true)
+    expect(errorTolerance(plan, errors.slice(0, maxErrors)).eligible).toBe(true)
     expect(errorTolerance(plan, errors).eligible).toBe(false)
     for (const family of families) {
       expect(plan.tasks.filter((t) => t.family === family && t.split === 'train').length).toBe(8)
-      expect(plan.tasks.filter((t) => t.family === family && t.split === 'heldout').length).toBe(40)
+      expect(plan.tasks.filter((t) => t.family === family && t.split === 'heldout').length).toBe(
+        plan.power_design.computed_pairs_per_family,
+      )
     }
     expect(
       JSON.parse(await readFile(path.join(dir, 'preregistration.json'), 'utf8')).sample_size,
     ).toEqual(plan.sample_size)
-    expect(planningPower(plan.sample_size.pairs)).toBeGreaterThan(0.95)
+    expect(plan.power_design.computed_power).toBeGreaterThan(0.8)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
@@ -197,6 +201,14 @@ test('oracle-internal exceptions and missing grader input are ERROR, not task fa
   await fixture('single-flight', solutions['single-flight'], async (repo) => {
     const checker = path.join(repo, 'crashing-check.ts')
     const source = (await readFile(path.join(import.meta.dir, 'check.ts'), 'utf8'))
+      .replace(
+        "from './extra-check'",
+        `from ${JSON.stringify(path.join(import.meta.dir, 'extra-check.ts'))}`,
+      )
+      .replace(
+        "from './extra-tasks'",
+        `from ${JSON.stringify(path.join(import.meta.dir, 'extra-tasks.ts'))}`,
+      )
       .replace("from './tasks'", `from ${JSON.stringify(path.join(import.meta.dir, 'tasks.ts'))}`)
       .replace(
         'group.run(m, random, controller.signal)',

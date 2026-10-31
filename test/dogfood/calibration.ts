@@ -13,7 +13,7 @@ export const CALIBRATION_RULE = {
   min_recurring_sessions: 2,
 } as const
 
-/** Feasibility screen, not a hypothesis test of five noisy family proportions. */
+/** Feasibility screen, not a hypothesis test of noisy family proportions. */
 export function calibrationGate(
   rows: Observation[],
   rule: { [K in keyof typeof CALIBRATION_RULE]: number } = CALIBRATION_RULE,
@@ -53,7 +53,7 @@ export function calibrationGate(
       reasons.push(`${family}: all valid sessions failed.`)
   }
   if (Object.values(byFamily).filter((g) => g.informative).length < rule.min_informative_families)
-    reasons.push('Fewer than three informative families; at most two may be saturated.')
+    reasons.push('Fewer than three informative families.')
   const signalFamilies = new Set(
     valid
       .filter(

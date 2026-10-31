@@ -1,4 +1,5 @@
 import { calibrationGate } from './calibration'
+import { studentCritical, studentTwoSided } from './distributions'
 import type { Arm, Observation, Plan } from './model'
 
 function binomial(n: number, p: number): number[] {
@@ -64,6 +65,8 @@ export function pairedStats(rows: Observation[]) {
   for (const pair of pairs.values()) {
     if (!pair['rules-on'] || !pair['rules-off']) continue
     n++
+    if (pair['rules-on'].job.task.family !== pair['rules-off'].job.task.family)
+      throw new Error('Pair family mismatch')
     const a = pair['rules-on'].status === 'PASS'
     const b = pair['rules-off'].status === 'PASS'
     on += Number(a)
@@ -87,6 +90,61 @@ export function pairedStats(rows: Observation[]) {
     ci95: ci,
     p_value: n ? mcnemar(onOnly, offOnly) : null,
     method: 'two-sided exact McNemar; conservative Bonferroni-Wilson paired risk-difference CI',
+  }
+}
+
+/** Equal-family estimand: each semantic family is one independent cluster.
+ * Student-t inference on family mean paired differences, df = families - 1.
+ * Exact for iid Gaussian family means; approximate for bounded heterogeneous means.
+ */
+export function clusterStats(rows: Observation[]) {
+  // Validate duplicate arms before separating families.
+  const pooled = pairedStats(rows)
+  const familyNames = [
+    ...new Set(rows.filter((r) => r.job.arm !== 'train').map((r) => r.job.task.family)),
+  ].sort()
+  const per_family = Object.fromEntries(
+    familyNames.map((family) => [
+      family,
+      pairedStats(rows.filter((r) => r.job.task.family === family)),
+    ]),
+  )
+  const means = Object.values(per_family).flatMap((group) =>
+    group.risk_difference === null ? [] : [group.risk_difference],
+  )
+  const g = means.length
+  const effect = g ? means.reduce((a, b) => a + b, 0) / g : null
+  const variance =
+    g > 1 ? means.reduce((sum, x) => sum + (x - (effect as number)) ** 2, 0) / (g - 1) : null
+  const se = variance === null ? null : Math.sqrt(variance / g)
+  // Degenerate/unidentified variance is not evidence of certainty.
+  const half = se === null || se < 1e-14 ? null : studentCritical(g - 1) * se
+  const ci: [number, number] | null =
+    effect === null
+      ? null
+      : half === null
+        ? [-1, 1]
+        : [Math.max(-1, effect - half), Math.min(1, effect + half)]
+  return {
+    pairs: pooled.pairs,
+    on_successes: pooled.on_successes,
+    off_successes: pooled.off_successes,
+    on_only: pooled.on_only,
+    off_only: pooled.off_only,
+    clusters: g,
+    degrees_of_freedom: g - 1,
+    risk_difference: effect,
+    standard_error: se,
+    ci95: ci,
+    p_value:
+      effect === null
+        ? null
+        : half === null
+          ? 1
+          : studentTwoSided((effect as number) / (se as number), g - 1),
+    method:
+      'two-sided paired t-test on equally weighted family mean differences; family-cluster SE; Student-t 95% CI with G-1 df; degenerate variance is inconclusive',
+    per_family,
   }
 }
 
@@ -123,11 +181,12 @@ export function report(plan: Plan, rows: Observation[]) {
     if (!expected || JSON.stringify(expected) !== JSON.stringify(row.job))
       throw new Error('Observation does not match preregistered arm/task')
   }
-  const primary = pairedStats(rows)
+  const primary = clusterStats(rows)
+  const secondary = pairedStats(rows)
   const errorPairs = new Set(
     rows.filter((r) => r.job.arm !== 'train' && r.status === 'ERROR').map((r) => r.job.task.id),
   )
-  const sensitivity = pairedStats(
+  const sensitivity = clusterStats(
     rows.filter((r) => r.job.arm === 'train' || !errorPairs.has(r.job.task.id)),
   )
   const tolerance = errorTolerance(plan, rows)
@@ -229,6 +288,8 @@ export function report(plan: Plan, rows: Observation[]) {
     verdict,
     reasons,
     primary,
+    secondary,
+    per_family: primary.per_family,
     sensitivity,
     error_tolerance: tolerance,
     arms,
@@ -240,6 +301,7 @@ export function report(plan: Plan, rows: Observation[]) {
     limitations: [
       'First attempt is the first tested changed-source state, independently replayed against original public and hidden checks; final hidden success is a regression guard. Baseline unchanged-source tests do not count.',
       `Conditional on one trained ledger, ${new Set(plan.tasks.map((task) => task.family)).size} synthetic task families and a fixed provider/model. No R1 parameter search or R2 distiller comparison is performed.`,
+      'Family-cluster inference assumes independent representative families conditional on one trained ledger. With ten bounded heterogeneous family means, Student-t inference is approximate; synthetic domains do not establish universal coding generalization.',
       'Rule hit rate describes recovery on the next non-stale same-command verification, not causal benefit; repeat failures use observed coarse fingerprints from previously trained sessions, not hidden oracle labels.',
     ],
   }
@@ -247,12 +309,21 @@ export function report(plan: Plan, rows: Observation[]) {
 
 export function markdown(result: ReturnType<typeof report>): string {
   const p = result.primary
-  return `# Dogfood / RSC measurement\n\nVerdict: **${result.verdict}** (${result.mode})\n\n${result.reasons.map((r) => `- ${r}`).join('\n')}\n\nPaired first-tested-repair success lift (rules-on minus rules-off): ${p.risk_difference === null ? 'unavailable' : `${(100 * p.risk_difference).toFixed(1)} percentage points`}.\n95% CI: ${p.ci95 ? `[${p.ci95.map((v) => (100 * v).toFixed(1)).join(', ')}] percentage points` : 'unavailable'}; exact two-sided p = ${p.p_value ?? 'unavailable'}.\nPairs: ${p.pairs}; on-only wins: ${p.on_only}; off-only wins: ${p.off_only}.\n\n| Arm | Sessions | First-attempt success | Repeat failure | Mean turns | Mean tokens | Rule hit rate |\n|---|---:|---:|---:|---:|---:|---:|\n${Object.entries(
+  return `# Dogfood / RSC measurement\n\nVerdict: **${result.verdict}** (${result.mode})\n\n${result.reasons.map((r) => `- ${r}`).join('\n')}\n\nPaired first-tested-repair success lift (rules-on minus rules-off): ${p.risk_difference === null ? 'unavailable' : `${(100 * p.risk_difference).toFixed(1)} percentage points`}.\n95% CI: ${p.ci95 ? `[${p.ci95.map((v) => (100 * v).toFixed(1)).join(', ')}] percentage points` : 'unavailable'}; family-cluster two-sided p = ${p.p_value ?? 'unavailable'}.\nClusters: ${p.clusters}; df: ${p.degrees_of_freedom}. Pairs: ${p.pairs}; on-only wins: ${p.on_only}; off-only wins: ${p.off_only}.\n\n| Arm | Sessions | First-attempt success | Repeat failure | Mean turns | Mean tokens | Rule hit rate |\n|---|---:|---:|---:|---:|---:|---:|\n${Object.entries(
     result.arms,
   )
     .map(
       ([arm, a]) =>
         `| ${arm} | ${a.sessions} | ${a.first_attempt_success ?? 'n/a'} | ${a.repeat_failure_rate ?? 'n/a'} | ${a.mean_turns ?? 'n/a'} | ${a.mean_tokens ?? 'n/a'} | ${a.rule_hit_rate ?? 'n/a'} |`,
+    )
+    .join(
+      '\n',
+    )}\n\n## Secondary pair-level analysis\n\nExact McNemar p = ${result.secondary.p_value}; naive paired 95% CI ${JSON.stringify(result.secondary.ci95)}. Descriptive only; ignores family dependence.\n\n## Per-family effects\n\n| Family | Pairs | On successes | Off successes | Lift |\n|---|---:|---:|---:|---:|\n${Object.entries(
+    result.per_family,
+  )
+    .map(
+      ([family, s]) =>
+        `| ${family} | ${s.pairs} | ${s.on_successes} | ${s.off_successes} | ${s.risk_difference ?? 'n/a'} |`,
     )
     .join(
       '\n',

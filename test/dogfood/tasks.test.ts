@@ -3,6 +3,7 @@ import { mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/pro
 import os from 'node:os'
 import path from 'node:path'
 import { command } from '../eval/run'
+import { inspectHidden } from './check'
 import {
   digest,
   families,
@@ -97,4 +98,31 @@ test('stream seed 2 is deterministic and disjoint from every default training an
   expect(fresh.every((task) => task.seed === task.seed >>> 0)).toBe(true)
   for (const seed of [0, -1, 1.5, 4295, Number.MAX_SAFE_INTEGER])
     expect(() => generateStream(undefined, undefined, seed)).toThrow('Stream seed')
+})
+
+test('all families materialize deterministically and replay seeded oracles identically', async () => {
+  const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'dogfood-determinism-')))
+  try {
+    for (const streamSeed of [3, 4])
+      for (const family of families) {
+        const task = generateStream(families.length, families.length, streamSeed).find(
+          (t) => t.family === family && t.split === 'heldout',
+        )
+        if (!task) throw new Error('Missing variant')
+        const a = path.join(dir, `${family}-${streamSeed}-a`)
+        const b = path.join(dir, `${family}-${streamSeed}-b`)
+        await materialize(task, a)
+        await materialize(task, b)
+        for (const file of ['README.md', 'contract.test.ts', 'src/subject.ts'])
+          expect(await readFile(path.join(a, file), 'utf8')).toBe(
+            await readFile(path.join(b, file), 'utf8'),
+          )
+        await writeFile(path.join(a, 'src/subject.ts'), solutions[family])
+        const first = await inspectHidden(a, family, task.seed)
+        expect(first.every((g) => g.passed)).toBe(true)
+        expect(await inspectHidden(a, family, task.seed)).toEqual(first)
+      }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })

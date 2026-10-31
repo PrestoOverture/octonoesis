@@ -23,11 +23,11 @@ import { CALIBRATION_RULE, calibrationGate } from './calibration'
 import { hiddenGroups, parseHiddenResults } from './check'
 import { sessionStatus } from './endpoint'
 import type { Job, Observation, Plan } from './model'
+import { clusterPlanningPower, planPower } from './power'
 import { markdown, report } from './stats'
 import {
   DRY_HELDOUT_PER_FAMILY,
   DRY_TRAINING_PER_FAMILY,
-  HELDOUT_PER_FAMILY,
   TRAINING_PER_FAMILY,
   digest,
   families,
@@ -52,6 +52,10 @@ export interface Options {
   calibrate?: boolean
   perFamily?: number
   streamSeed?: number
+  pairsPerFamily?: number
+  mde?: number
+  discordance?: number
+  designEffect?: number
 }
 type Event =
   | { kind: 'started'; job: Job; ledger: string; plan_hash: string }
@@ -157,10 +161,30 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
   if (!['spark', 'openai', 'anthropic'].includes(provider)) throw new Error('Unsupported provider')
   const concurrency = positiveInteger(options.concurrency ?? 1)
   if (concurrency > 10) throw new Error('Concurrency cap is 10')
+  const power = planPower({
+    families: families.length,
+    ...(options.mde === undefined ? {} : { mde: options.mde }),
+    ...(options.discordance === undefined ? {} : { discordance: options.discordance }),
+    ...(options.designEffect === undefined ? {} : { design_effect: options.designEffect }),
+  })
+  const pairsPerFamily = positiveInteger(
+    options.pairsPerFamily ??
+      (options.dryRun ? DRY_HELDOUT_PER_FAMILY : power.computed_pairs_per_family),
+  )
+  if (pairsPerFamily * families.length > 900000)
+    throw new Error('Task counts exceed the reserved stream namespace')
+  const powerDesign = {
+    ...power,
+    scheduled_pairs_per_family: pairsPerFamily,
+    scheduled_pairs: pairsPerFamily * families.length,
+    scheduled_power: clusterPlanningPower(pairsPerFamily, power),
+    meets_planning_target: pairsPerFamily >= power.computed_pairs_per_family,
+  }
   const hash = await sourceHash()
   try {
     const plan = JSON.parse(await readFile(file, 'utf8')) as Plan
     if (
+      JSON.stringify(plan.power_design) !== JSON.stringify(powerDesign) ||
       plan.stream_seed !== (options.streamSeed ?? 1) ||
       plan.evaluation_concurrency !== concurrency ||
       plan.mode !== mode ||
@@ -179,7 +203,7 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
   const tasks = loadStream(
     generateStream(
       (options.dryRun ? DRY_TRAINING_PER_FAMILY : TRAINING_PER_FAMILY) * families.length,
-      (options.dryRun ? DRY_HELDOUT_PER_FAMILY : HELDOUT_PER_FAMILY) * families.length,
+      pairsPerFamily * families.length,
       options.streamSeed ?? 1,
     ),
   )
@@ -215,7 +239,8 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
       rule_hit_rate:
         'production verified-recovery hits / (hits + misses) on the next non-stale same-command verification; descriptive, not causal benefit',
     },
-    test: 'Two-sided exact McNemar alpha .05 on complete matched task pairs; risk difference on minus off; conservative 95% Bonferroni-Wilson CI. max_turns and agent wall-clock budget exhaustion are task FAIL, including deadline termination without headless JSON or a journal. Spawn/provider failures, external kills, invalid JSON outside deadline exhaustion and grader infrastructure failures remain ERROR. Infrastructure ERROR counts as failure in primary analysis. Sensitivity drops all ERROR-containing pairs; confirmation requires both analyses significant in the same direction. Operational tolerance: at most 5% of planned evaluation pairs affected, arm error counts differing by at most one, and at most 5% training errors. Secondary metrics descriptive only.',
+    test: 'Primary: two-sided paired t-test alpha .05 on equally weighted family mean paired differences, family-cluster SE and Student-t 95% CI with G-1 df. Independent representative approximately Gaussian family effects; degenerate variance is inconclusive. Secondary: exact McNemar with naive paired Bonferroni-Wilson CI, descriptive only and never used for verdict. Risk difference on minus off. max_turns and agent wall-clock budget exhaustion are task FAIL, including deadline termination without headless JSON or a journal. Spawn/provider failures, external kills, invalid JSON outside deadline exhaustion and grader infrastructure failures remain ERROR. Infrastructure ERROR counts as failure in primary analysis. Sensitivity drops all ERROR-containing pairs; confirmation requires both analyses significant in the same direction. Operational tolerance: at most 5% of planned evaluation pairs affected, arm error counts differing by at most one, and at most 5% training errors. Secondary metrics descriptive only.',
+    power_design: powerDesign,
     sample_size: {
       training: tasks.filter((t) => t.split === 'train').length,
       pairs: tasks.filter((t) => t.split === 'heldout').length,
@@ -916,6 +941,22 @@ if (import.meta.main) {
     .name('bun test/dogfood/run.ts')
     .option('--dry-run', 'Use scripted keyless provider through real query/tools/learning hooks')
     .option('--stream-seed <N>', 'Disjoint task stream namespace (1-4294)', positiveInteger, 1)
+    .option(
+      '--pairs-per-family <N>',
+      'Fixed matched held-out pairs per family (live default: computed power target)',
+      positiveInteger,
+    )
+    .option(
+      '--mde <fraction>',
+      'Preregistered minimum detectable paired effect (default .05)',
+      Number,
+    )
+    .option('--discordance <fraction>', 'Assumed paired discordance (default .5)', Number)
+    .option(
+      '--design-effect <number>',
+      'Assumed variance inflation at planned cluster size (default 2)',
+      Number,
+    )
     .option('--output <dir>', 'External persistent output directory; reuse to resume')
     .option('--provider <name>', 'spark, openai, or anthropic', 'spark')
     .option('--model <name>', 'Pin the live provider model')
