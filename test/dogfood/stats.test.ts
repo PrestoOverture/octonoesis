@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test'
 import { CALIBRATION_RULE } from './calibration'
 import type { Observation, Plan } from './model'
+import { clusterPlanningPower, planPower } from './power'
 import { clusterStats, markdown, mcnemar, pairedStats, planningPower, report } from './stats'
 import { digest, families, generateStream } from './tasks'
 
@@ -25,6 +26,13 @@ function synthetic(on: (i: number) => boolean, off: (i: number) => boolean) {
     hypothesis: 'synthetic',
     metrics: {},
     test: 'McNemar',
+    power_design: {
+      ...planPower({ families: families.length }),
+      scheduled_pairs_per_family: 12,
+      scheduled_pairs: 120,
+      scheduled_power: clusterPlanningPower(12, { ...planPower({ families: families.length }) }),
+      meets_planning_target: false,
+    },
     sample_size: { training: 6 * families.length, pairs: 120 },
     stopping_rule: 'fixed',
     evaluation_concurrency: 1,
@@ -262,7 +270,7 @@ test('family-cluster test controls simulated null type-I error despite perfectly
     const effects = families.map(() => (random() < 0.5 ? -1 : 1))
     if ((clusterStats(clusterRows(effects, 20)).p_value as number) < 0.05) rejected++
   }
-  // Exact null rejection probability for G=10 Rademacher means is 22/1024.
+  // Null rejection probability is 20/1024; the two zero-variance extremes are inconclusive.
   expect(rejected / simulations).toBeLessThan(0.05)
   expect(rejected / simulations).toBeGreaterThan(0.005)
 })

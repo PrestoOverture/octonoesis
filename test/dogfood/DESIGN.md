@@ -130,6 +130,24 @@ This is exact under independent identically distributed Gaussian family means, a
 
 This design follows [Miller (2024), Adding Error Bars to Evals, sections 2.2, 4.2 and 5](https://arxiv.org/html/2411.00640v1): compare paired differences, account for related questions, and preregister power. The Student-t small-cluster correction and explicit equal-family estimand are choices of this harness. The **secondary** analysis retains two-sided exact McNemar on complete pairs with the existing conservative Bonferroni-Wilson paired CI, ignoring family dependence. It never determines the verdict.
 
+Power is computed before stream creation, without reading prior held-out outcomes. Defaults are **MDE +0.05 (5 percentage points), two-sided alpha .05, target power .80, total paired discordance .50, design effect 2, ten equal-sized families**. The working variance of a paired difference is conservatively discordance (rather than discordance − MDE²). Family means have variance DE × discordance / m, so the noncentrality is MDE × sqrt(Gm / (DE × discordance)). `power.ts` numerically integrates noncentral Student-t rejection probability over its chi-square denominator with G−1 df, then finds the smallest integer m meeting target power. Defaults compute **397 pairs per family, 3970 pairs total**, modeled power 0.80019 (396 gives 0.79921). Live therefore schedules 80 training + 7940 evaluation sessions. No outcomes from prior held-out runs set these defaults.
+
+`preregistration.json` retains `power_design`: MDE, alpha, target power, assumed discordance/design effect, family count, primary model assumptions, computed pairs per family/total/power, scheduled pairs per family/total/power, and whether the scheduled allocation meets the planning target. `--pairs-per-family N` can override the allocation before starting; `--mde .05 --discordance .5 --design-effect 2` explicitly pins assumptions. Changing any of these on resume is rejected. Dry run schedules four pairs per family regardless of the computed target and makes no efficacy/power claim.
+
+The design effect is an assumption **at the computed cluster size**, not an assertion that cluster correlation disappears with more variants. Under an exchangeable model, DE = 1 + (m−1)ICC; the default at m=397 implies ICC about .00253. Higher actual ICC or persistent between-family heterogeneity can make +5pp unachievable with ten families regardless of variant count. More independent families/training histories may be needed. The Gaussian, equal-family-variance planning model is an approximation, and error/calibration/sensitivity gates can reduce power; a 3970-pair run is not a promise of 80% real-world power.
+
+Reviewer calibration (live, in a fresh output directory) includes every family:
+
+```sh
+bun test/dogfood/run.ts --calibrate --stream-seed 4 --provider spark --model spark-x2.6 --per-family 5 --concurrency 3 --output /tmp/octonoesis-ten-family-calibration
+```
+
+Keyless confirmatory demonstration, with its computed and scheduled allocations retained separately:
+
+```sh
+bun test/dogfood/run.ts --dry-run --stream-seed 4 --concurrency 3 --output /tmp/octonoesis-ten-family-dry
+```
+
 **Stopping:** execute the entire registered schedule exactly once. No early efficacy stop, outcome-dependent extension, task replacement, rule curation, or adaptive sample size. Do not inspect intermediate p-values to choose when to stop. Recover interrupted work as described above. Generate inference after the fixed schedule; incomplete samples, failed calibration, absent treatment rules, exceeded error tolerance or sensitivity disagreement force `inconclusive`. A calibration Delta begins a new experiment instead of modifying this one.
 
 ## Threats to validity and scope of conclusions

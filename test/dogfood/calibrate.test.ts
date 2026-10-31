@@ -91,6 +91,7 @@ test('--calibrate is keyless-testable, uses fresh ledgers and never writes a pre
     expect(files).not.toContain('preregistration.json')
     expect(files).not.toContain('stream.json')
     const result = JSON.parse(await readFile(path.join(dir, 'calibration-report.json'), 'utf8'))
+    expect(Object.keys(result.summary).sort()).toEqual([...families].sort())
     for (const row of Object.values(result.summary) as {
       sessions: number
       hidden_pass_rate: number

@@ -15,7 +15,13 @@ import os from 'node:os'
 import path from 'node:path'
 import { restoreEnv } from '../helpers/env'
 import { assertIsolatedOutput, preregister, projectRoot, run, sessionEnvironment } from './run'
-import { digest, generateStream } from './tasks'
+import {
+  DRY_HELDOUT_PER_FAMILY,
+  DRY_TRAINING_PER_FAMILY,
+  digest,
+  families,
+  generateStream,
+} from './tasks'
 
 const dirs: string[] = []
 async function temporary() {
@@ -80,7 +86,9 @@ test('keyless end-to-end: preregistration precedes sessions, training accumulate
     expect(environment.OCTONOESIS_MEMORY_DIR).toBe(path.join(dir, 'ledger'))
     expect(environment.SPARK_API_KEY).toBeUndefined()
     const { result } = await run({ dryRun: true, output: dir })
-    expect(result.completed_jobs).toBe(50)
+    expect(result.completed_jobs).toBe(
+      (DRY_TRAINING_PER_FAMILY + 2 * DRY_HELDOUT_PER_FAMILY) * families.length,
+    )
     expect(result.verdict).toBe('inconclusive')
     expect(result.arms['rules-off']?.errors).toBe(0)
     expect(result.arms['rules-on']?.errors).toBe(0)
@@ -91,7 +99,9 @@ test('keyless end-to-end: preregistration precedes sessions, training accumulate
       .map((line) => JSON.parse(line))
     const starts = events.filter((e) => e.kind === 'started')
     const observations = events.filter((e) => e.kind === 'result').map((e) => e.observation)
-    expect(starts.length).toBe(50)
+    expect(starts.length).toBe(
+      (DRY_TRAINING_PER_FAMILY + 2 * DRY_HELDOUT_PER_FAMILY) * families.length,
+    )
     const wrongFirst = observations.find((r) => r.first_attempt?.public_status === 'FAIL')
     expect(wrongFirst).toBeDefined()
     expect(wrongFirst.status).toBe('FAIL')
@@ -197,7 +207,9 @@ test('evaluation concurrency preserves pairs, outcomes, training lineage and has
   expect(
     parallelEvents.slice(firstEval, firstResult).filter((e) => e.kind === 'started').length,
   ).toBe(3)
-  expect(parallelEvents.slice(0, firstEval).filter((e) => e.kind === 'result').length).toBe(10)
+  expect(parallelEvents.slice(0, firstEval).filter((e) => e.kind === 'result').length).toBe(
+    DRY_TRAINING_PER_FAMILY * families.length,
+  )
   for (const task of plan.tasks.filter((t) => t.split === 'heldout')) {
     const jobs = plan.jobs.filter((j) => j.task.id === task.id)
     const first = jobs[0]
@@ -220,7 +232,13 @@ test('preregisters the stream seed and rejects a changed stream on resume', asyn
   expect(
     JSON.parse(await readFile(path.join(dir, 'preregistration.json'), 'utf8')).stream_seed,
   ).toBe(2)
-  expect(plan.tasks).toEqual(generateStream(10, 20, 2))
+  expect(plan.tasks).toEqual(
+    generateStream(
+      DRY_TRAINING_PER_FAMILY * families.length,
+      DRY_HELDOUT_PER_FAMILY * families.length,
+      2,
+    ),
+  )
   expect(await preregister(dir, { dryRun: true, streamSeed: 2 })).toEqual(plan)
   await expect(preregister(dir, { dryRun: true })).rejects.toThrow('Resume')
 })

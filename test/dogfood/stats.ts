@@ -301,6 +301,7 @@ export function report(plan: Plan, rows: Observation[]) {
     limitations: [
       'First attempt is the first tested changed-source state, independently replayed against original public and hidden checks; final hidden success is a regression guard. Baseline unchanged-source tests do not count.',
       `Conditional on one trained ledger, ${new Set(plan.tasks.map((task) => task.family)).size} synthetic task families and a fixed provider/model. No R1 parameter search or R2 distiller comparison is performed.`,
+      'Family-cluster inference assumes independent representative families conditional on one trained ledger. With ten bounded heterogeneous family means, Student-t inference is approximate; synthetic domains do not establish universal coding generalization.',
       'Rule hit rate describes recovery on the next non-stale same-command verification, not causal benefit; repeat failures use observed coarse fingerprints from previously trained sessions, not hidden oracle labels.',
     ],
   }

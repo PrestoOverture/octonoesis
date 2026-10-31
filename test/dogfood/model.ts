@@ -1,5 +1,6 @@
 import type { HeadlessResult } from '../../src/headless'
 import type { HiddenGroupResult } from './check'
+import type { PowerDesign } from './power'
 import type { Task } from './tasks'
 
 export type Arm = 'rules-on' | 'rules-off'
@@ -45,6 +46,7 @@ export interface Plan {
   metrics: Record<string, string>
   test: string
   sample_size: { training: number; pairs: number }
+  power_design: PowerDesign
   stopping_rule: string
   evaluation_concurrency: number
   error_tolerance: {
