@@ -177,3 +177,26 @@ The cache starter now supplies pending ownership installation before deferred lo
 Dependency-plan had zero primary failures in five sessions. The new optional targets argument requires transitive prerequisite closure, duplicate-target deduplication, and full-graph validation even when cycles/endpoints are excluded from the requested result. New private groups cite these visible clauses and cover frozen targets, empty/prototype names, duplicate edges, excluded nodes and excluded cycles. Hidden workloads remain outside generated agent repositories.
 
 Power/preregistration use the registered family count G for allocation, G−1 degrees of freedom, and schedule totals. The retained power design now exposes degrees_of_freedom; tests assert minimal allocation rather than the historical fixed 397 and derive all registry-dependent counts from families.length. Historical calibration does not transfer to this revised stream. A new experiment requires a fresh output directory and fresh live calibration; keyless validation makes no difficulty-rate or readiness claim.
+
+## Additional semantic families (extra-tasks2)
+
+`extra-tasks2.ts` appends five families without changing existing contracts or calibration
+policy. Each visible clause is rendered in the prompt and README and cited by private
+`extra-check2.ts` groups. Only starter source, README and public tests enter the agent
+repository; reference implementations and private checks remain in the harness.
+
+| Family | Intended recurring failure mode | Independent hidden discrimination |
+|---|---|---|
+| ini-config | Treating comment markers inside quoted values as comments; retain quote state when scanning comments | Seeded sections, duplicate keys, literal comment characters, escape tables, prototype keys and syntax errors |
+| utf8-codec | Accepting structurally valid continuation bytes without enforcing the shortest encoding | Platform UTF-8 encoder oracle over seeded scalar values, boundary scalars, overlongs, surrogates, truncations and invalid bytes |
+| semver-range | Treating prerelease admission as ordinary numeric range comparison; require an explicit prerelease comparator with the same core | Seeded caret/tilde boundaries, comparator intersections, ordered prerelease table, build neutrality and invalid syntax |
+| query-string | Percent-decoding without first converting raw + to space; preserve percent-encoded literal plus | Seeded repeats, own prototype keys, malformed UTF-8, frozen input encoding and round trips |
+| json-pointer | Sequentially replacing ~0 then ~1, accidentally decoding ~01 twice; decode tokens once | Independently encoded seeded paths, escaped prototype/empty keys, array replacement/append, frozen deep copies and invalid paths |
+
+The public regression for each trap recurs across variants, so a rule distilled from
+an earlier repair can prevent a later first tested repair failure. The intended
+first-tested-repair failure range is approximately 30–60%; it is a design target,
+not an observed rate. No live calibration was run. Keyless tests require starters
+to fail hidden groups, references to pass public and private checks, deterministic
+materialization and seeded replay (including stream seeds 4 and 5), and rejection
+of every individual visible-clause deletion by the coverage audit.

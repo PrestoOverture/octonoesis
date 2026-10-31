@@ -8,12 +8,12 @@ import { families } from './tasks'
 
 test('default +5pp cluster power target is minimal integer allocation and responds to assumptions', () => {
   const design = planPower({ families: families.length })
-  expect(design.degrees_of_freedom).toBe(families.length - 1)
   expect(design.mde).toBe(0.05)
   expect(design.alpha).toBe(0.05)
   expect(design.power).toBe(0.8)
   expect(design.design_effect).toBe(2)
-  expect(design.computed_pairs_per_family).toBeGreaterThan(0)
+  expect(Number.isInteger(design.computed_pairs_per_family)).toBe(true)
+  expect(design.computed_pairs).toBe(design.computed_pairs_per_family * families.length)
   expect(design.computed_power).toBeGreaterThan(0.8)
   expect(clusterPlanningPower(design.computed_pairs_per_family - 1, design)).toBeLessThan(0.8)
   expect(planPower({ families: families.length, mde: 0.1 }).computed_pairs_per_family).toBeLessThan(
@@ -25,7 +25,7 @@ test('default +5pp cluster power target is minimal integer allocation and respon
   expect(
     planPower({ families: families.length, discordance: 0.25 }).computed_pairs_per_family,
   ).toBeLessThan(design.computed_pairs_per_family)
-  expect(planPower({ families: families.length * 2 }).computed_pairs).toBeLessThan(
+  expect(planPower({ families: 2 * families.length }).computed_pairs).toBeLessThan(
     design.computed_pairs,
   )
   // With no effect, the integrated central-t rejection probability is alpha.

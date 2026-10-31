@@ -4,6 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { command } from '../eval/run'
 import { inspectHidden } from './check'
+import { extraClauses2 } from './extra-tasks2'
 import {
   digest,
   families,
@@ -52,6 +53,10 @@ test('all task families have visible learnable failures and independent hidden d
       )
       expect(visible.code).toBe(1)
       expect(visible.stderr).toContain('Error')
+      if (family in extraClauses2) {
+        const starterGroups = await inspectHidden(repo, family, task.seed)
+        expect(starterGroups.some((group) => !group.passed)).toBe(true)
+      }
       const files = await readdir(repo)
       expect(files.sort()).toEqual(['README.md', 'contract.test.ts', 'src'])
       for (const [label, source] of [
@@ -103,7 +108,7 @@ test('stream seed 2 is deterministic and disjoint from every default training an
 test('all families materialize deterministically and replay seeded oracles identically', async () => {
   const dir = await realpath(await mkdtemp(path.join(os.tmpdir(), 'dogfood-determinism-')))
   try {
-    for (const streamSeed of [3, 4])
+    for (const streamSeed of [3, 4, 5])
       for (const family of families) {
         const task = generateStream(families.length, families.length, streamSeed).find(
           (t) => t.family === family && t.split === 'heldout',
@@ -117,7 +122,20 @@ test('all families materialize deterministically and replay seeded oracles ident
           expect(await readFile(path.join(a, file), 'utf8')).toBe(
             await readFile(path.join(b, file), 'utf8'),
           )
+        if (family in extraClauses2) {
+          const starter = await inspectHidden(b, family, task.seed)
+          expect(starter.some((g) => !g.passed)).toBe(true)
+        }
         await writeFile(path.join(a, 'src/subject.ts'), solutions[family])
+        if (family in extraClauses2) {
+          const visible = await command(
+            [process.execPath, '--no-env-file', 'test'],
+            a,
+            { PATH: process.env.PATH },
+            10000,
+          )
+          expect(visible.code).toBe(0)
+        }
         const first = await inspectHidden(a, family, task.seed)
         expect(first.every((g) => g.passed)).toBe(true)
         expect(await inspectHidden(a, family, task.seed)).toEqual(first)
