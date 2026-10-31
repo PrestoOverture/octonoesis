@@ -118,3 +118,16 @@ test('public and hidden checks accept a specified null-prototype transfer result
     await rm(dir, { recursive: true, force: true })
   }
 })
+
+test('every family clause is covered and removing it fails the coverage audit', () => {
+  expect(families.length).toBeGreaterThan(9)
+  for (const family of families)
+    for (const clause of Object.values(clauses[family])) {
+      expect(() =>
+        assertSpecCoverage({
+          ...specifications,
+          [family]: specifications[family].replace(clause, ''),
+        }),
+      ).toThrow('lacks an explicit spec clause')
+    }
+})

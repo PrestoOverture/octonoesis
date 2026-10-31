@@ -6,12 +6,13 @@ import { initializeMemoryAvailability } from '../../src/memory/availability'
 import { configureOneShotPermissions } from '../../src/permissions/confirm'
 import { setProvider } from '../../src/providers'
 import type { LLMProvider, StreamEvent } from '../../src/providers/types'
-import { partialSolution, solutions, taskSchema } from './tasks'
+import { families, partialSolution, solutions, taskSchema } from './tasks'
 
 async function main(): Promise<void> {
   const task = taskSchema.parse(JSON.parse(process.argv[2] as string))
   const errorClass = `${task.family.replace(/(^|-)(\w)/g, (_, _p, c: string) => c.toUpperCase())}Error`
   // The mock observes actual injected advice. It is never given the arm label or oracle.
+  const scriptedFailure = Math.floor(task.seed / families.length) % 2 !== 0
   let turn = 0
   let helped = false
   let partial = false
@@ -37,7 +38,7 @@ async function main(): Promise<void> {
       else {
         helped ||= `${opts.system}\n${text}`.includes(`Remember ${task.family}:`)
         const step = turn++
-        if (step === 2) partial = !helped && task.seed % 2 !== 0
+        if (step === 2) partial = !helped && scriptedFailure
         const tool =
           step === 0
             ? { name: 'Read', input: { path: 'src/subject.ts' } }
@@ -49,7 +50,7 @@ async function main(): Promise<void> {
                     input: {
                       path: 'src/subject.ts',
                       content:
-                        helped || task.seed % 2 === 0
+                        helped || !scriptedFailure
                           ? solutions[task.family]
                           : partialSolution(task.family),
                     },

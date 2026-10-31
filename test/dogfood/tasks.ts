@@ -2,6 +2,14 @@ import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
+import {
+  type ExtraFamily,
+  extraClauses,
+  extraInitial,
+  extraPartial,
+  extraPublic,
+  extraSolutions,
+} from './extra-tasks'
 
 export const families = [
   'interval-overlay',
@@ -9,6 +17,11 @@ export const families = [
   'single-flight',
   'event-bus',
   'async-pool',
+  'csv-records',
+  'dependency-plan',
+  'merge-patch',
+  'civil-date',
+  'ranked-vote',
 ] as const
 export const TRAINING_PER_FAMILY = 8
 export const HELDOUT_PER_FAMILY = 40
@@ -29,6 +42,7 @@ export type Task = z.infer<typeof taskSchema>
 
 /** Clauses are shown verbatim in both the prompt and README. Hidden groups cite them. */
 export const clauses = {
+  ...extraClauses,
   'interval-overlay': {
     domain:
       'Layers are {start,end,tag} with integer endpoints in [-1000000,1000000], start <= end, and tags that are strings (including the empty string) or null.',
@@ -83,11 +97,12 @@ export const clauses = {
 export const specifications: Record<Family, string> = Object.fromEntries(
   families.map((family) => [
     family,
-    `Repair ${family === 'interval-overlay' ? 'overlay(layers)' : family === 'atomic-transfer' ? 'transfer(balances, moves)' : family === 'single-flight' ? 'Cache' : family === 'event-bus' ? 'createBus()' : 'Pool'} in src/subject.ts. ${Object.values(clauses[family]).join(' ')}`,
+    `Repair ${family === 'interval-overlay' ? 'overlay(layers)' : family === 'atomic-transfer' ? 'transfer(balances, moves)' : family === 'single-flight' ? 'Cache' : family === 'event-bus' ? 'createBus()' : family === 'async-pool' ? 'Pool' : family} in src/subject.ts. ${Object.values(clauses[family]).join(' ')}`,
   ]),
 ) as Record<Family, string>
 
 export const initialSources: Record<Family, string> = {
+  ...extraInitial,
   'interval-overlay':
     'export function overlay(layers) { return layers.map(x=>({...x})).sort((a,b)=>a.start-b.start) }',
   'atomic-transfer':
@@ -101,6 +116,7 @@ export const initialSources: Record<Family, string> = {
 
 /** Reference implementations are used ONLY by the scripted mock provider and oracle tests. */
 export const solutions: Record<Family, string> = {
+  ...extraSolutions,
   'interval-overlay': `export function overlay(layers) {
  const points=[...new Set(layers.flatMap(x=>[x.start,x.end]))].sort((a,b)=>a-b), out=[];
  for(let i=0;i<points.length-1;i++) {const start=points[i],end=points[i+1]; const stack=[];for(const layer of layers){if(layer.start<=start&&layer.end>=end&&layer.start<layer.end){if(layer.tag===null)stack.pop();else stack.push(layer.tag);}} const tag=stack.at(-1);if(tag===undefined)continue;
@@ -134,6 +150,7 @@ export const solutions: Record<Family, string> = {
 
 /** Plausible partial fixes: public examples pass; independent hidden checks reject them. */
 export function partialSolution(family: Family): string {
+  if (family in extraClauses) return extraPartial(family as ExtraFamily)
   const source = solutions[family]
   if (family === 'interval-overlay') return source.replace('prev.tag===tag', 'true')
   if (family === 'atomic-transfer') return source.replace('if(ids.has(x.id))', 'if(false)')
@@ -213,6 +230,7 @@ export async function materialize(task: Task, repo: string): Promise<void> {
   const balance = 10 + (task.seed % 17)
   const amount = 1 + (task.seed % 5)
   const cases: Record<Family, string> = {
+    ...extraPublic(task.seed),
     'interval-overlay': `const a=[{start:${offset},end:${offset + 6},tag:'v${task.seed}'},{start:${offset + 2},end:${offset + 4},tag:'v${task.seed}'}]; assert.deepEqual(m.overlay(a),[{start:${offset},end:${offset + 6},tag:'v${task.seed}'}]);`,
     'atomic-transfer': `const a={a:${balance},b:0}; const b=m.transfer(a,[{from:'a',to:'b',amount:${amount}}]); assert.deepEqual({...b},{a:${balance - amount},b:${amount}}); assert.deepEqual(a,{a:${balance},b:0});`,
     'single-flight': `let n=0; const c=new m.Cache(async()=>++n,${amount},()=>${offset}); assert.equal(await c.get('v${task.seed}'),1); assert.equal(await c.get('v${task.seed}'),1); assert.equal(n,1);`,
@@ -220,6 +238,10 @@ export async function materialize(task: Task, repo: string): Promise<void> {
     'async-pool': `const pool=new m.Pool(1);const seen=[];let release;const gate=new Promise(r=>release=r);const a=pool.run(async()=>{seen.push('a');await gate;seen.push('end')});const b=pool.run(()=>seen.push('b'));while(!seen.length)await new Promise(r=>setImmediate(r));assert.deepEqual(seen,['a']);release();await Promise.all([a,b]);assert.deepEqual(seen,['a','end','b']);`,
   }
   const learnable: Record<Family, string> = {
+    ...(Object.fromEntries(Object.keys(extraClauses).map((family) => [family, ''])) as Record<
+      ExtraFamily,
+      string
+    >),
     'interval-overlay': `assert.deepEqual(m.overlay([{start:0,end:2,tag:'a'},{start:2,end:4,tag:'b'}]),[{start:0,end:2,tag:'a'},{start:2,end:4,tag:'b'}]);assert.deepEqual(m.overlay([{start:0,end:3,tag:'old'},{start:1,end:2,tag:'new'},{start:1,end:2,tag:null}]),[{start:0,end:3,tag:'old'}]);`,
     'atomic-transfer': `const retry={from:'a',to:'b',amount:2,id:'retry'};assert.deepEqual({...m.transfer({a:6,b:0},[retry,retry])},{a:4,b:2});`,
     'single-flight': `let finish;let calls=0;const c2=new m.Cache(()=>++calls===1?new Promise((r,reject)=>finish=reject):Promise.resolve('new'),10,()=>0);const old=c2.get('key').catch(e=>e);while(!finish)await new Promise(r=>setImmediate(r));c2.invalidate('key');assert.equal(await c2.get('key'),'new');finish(new Error('old rejection'));await old;assert.equal(await c2.get('key'),'new');assert.equal(calls,2);`,
