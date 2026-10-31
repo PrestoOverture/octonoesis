@@ -159,7 +159,9 @@ test('incomplete, uncalibrated, mock, missing-rule and operational-error runs ca
   expect(
     report(
       plan,
-      rows.map((r, i) => (i < 4 ? { ...r, status: 'ERROR' } : r)),
+      rows.map((r, i) =>
+        i < Math.floor(plan.sample_size.training * 0.05) + 1 ? { ...r, status: 'ERROR' } : r,
+      ),
     ).verdict,
   ).toBe('inconclusive')
   expect(() =>
@@ -217,7 +219,9 @@ test('error tolerance is inclusive at 5% of pairs and rejects the next pair or a
   expect(
     report(
       plan,
-      rows.map((r, i) => (i < 4 ? { ...r, status: 'ERROR' } : r)),
+      rows.map((r, i) =>
+        i < Math.floor(plan.sample_size.training * 0.05) + 1 ? { ...r, status: 'ERROR' } : r,
+      ),
     ).error_tolerance.eligible,
   ).toBe(false)
 })
@@ -243,13 +247,16 @@ function clusterRows(effects: number[], pairsPerFamily = 40): Observation[] {
     })
 }
 test('strong within-family correlation widens primary CI versus naive McNemar and reports family effects', () => {
-  const rows = clusterRows([1, 1, 1, 1, 1, 1, 1, -1, -1, -1], 100)
+  const effects = families.map((_, i) => (i < Math.floor(0.7 * families.length) ? 1 : -1))
+  const rows = clusterRows(effects, 100)
   const clustered = clusterStats(rows)
   const naive = pairedStats(rows)
-  expect(clustered.clusters).toBe(10)
-  expect(clustered.degrees_of_freedom).toBe(9)
-  expect(Object.keys(clustered.per_family).length).toBe(10)
-  expect(clustered.risk_difference).toBeCloseTo(0.4)
+  expect(clustered.clusters).toBe(families.length)
+  expect(clustered.degrees_of_freedom).toBe(families.length - 1)
+  expect(Object.keys(clustered.per_family).length).toBe(families.length)
+  expect(clustered.risk_difference).toBeCloseTo(
+    effects.reduce((a, b) => a + b, 0) / families.length,
+  )
   expect((clustered.ci95?.[1] as number) - (clustered.ci95?.[0] as number)).toBeGreaterThan(
     (naive.ci95?.[1] as number) - (naive.ci95?.[0] as number),
   )
@@ -270,7 +277,7 @@ test('family-cluster test controls simulated null type-I error despite perfectly
     const effects = families.map(() => (random() < 0.5 ? -1 : 1))
     if ((clusterStats(clusterRows(effects, 20)).p_value as number) < 0.05) rejected++
   }
-  // Null rejection probability is 20/1024; the two zero-variance extremes are inconclusive.
+  // The two zero-variance extremes are inconclusive; check the simulated rejection rate.
   expect(rejected / simulations).toBeLessThan(0.05)
   expect(rejected / simulations).toBeGreaterThan(0.005)
 })

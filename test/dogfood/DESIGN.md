@@ -161,3 +161,26 @@ bun test/dogfood/run.ts --dry-run --stream-seed 4 --concurrency 3 --output /tmp/
 - The dry-run provider scripts partial/correct code based on real injected advice and uses real query, tools, verification, episodes, distillation and accounting. It suppresses auto-memory forks through the mock child's fork-depth setting because no fork provider exists. It proves plumbing and discriminating checks, not model behavior; **every dry-run verdict is inconclusive**. Unit statistics tests separately establish that a planted arm effect can be detected.
 
 Round 6 (`7b90238`, six sessions per family, concurrency 10) had an informative primary endpoint in every family: pooled 12/28 valid failures (42.9%). Its two reported operational errors were train-5 (a genuine 900-second agent-session timeout) and train-17 (a normally completed session whose first-repair cache implementation left a hidden promise pending). The latter is a task failure under the verifier deadline rule above, not infrastructure failure. Reclassifying only that row gives 1/30 operational errors and 13/29 valid failures (44.8%), satisfying the unchanged calibration screen. The saved artifacts establish the diagnosis; keyless deadline regressions verify the fix. No difficulty, endpoint, statistical test or tolerance is changed.
+
+## Additional semantic families (extra-tasks2)
+
+`extra-tasks2.ts` appends five families without changing existing contracts or calibration
+policy. Each visible clause is rendered in the prompt and README and cited by private
+`extra-check2.ts` groups. Only starter source, README and public tests enter the agent
+repository; reference implementations and private checks remain in the harness.
+
+| Family | Intended recurring failure mode | Independent hidden discrimination |
+|---|---|---|
+| ini-config | Treating comment markers inside quoted values as comments; retain quote state when scanning comments | Seeded sections, duplicate keys, literal comment characters, escape tables, prototype keys and syntax errors |
+| utf8-codec | Accepting structurally valid continuation bytes without enforcing the shortest encoding | Platform UTF-8 encoder oracle over seeded scalar values, boundary scalars, overlongs, surrogates, truncations and invalid bytes |
+| semver-range | Treating prerelease admission as ordinary numeric range comparison; require an explicit prerelease comparator with the same core | Seeded caret/tilde boundaries, comparator intersections, ordered prerelease table, build neutrality and invalid syntax |
+| query-string | Percent-decoding without first converting raw + to space; preserve percent-encoded literal plus | Seeded repeats, own prototype keys, malformed UTF-8, frozen input encoding and round trips |
+| json-pointer | Sequentially replacing ~0 then ~1, accidentally decoding ~01 twice; decode tokens once | Independently encoded seeded paths, escaped prototype/empty keys, array replacement/append, frozen deep copies and invalid paths |
+
+The public regression for each trap recurs across variants, so a rule distilled from
+an earlier repair can prevent a later first tested repair failure. The intended
+first-tested-repair failure range is approximately 30–60%; it is a design target,
+not an observed rate. No live calibration was run. Keyless tests require starters
+to fail hidden groups, references to pass public and private checks, deterministic
+materialization and seeded replay (including stream seeds 4 and 5), and rejection
+of every individual visible-clause deletion by the coverage audit.

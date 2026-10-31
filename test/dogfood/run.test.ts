@@ -29,9 +29,10 @@ async function temporary() {
   dirs.push(dir)
   return dir
 }
-afterEach(async () => {
+// Bun supports a hook timeout; the repository's minimal bun:test declaration omits it.
+;(afterEach as (fn: () => Promise<void>, timeout: number) => void)(async () => {
   for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true })
-})
+}, 60000)
 async function ledgerSnapshot(): Promise<string> {
   const files: Record<string, string> = {}
   async function visit(dir: string) {
