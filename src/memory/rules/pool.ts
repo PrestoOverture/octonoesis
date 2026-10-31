@@ -61,6 +61,7 @@ export function enforcePoolCap(rules: RuleFile[]): RuleFile[] {
     const entry = scoredRules[i]
     if (entry) {
       entry.rule.status = 'retired'
+      entry.rule.retirement_reason = 'active pool cap exceeded (150 rules)'
     }
   }
 

@@ -148,8 +148,23 @@ export const hookEventSchema = z.object({
   outcome: z.enum(['success', 'failure', 'timeout']),
 })
 
+export const ruleUtilityEventSchema = z.object({
+  ...baseEventFields,
+  kind: z.literal('rule_utility'),
+  rule_id: z.string(),
+  enabled: z.boolean(),
+  hit: z.boolean(),
+  hits: z.number(),
+  misses: z.number(),
+  sessions: z.number(),
+  previous_status: z.string(),
+  status: z.string(),
+  reason: z.string().optional(),
+})
+
 export const journalEventSchema = z.discriminatedUnion('kind', [
   toolEventSchema,
+  ruleUtilityEventSchema,
   permissionEventSchema,
   turnEventSchema,
   sessionEventSchema,
@@ -168,6 +183,7 @@ export type JournalEvent = z.infer<typeof journalEventSchema>
 
 export const EVENT_SCHEMA_VERSIONS: Record<JournalEvent['kind'], 1 | 2> = {
   tool: 1,
+  rule_utility: 2,
   permission: 1,
   turn: 1,
   session: 1,

@@ -24,6 +24,8 @@ export interface RuleFile {
   evidence: string[] // array of episode IDs
   hits: number
   misses: number
+  utility?: { hits: number; misses: number; sessions: string[] }
+  retirement_reason?: string
   challenged_by: string[]
   anchor: {
     file: string

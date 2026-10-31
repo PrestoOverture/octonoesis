@@ -68,7 +68,7 @@ describe('Rule Lifecycle Transitions', () => {
     expect(result.status).toBe('active')
   })
 
-  it('should demote active to retired if 95% CI upper bound drops below 0.45', async () => {
+  it('should preserve legacy counts without independent session evidence', async () => {
     const activeRule: RuleFile = {
       ...baseRule,
       status: 'active',
@@ -80,7 +80,7 @@ describe('Rule Lifecycle Transitions', () => {
     }
 
     const result = await updateLifecycle(activeRule, repoRoot)
-    expect(result.status).toBe('retired')
+    expect(result.status).toBe('active')
     expect(result.confidence).toBeCloseTo(2 / 14, 4)
   })
 

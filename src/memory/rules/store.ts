@@ -2,6 +2,7 @@ import { mkdir, readFile, readdir, rm } from 'node:fs/promises'
 import path from 'node:path'
 import { writeFileAtomic } from '../../utils/atomicWrite.ts'
 import { getMemoryDir } from '../../utils/path.ts'
+import { scrub } from '../fingerprint/scrub'
 import type { RuleFile } from './types.ts'
 import { calculateConfidence } from './types.ts'
 
@@ -48,6 +49,10 @@ export function serializeRule(rule: RuleFile): string {
     ...rule.evidence.map((e) => `  - ${e}`),
     `hits: ${rule.hits}`,
     `misses: ${rule.misses}`,
+    ...(rule.utility ? [`utility: ${JSON.stringify(rule.utility)}`] : []),
+    ...(rule.retirement_reason
+      ? [`retirement_reason: ${JSON.stringify(scrub(rule.retirement_reason, process.cwd()))}`]
+      : []),
     'challenged_by:',
     ...rule.challenged_by.map((c) => `  - ${c}`),
     'anchor:',
@@ -156,6 +161,23 @@ export function parseRule(content: string): RuleFile {
         else if (currentKey === 'confidence') result.confidence = Number.parseFloat(cleanVal)
         else if (currentKey === 'hits') result.hits = Number.parseInt(cleanVal, 10)
         else if (currentKey === 'misses') result.misses = Number.parseInt(cleanVal, 10)
+        else if (currentKey === 'utility') {
+          const value = JSON.parse(rawVal)
+          if (
+            !Number.isInteger(value.hits) ||
+            value.hits < 0 ||
+            !Number.isInteger(value.misses) ||
+            value.misses < 0 ||
+            !Array.isArray(value.sessions) ||
+            !value.sessions.every(
+              (id: unknown) => typeof id === 'string' && /^[a-f0-9]{64}$/.test(id),
+            ) ||
+            new Set(value.sessions).size !== value.sessions.length ||
+            value.hits + value.misses !== value.sessions.length
+          )
+            throw new Error('Invalid utility evidence')
+          result.utility = value
+        } else if (currentKey === 'retirement_reason') result.retirement_reason = JSON.parse(rawVal)
         else if (currentKey === 'status') result.status = cleanVal
         else if (currentKey === 'user_confirmed') result.user_confirmed = cleanVal === 'true'
         else if (currentKey === 'extractor_version') result.extractor_version = cleanVal
@@ -275,6 +297,8 @@ export function parseRule(content: string): RuleFile {
     last_matched_at: result.last_matched_at,
     last_rebuilt_at: result.last_rebuilt_at,
     advice: adviceTrimmed,
+    ...(result.utility ? { utility: result.utility } : {}),
+    ...(result.retirement_reason ? { retirement_reason: result.retirement_reason } : {}),
   }
 }
 
@@ -353,6 +377,9 @@ export async function loadAllRules(rulesDir: string = getRulesDir()): Promise<Ru
  * @param rulesDir Optional custom path to rules directory.
  */
 export async function archiveRule(rule: RuleFile, rulesDir: string = getRulesDir()): Promise<void> {
+  if (rule.status === 'retired' && !rule.retirement_reason) {
+    rule.retirement_reason = 'retired by lifecycle or pool policy'
+  }
   const archiveDir = getRulesArchiveDir(rulesDir)
   await mkdir(archiveDir, { recursive: true })
   const archivePath = path.join(archiveDir, `${rule.id}.md`)

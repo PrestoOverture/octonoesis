@@ -23,8 +23,9 @@ import {
 import { type AutoDistillResult, runSessionEndAutoDistill } from '../memory/rules/autoDistill'
 import { updateLifecycle } from '../memory/rules/lifecycle'
 import { findMatchingRules, formatMatchAdvice } from '../memory/rules/match'
-import { getRulesDir, loadAllRules, loadRule, saveRule } from '../memory/rules/store'
+import { archiveRule, getRulesDir, loadAllRules, loadRule, saveRule } from '../memory/rules/store'
 import { type RuleFile, calculateConfidence } from '../memory/rules/types'
+import { observeUtility, ruleUtilityEnabled } from '../memory/rules/utility'
 import { assembleSessionContext } from '../prompts/context'
 import { buildStaticPrompt } from '../prompts/static'
 import { getProvider, getResolvedModel, setConfiguredModel } from '../providers'
@@ -1038,6 +1039,8 @@ export async function* executeTools(
               rule.id,
               verifyResult.verdict !== 'PASS' || verifyResult.exit_code !== 0,
               ctx.repoRoot,
+              getRulesDir(),
+              ctx.sessionId,
             )
             if (outcome && !isMemoryDisabled())
               yield { type: 'rule_outcome', id: rule.id, ...outcome }
@@ -1517,6 +1520,7 @@ export async function recordRuleOutcome(
   stillFailing: boolean,
   repoRoot: string,
   rulesDir: string = getRulesDir(),
+  sessionId?: string,
 ): Promise<{ hit: boolean; before: number; after: number } | undefined> {
   try {
     return await withFileLock(
@@ -1531,6 +1535,8 @@ export async function recordRuleOutcome(
           return
         }
         const before = calculateConfidence(rule.alpha, rule.beta)
+        const previousStatus = rule.status
+        observeUtility(rule, !stillFailing, sessionId)
         if (stillFailing) {
           rule.misses++
           rule.beta++
@@ -1542,13 +1548,34 @@ export async function recordRuleOutcome(
           dbg('query', `Hit recorded for rule ${rule.id}. New hits count: ${rule.hits}`)
         }
         await updateLifecycle(rule, repoRoot)
-        await saveRule(rule, rulesDir)
+        if (
+          rule.status === 'retired' ||
+          rule.status === 'dormant' ||
+          rule.status === 'superseded'
+        ) {
+          await archiveRule(rule, rulesDir)
+        } else {
+          await saveRule(rule, rulesDir)
+        }
+        appendJournal({
+          kind: 'rule_utility',
+          ...(sessionId ? { session_id: sessionId } : {}),
+          rule_id: rule.id,
+          enabled: ruleUtilityEnabled(),
+          hit: !stillFailing,
+          hits: rule.utility?.hits ?? 0,
+          misses: rule.utility?.misses ?? 0,
+          sessions: rule.utility?.sessions.length ?? 0,
+          previous_status: previousStatus,
+          status: rule.status,
+          reason: rule.retirement_reason,
+        })
         return { hit: !stillFailing, before, after: calculateConfidence(rule.alpha, rule.beta) }
       },
       RULES_LOCK_OPTIONS,
     )
   } catch (error) {
-    if (!(error instanceof LockTimeoutError)) throw error
-    warnLockTimeout(error)
+    if (error instanceof LockTimeoutError) warnLockTimeout(error)
+    else dbg('query', 'Failed to persist rule outcome', error)
   }
 }

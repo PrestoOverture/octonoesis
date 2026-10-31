@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { credibleInterval } from '../calibration/beta.ts'
 import type { RuleFile } from './types.ts'
 import { calculateConfidence } from './types.ts'
+import { applyUtilityLifecycle } from './utility'
 
 /**
  * Checks if the anchor file exists and is a valid file.
@@ -36,23 +37,23 @@ export async function updateLifecycle(rule: RuleFile, repoRoot: string): Promise
     return rule
   }
 
+  if (rule.status === 'retired' || rule.status === 'superseded' || rule.status === 'dormant')
+    return rule
+
   // Anchor check: active or candidate rules are retired if the anchor file is missing
   const anchorValid = await checkAnchorValid(rule.anchor.file, repoRoot)
   if (!anchorValid) {
     rule.status = 'retired'
+    rule.retirement_reason = 'anchor file missing'
     return rule
   }
 
-  const [lower, upper] = credibleInterval(rule, 0.95)
-
-  // Active -> Retired if 95% CI upper bound < 0.45
-  if (rule.status === 'active' && upper < 0.45) {
-    rule.status = 'retired'
-    return rule
-  }
+  const utilityUpdated = applyUtilityLifecycle(rule)
+  if (utilityUpdated.status === 'retired') return utilityUpdated
+  const [lower] = credibleInterval(rule, 0.95)
 
   // Candidate -> Active if posterior mean >= 0.55 AND 95% CI lower bound > 0.3 OR user_confirmed is true
-  if (rule.status === 'candidate') {
+  if (rule.status === 'candidate' && !rule.utility?.sessions.length) {
     if (rule.user_confirmed || (rule.confidence >= 0.55 && lower > 0.3)) {
       rule.status = 'active'
     }

@@ -116,6 +116,8 @@ export async function rebuildRules(
 
           // Preserve stats and user modifications
           if (preExistingRule) {
+            newRule.utility = preExistingRule.utility
+            newRule.retirement_reason = preExistingRule.retirement_reason
             newRule.hits = preExistingRule.hits
             newRule.misses = preExistingRule.misses
             newRule.alpha = 2 + newRule.hits + newRule.evidence.length
@@ -128,6 +130,8 @@ export async function rebuildRules(
               preExistingRule.status === 'pinned' ||
               preExistingRule.status === 'banned' ||
               preExistingRule.status === 'superseded' ||
+              preExistingRule.status === 'retired' ||
+              preExistingRule.status === 'dormant' ||
               preExistingRule.user_confirmed
             ) {
               newRule.status = preExistingRule.status
