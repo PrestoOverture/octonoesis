@@ -236,6 +236,7 @@ it('starts the TUI and accepts a prompt when history and session storage are unu
 for (const disabled of [true, false]) {
   it(`FR-INJ-1 ${disabled ? 'suppresses injection and accounting with DISABLE_MEMORY' : 'injects and records a hit with memory enabled'}`, async () => {
     const rulesDir = path.join(dir, 'rules')
+    await fs.writeFile(path.join(root, 'package.json'), '{}')
     await saveRule(rule, rulesDir)
     const rulePath = path.join(rulesDir, `${rule.id}.md`)
     const before = await fs.readFile(rulePath, 'utf8')
@@ -322,6 +323,7 @@ test('verification', () => {
         expect(failureContent).toContain(rule.advice)
         const updated = await loadRule(rule.id, rulesDir)
         expect(updated?.hits).toBe(1)
+        expect(updated?.utility?.hits).toBe(1)
         expect(updated?.misses).toBe(0)
         expect(updated?.alpha).toBe(rule.alpha + 1)
         expect(updated?.beta).toBe(rule.beta)

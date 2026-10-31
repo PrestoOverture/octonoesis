@@ -40,6 +40,7 @@ export interface QueryInternalState {
   _lastVerifyResultForQuery?: VerifyResultWithRun
   _lastFingerprints?: Fingerprint[]
   firstTurnDynamicSystem?: string
+  sessionStartInsights?: import('../memory/rules/sessionStart').InsightMatch[]
   /** Persists auto-distill attempts across query calls that share one TUI session context. */
   autoDistillAttemptedEpisodeIds?: Set<string>
   /**

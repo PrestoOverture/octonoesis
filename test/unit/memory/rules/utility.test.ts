@@ -3,6 +3,7 @@ import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import { flushJournal } from '../../../../src/memory/journal'
+import { rebuildRules } from '../../../../src/memory/rules/rebuild'
 import { getRulesArchiveDir, loadRule, saveRule } from '../../../../src/memory/rules/store'
 import type { RuleFile } from '../../../../src/memory/rules/types'
 import { recordRuleOutcome } from '../../../../src/query/engine'
@@ -72,12 +73,10 @@ test('eight independent misses archive with persisted reason and journal the tra
     .trim()
     .split('\n')
     .map((line) => JSON.parse(line))
-  expect(events.at(-1)).toMatchObject({
-    kind: 'rule_utility',
-    status: 'retired',
-    sessions: 8,
-    hit: false,
-  })
+  expect(events.at(-1).kind).toBe('rule_utility')
+  expect(events.at(-1).status).toBe('retired')
+  expect(events.at(-1).sessions).toBe(8)
+  expect(events.at(-1).hit).toBe(false)
   expect(events.at(-1).reason).toBe(archived?.retirement_reason)
 })
 test('good independent utility promotes and mixed poor utility demotes', async () => {
@@ -94,10 +93,22 @@ test('feature switch disables utility decisions and records the setting', async 
   await flushJournal()
   expect(await fs.readFile(path.join(dir, 'journal.jsonl'), 'utf8')).toContain('"enabled":false')
 })
-test('ledger I/O failures are best effort', async () => {
-  const blocked = path.join(dir, 'blocked')
-  await fs.writeFile(blocked, '')
-  expect(
-    await recordRuleOutcome('rule-utility', true, dir, path.join(blocked, 'rules'), 'session'),
-  ).toBeUndefined()
+
+test('rebuild archives legacy retired hot rules even without retained source episodes', async () => {
+  const rule = await hot()
+  if (!rule) throw new Error('Missing rule')
+  rule.status = 'retired'
+  rule.retirement_reason = 'poor verified-recovery utility'
+  await saveRule(rule, path.join(dir, 'rules'))
+  const episodesPath = path.join(dir, 'episodes.jsonl')
+  await fs.writeFile(episodesPath, '')
+  await rebuildRules(episodesPath, path.join(dir, 'rules'), {
+    repoRoot: dir,
+    model: 'mock',
+    extractorVersion: 'test',
+  })
+  expect(await hot()).toBe(null)
+  const archived = await loadRule(rule.id, getRulesArchiveDir(path.join(dir, 'rules')))
+  expect(archived?.status).toBe('retired')
+  expect(archived?.retirement_reason).toBe(rule.retirement_reason)
 })

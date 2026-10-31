@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'bun:test'
 import {
+  INSIGHT_MIN_SCORE,
+  SESSION_START_INSIGHT_LIMIT,
   SESSION_START_RULE_LIMIT,
+  formatSessionStartInsights,
   formatSessionStartRules,
+  selectSessionStartInsights,
   selectSessionStartRules,
 } from '../../../../src/memory/rules/sessionStart.ts'
 import type { RuleFile } from '../../../../src/memory/rules/types.ts'
@@ -215,5 +219,65 @@ describe('formatSessionStartRules', () => {
     const rulesB = [makeRule({ id: 'rule-a' }), makeRule({ id: 'rule-b' })]
 
     expect(formatSessionStartRules(rulesA)).toBe(formatSessionStartRules(rulesB))
+  })
+})
+
+// Separate retrieval channel: fine triggers and candidates remain eligible for abstract insights.
+describe('session-start insight similarity', () => {
+  const task = 'repair cache invalidation concurrency'
+  const insightRule = (
+    id: string,
+    task_excerpt: string,
+    status: RuleFile['status'] = 'candidate',
+  ) =>
+    makeRule({
+      id,
+      task_excerpt,
+      status,
+      insight: `heuristic ${id}`,
+      triggers: {
+        tools: ['Bash'],
+        command_prefix: [],
+        error_signatures: ['test|Error|file.ts|detail'],
+      },
+    })
+  it('ranks by cosine similarity, caps at two, and excludes below the fixed minimum', () => {
+    const rules = [
+      insightRule('rule-unrelated', 'render typography colors'),
+      insightRule('rule-middle', 'cache invalidation concurrency'),
+      insightRule('rule-best', task),
+      insightRule('rule-third', 'cache invalidation'),
+      insightRule(
+        'rule-low',
+        `cache ${Array.from({ length: 100 }, (_, i) => `unique${i}`).join(' ')}`,
+      ),
+      insightRule('rule-retired', task, 'retired'),
+      insightRule('rule-banned', task, 'banned'),
+    ]
+    const selected = selectSessionStartInsights(rules, task, '/repo')
+    expect(selected.map((match) => match.id)).toEqual(['rule-best', 'rule-middle'])
+    expect(selected.length).toBe(SESSION_START_INSIGHT_LIMIT)
+    expect(selected.every((match) => match.score >= INSIGHT_MIN_SCORE)).toBe(true)
+    expect((selected[0]?.score ?? 0) > (selected[1]?.score ?? 0)).toBe(true)
+    expect(selectSessionStartInsights([...rules].reverse(), task, '/repo')).toEqual(selected)
+    expect(selectSessionStartInsights(rules.slice(4, 5), task, '/repo')).toEqual([])
+  })
+  it('excludes empty, stop-only and legacy records; breaks equal scores by id', () => {
+    expect(selectSessionStartInsights([makeRule({ id: 'rule-legacy' })], task, '/repo')).toEqual([])
+    expect(
+      selectSessionStartInsights(
+        [insightRule('rule-x', task)],
+        'the and token=secret-value',
+        '/repo',
+      ),
+    ).toEqual([])
+    const rules = [insightRule('rule-z', task), insightRule('rule-a', task)]
+    expect(selectSessionStartInsights(rules, task, '/repo').map((match) => match.id)).toEqual([
+      'rule-a',
+      'rule-z',
+    ])
+    expect(formatSessionStartInsights(selectSessionStartInsights(rules, task, '/repo'))).toContain(
+      'never override the current task contract',
+    )
   })
 })

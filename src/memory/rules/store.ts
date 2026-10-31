@@ -58,6 +58,12 @@ export function serializeRule(rule: RuleFile): string {
     'anchor:',
     `  file: ${rule.anchor.file}`,
     `status: ${rule.status}`,
+    ...(rule.insight
+      ? [`insight: ${JSON.stringify(scrub(rule.insight, process.cwd()).slice(0, 400))}`]
+      : []),
+    ...(rule.task_excerpt
+      ? [`task_excerpt: ${JSON.stringify(scrub(rule.task_excerpt, process.cwd()).slice(0, 6000))}`]
+      : []),
     `user_confirmed: ${rule.user_confirmed}`,
     `extractor_version: ${rule.extractor_version}`,
     `model_id: ${rule.model_id}`,
@@ -178,7 +184,11 @@ export function parseRule(content: string): RuleFile {
             throw new Error('Invalid utility evidence')
           result.utility = value
         } else if (currentKey === 'retirement_reason') result.retirement_reason = JSON.parse(rawVal)
-        else if (currentKey === 'status') result.status = cleanVal
+        else if (currentKey === 'insight' || currentKey === 'task_excerpt') {
+          const value = JSON.parse(rawVal)
+          if (typeof value !== 'string') throw new Error('Invalid insight metadata')
+          result[currentKey] = value
+        } else if (currentKey === 'status') result.status = cleanVal
         else if (currentKey === 'user_confirmed') result.user_confirmed = cleanVal === 'true'
         else if (currentKey === 'extractor_version') result.extractor_version = cleanVal
         else if (currentKey === 'model_id') result.model_id = cleanVal
@@ -297,6 +307,8 @@ export function parseRule(content: string): RuleFile {
     last_matched_at: result.last_matched_at,
     last_rebuilt_at: result.last_rebuilt_at,
     advice: adviceTrimmed,
+    ...(result.insight ? { insight: result.insight } : {}),
+    ...(result.task_excerpt ? { task_excerpt: result.task_excerpt } : {}),
     ...(result.utility ? { utility: result.utility } : {}),
     ...(result.retirement_reason ? { retirement_reason: result.retirement_reason } : {}),
   }

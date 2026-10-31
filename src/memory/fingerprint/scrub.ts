@@ -11,7 +11,7 @@ const ANSI_REGEX = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-
 
 // Credential assignments in .env, JSON and source text, including quoted values.
 const SECRET_ASSIGNMENT_REGEX =
-  /(\b(?:[\w-]*(?:api[_-]?key|token|secret|password)|authorization)\b["']?\s*[:=]\s*)(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}\]]+)/gi
+  /(\b(?:[\w-]*(?:api[_-]?key|token|secret|password)|authorization)\b["']?\s*[:=]\s*)(?:\[REDACTED\]|"[^"\r\n]*"|'[^'\r\n]*'|[^\s,;}\]]+)/gi
 const API_TOKEN_REGEX = /\bsk-[A-Za-z0-9_-]{8,}\b/g
 
 // Matches ISO timestamps: e.g., 2026-06-19T18:03:32.123Z or 2026-06-19T18:03:32+08:00

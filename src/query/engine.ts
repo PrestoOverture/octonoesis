@@ -23,6 +23,12 @@ import {
 import { type AutoDistillResult, runSessionEndAutoDistill } from '../memory/rules/autoDistill'
 import { updateLifecycle } from '../memory/rules/lifecycle'
 import { findMatchingRules, formatMatchAdvice } from '../memory/rules/match'
+import {
+  INSIGHT_MIN_SCORE,
+  INSIGHT_RETRIEVAL_ALGORITHM,
+  insightRetrievalEnabled,
+  selectSessionStartInsights,
+} from '../memory/rules/sessionStart'
 import { archiveRule, getRulesDir, loadAllRules, loadRule, saveRule } from '../memory/rules/store'
 import { type RuleFile, calculateConfidence } from '../memory/rules/types'
 import { observeUtility, ruleUtilityEnabled } from '../memory/rules/utility'
@@ -318,7 +324,14 @@ export async function initQueryState(
   const emitSessionState = ctx.sessionState !== undefined
   ctx.sessionState ??= createSessionState(ctx.sessionId, model)
 
-  let rules = isMemoryDisabled() ? [] : await loadAllRules()
+  let rules: RuleFile[] = []
+  if (!isMemoryDisabled()) {
+    try {
+      rules = await loadAllRules()
+    } catch (error) {
+      dbg('query', 'Failed to load memory rules; continuing without rules', error)
+    }
+  }
   ctx.injectedRules = ctx.injectedRules || []
   ctx.recordedRuleOutcomes = ctx.recordedRuleOutcomes || new Set<string>()
 
@@ -405,7 +418,11 @@ export async function initQueryState(
 async function prepareQueryState(
   state: EngineState,
   ctx: QueryLoopContext,
+  firstQuery: boolean,
 ): Promise<ReadyEngineState> {
+  if (firstQuery && !isMemoryDisabled()) {
+    ctx.sessionStartInsights = selectSessionStartInsights(state.rules, state.input, ctx.repoRoot)
+  }
   state.messages.push({
     role: 'user',
     content: [{ type: 'text', text: state.input }],
@@ -425,8 +442,19 @@ async function prepareQueryState(
     recalledMemories,
     skills,
     state.rules,
+    ctx.sessionStartInsights,
   )
   state.sessionStartRuleIds = compiledContext.sessionStartRuleIds
+  if (firstQuery)
+    appendJournal({
+      kind: 'insight_retrieval',
+      session_id: state.sessionId,
+      enabled: !isMemoryDisabled() && insightRetrievalEnabled(),
+      rule_utility_enabled: !isMemoryDisabled() && ruleUtilityEnabled(),
+      algorithm: INSIGHT_RETRIEVAL_ALGORITHM,
+      min_score: INSIGHT_MIN_SCORE,
+      matches: compiledContext.sessionStartInsights ?? [],
+    })
   if (skills.length > 0) {
     registerTool(
       new SkillTool(skills, {
@@ -1188,7 +1216,7 @@ export async function* query(
 
     const firstQuery = state.messages.length === 0
     yield* injectTaskNotifications(state, ctx)
-    const readyState = await prepareQueryState(state, ctx)
+    const readyState = await prepareQueryState(state, ctx, firstQuery)
     try {
       if (firstQuery && !isMemoryDisabled() && state.sessionStartRuleIds?.length) {
         const rules = state.sessionStartRuleIds.flatMap((id) => {
@@ -1568,14 +1596,14 @@ export async function recordRuleOutcome(
           sessions: rule.utility?.sessions.length ?? 0,
           previous_status: previousStatus,
           status: rule.status,
-          reason: rule.retirement_reason,
+          reason: rule.retirement_reason ? scrub(rule.retirement_reason, repoRoot) : undefined,
         })
         return { hit: !stillFailing, before, after: calculateConfidence(rule.alpha, rule.beta) }
       },
       RULES_LOCK_OPTIONS,
     )
   } catch (error) {
-    if (error instanceof LockTimeoutError) warnLockTimeout(error)
-    else dbg('query', 'Failed to persist rule outcome', error)
+    if (!(error instanceof LockTimeoutError)) throw error
+    warnLockTimeout(error)
   }
 }

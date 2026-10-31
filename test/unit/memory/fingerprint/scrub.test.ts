@@ -80,6 +80,11 @@ describe('Universal Scrubber', () => {
     )
   })
 
+  it('keeps redacted task excerpts stable through repeated persistence and retrieval scrubbing', () => {
+    const first = scrub('token=private-value\npassword=another-value', repoRoot)
+    expect(scrub(first, repoRoot)).toBe(first)
+  })
+
   it('should handle empty or undefined input gracefully', () => {
     expect(scrub('', repoRoot)).toBe('')
   })

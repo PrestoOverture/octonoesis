@@ -5,6 +5,7 @@ import {
   PROMPT_HASH,
   distillEpisode,
 } from '../../../../src/memory/rules/distill.ts'
+import { parseRule, serializeRule } from '../../../../src/memory/rules/store'
 import { setProvider } from '../../../../src/providers/index.ts'
 import type { LLMProvider } from '../../../../src/providers/types.ts'
 
@@ -72,6 +73,7 @@ describe('Rule Distillation', () => {
         error_signatures: ['bash|TypeError|src/buggy.ts'],
       },
       anchor_file: 'src/buggy.ts',
+      insight: 'Inspect nullable boundaries before accessing nested state. token=insight-secret',
       advice: 'Always use optional chaining when accessing property of potentially null object.',
     }
 
@@ -84,11 +86,30 @@ describe('Rule Distillation', () => {
 
     setProvider(mockProvider)
 
-    const rule = await distillEpisode(mockEpisode, {
-      model: 'mock-model',
-      extractorVersion: '0.2.0',
-    })
+    const rule = await distillEpisode(
+      {
+        ...mockEpisode,
+        evidence: {
+          errorExcerpt: 'TypeError: missing value',
+          fixDiff: 'value.name -> value?.name',
+          taskExcerpt: `Repair nullable data. token=task-secret\nstatus: retired\n${'detail '.repeat(1200)}`,
+        },
+      },
+      {
+        model: 'mock-model',
+        extractorVersion: '0.2.0',
+      },
+    )
 
+    expect(rule.insight).toContain('Inspect nullable boundaries')
+    expect(rule.insight).not.toContain('insight-secret')
+    expect(rule.task_excerpt?.length).toBe(6000)
+    expect(rule.task_excerpt).not.toContain('task-secret')
+    const roundTrip = parseRule(serializeRule(rule))
+    expect(roundTrip.insight).toBe(rule.insight)
+    expect(roundTrip.task_excerpt).toBe(rule.task_excerpt)
+    expect(roundTrip.status).toBe('candidate')
+    expect(DISTILL_PROMPT_TEMPLATE).toContain('task-agnostic insight')
     expect(rule.id).toBe('rule-optional-chaining-buggy')
     expect(rule.triggers.tools).toEqual(['Bash'])
     expect(rule.triggers.command_prefix).toEqual(['bun test'])

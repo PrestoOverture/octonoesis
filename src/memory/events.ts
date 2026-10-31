@@ -162,9 +162,20 @@ export const ruleUtilityEventSchema = z.object({
   reason: z.string().optional(),
 })
 
+export const insightRetrievalEventSchema = z.object({
+  ...baseEventFields,
+  kind: z.literal('insight_retrieval'),
+  enabled: z.boolean(),
+  rule_utility_enabled: z.boolean(),
+  algorithm: z.string(),
+  min_score: z.number(),
+  matches: z.array(z.object({ id: z.string(), score: z.number() })),
+})
+
 export const journalEventSchema = z.discriminatedUnion('kind', [
   toolEventSchema,
   ruleUtilityEventSchema,
+  insightRetrievalEventSchema,
   permissionEventSchema,
   turnEventSchema,
   sessionEventSchema,
@@ -184,6 +195,7 @@ export type JournalEvent = z.infer<typeof journalEventSchema>
 export const EVENT_SCHEMA_VERSIONS: Record<JournalEvent['kind'], 1 | 2> = {
   tool: 1,
   rule_utility: 2,
+  insight_retrieval: 2,
   permission: 1,
   turn: 1,
   session: 1,

@@ -64,6 +64,7 @@ describe('ContextCompiler', () => {
         memory_index: 4_000,
         relevant_memories: 4_000,
         active_rules: 2_000,
+        session_insights: 1_000,
         skill_catalog: 2_000,
         mcp_instructions: 2_000,
         dynamic_suffix: 1_000,
@@ -254,4 +255,34 @@ describe('ContextCompiler', () => {
     expect(first.preamble).toBe(second.preamble)
     expect(sources).toEqual(originalSources)
   })
+})
+
+it('reports insight exposure only for complete retained entries', () => {
+  const insights = [
+    { id: 'rule-one', insight: 'Inspect invariants.', score: 1 },
+    { id: 'rule-two', insight: 'Validate boundaries.', score: 0.5 },
+  ]
+  const content = insights.map((match) => `### ${match.id}\n${match.insight}`).join('\n\n')
+  const sources: ContextSource[] = [
+    {
+      id: 'session_insights',
+      channel: 'systemStable',
+      priority: 'medium',
+      content,
+      insights,
+    },
+  ]
+  const all = compileContext(sources, unlimitedBudget)
+  expect(all.sessionStartInsights).toEqual([
+    { id: 'rule-one', score: 1 },
+    { id: 'rule-two', score: 0.5 },
+  ])
+  const dropped = compileContext(sources, { totalSystemPromptCap: 1, perSourceCaps: {} })
+  expect(dropped.sessionStartInsights).toEqual([])
+  expect(dropped.systemStable).toBe('')
+  const truncated = compileContext(sources, {
+    totalSystemPromptCap: 100,
+    perSourceCaps: { session_insights: 12 },
+  })
+  expect(truncated.sessionStartInsights).toEqual([{ id: 'rule-one', score: 1 }])
 })

@@ -1,7 +1,10 @@
 import { createHash } from 'node:crypto'
 import { getProvider } from '../../providers/index.ts'
 import type { CanonicalMessage } from '../../providers/types.ts'
+import { getRepoRoot } from '../../utils/path'
 import type { Episode } from '../episodes/types.ts'
+import { scrub } from '../fingerprint/scrub'
+import { INSIGHT_MAX_CHARS, TASK_EXCERPT_MAX_CHARS } from './sessionStart'
 import type { RuleFile } from './types.ts'
 import { calculateConfidence } from './types.ts'
 
@@ -45,6 +48,7 @@ Schema:
     "error_signatures": ["the exact error signature string to match: '{SIGNATURE}'"]
   },
   "anchor_file": "the repo-relative file path that was edited to resolve the error (typically from the direct fix candidates)",
+  "insight": "A short task-agnostic insight (1-2 sentences, at most 400 characters). Describe a transferable diagnostic or validation principle grounded in this repair; omit instance filenames, literal values, commands and execution traces. It must never override future task contracts.",
   "advice": "Markdown formatted description of the rule. Keep it brief (1-3 paragraphs). State clearly under what trigger condition it applies, what the common root cause is, and what the clean resolution is. Do not use placeholders or write speculative advice. Follow the generalization requirement above."
 }`
 
@@ -88,6 +92,7 @@ export async function distillEpisode(
   ctx: {
     model: string
     extractorVersion: string
+    repoRoot?: string
     evidence?: { errorExcerpt?: string; fixDiff?: string; taskExcerpt?: string }
   },
 ): Promise<RuleFile> {
@@ -157,6 +162,16 @@ export async function distillEpisode(
   const anchorFile = (data.anchor_file || episode.attribution.primary || '').trim()
   const advice = (data.advice || '').trim()
 
+  const repoRoot = ctx.repoRoot ?? getRepoRoot()
+  const insight =
+    typeof data.insight === 'string'
+      ? scrub(data.insight.trim(), repoRoot).slice(0, INSIGHT_MAX_CHARS)
+      : ''
+  const taskExcerpt = scrub(
+    evidence.taskExcerpt ?? episode.evidence?.taskExcerpt ?? '',
+    repoRoot,
+  ).slice(0, TASK_EXCERPT_MAX_CHARS)
+
   const alpha = 3
   const beta = 2
   const confidence = calculateConfidence(alpha, beta)
@@ -188,6 +203,8 @@ export async function distillEpisode(
     last_matched_at: null,
     last_rebuilt_at: null,
     advice,
+    ...(insight ? { insight } : {}),
+    ...(taskExcerpt ? { task_excerpt: taskExcerpt } : {}),
   }
 }
 

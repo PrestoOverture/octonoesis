@@ -64,6 +64,11 @@ export async function rebuildRules(
         (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
       )
 
+      // Preserve legacy terminal hot files even when no source episode remains.
+      for (const rule of existingRules) {
+        if (isTerminalRule(rule)) await archiveRule(rule, rulesDir)
+      }
+
       // 3. Clear rules directory (delete all rule-*.md files)
       try {
         const files = await readdir(rulesDir)
@@ -107,6 +112,7 @@ export async function rebuildRules(
         } else {
           const newRule = disambiguateRuleId(
             await distillEpisode(episode, {
+              repoRoot,
               model: modelToUse,
               extractorVersion: ctx.extractorVersion,
             }),

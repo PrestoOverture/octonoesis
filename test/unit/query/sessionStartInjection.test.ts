@@ -2,6 +2,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { parseJournalEvent } from '../../../src/memory/events'
+import { flushJournal } from '../../../src/memory/journal'
+import { INSIGHT_MIN_SCORE } from '../../../src/memory/rules/sessionStart'
 import { loadRule, saveRule } from '../../../src/memory/rules/store.ts'
 import type { RuleFile } from '../../../src/memory/rules/types.ts'
 import { setProvider } from '../../../src/providers'
@@ -168,4 +171,84 @@ describe('session-start rule injection through the real query() engine (FR-INJ-2
       }
     }
   })
+})
+
+it('injects up to two ranked abstract insights and journals only compiled exposure', async () => {
+  const task = 'repair cache invalidation concurrency'
+  const rules = [
+    makeRule({ id: 'rule-best', task_excerpt: task }),
+    makeRule({ id: 'rule-middle', task_excerpt: 'cache invalidation concurrency' }),
+    makeRule({ id: 'rule-third', task_excerpt: 'cache invalidation' }),
+    makeRule({ id: 'rule-unrelated', task_excerpt: 'render typography colors' }),
+  ].map((rule) => ({
+    ...rule,
+    status: 'candidate' as const,
+    insight: `INSIGHT_${rule.id}`,
+    advice: 'TRACE_SHOULD_NOT_BE_INJECTED',
+    triggers: { ...rule.triggers, error_signatures: ['test|Error|file.ts|detail'] },
+  }))
+  for (const rule of rules) await saveRule(rule, path.join(memoryDir, 'rules'))
+  const provider = new CapturingProvider()
+  setProvider(provider)
+  const generator = query(task, { repoRoot, sessionId: 'insight-exposure' })
+  while (!(await generator.next()).done) {
+    /* drain */
+  }
+  expect(provider.capturedSystem).toContain('INSIGHT_rule-best')
+  expect(provider.capturedSystem).toContain('INSIGHT_rule-middle')
+  expect(provider.capturedSystem).not.toContain('INSIGHT_rule-third')
+  expect(provider.capturedSystem).not.toContain('TRACE_SHOULD_NOT_BE_INJECTED')
+  expect(provider.capturedSystem).toContain('never override the current task contract')
+  expect(
+    (provider.capturedSystem ?? '').indexOf('INSIGHT_rule-best') <
+      (provider.capturedSystem ?? '').indexOf('INSIGHT_rule-middle'),
+  ).toBe(true)
+  await flushJournal()
+  const events = (await fs.readFile(path.join(memoryDir, 'journal.jsonl'), 'utf8'))
+    .trim()
+    .split('\n')
+    .map((line) => parseJournalEvent(JSON.parse(line)))
+  const exposure = events.find((event) => event?.kind === 'insight_retrieval')
+  if (exposure?.kind !== 'insight_retrieval' || !('matches' in exposure))
+    throw new Error('No insight exposure event')
+  expect(exposure.enabled).toBe(true)
+  const matches = exposure.matches as { id: string; score: number }[]
+  expect(matches.map((match) => match.id)).toEqual(['rule-best', 'rule-middle'])
+  expect(matches.every((match) => match.score >= INSIGHT_MIN_SCORE)).toBe(true)
+  expect(exposure.min_score).toBe(INSIGHT_MIN_SCORE)
+})
+
+it('disables insight retrieval independently and journals zero exposure', async () => {
+  const prior = process.env.OCTONOESIS_DISABLE_INSIGHT_RETRIEVAL
+  process.env.OCTONOESIS_DISABLE_INSIGHT_RETRIEVAL = '1'
+  try {
+    await saveRule(
+      makeRule({
+        id: 'rule-disabled-insight',
+        status: 'candidate',
+        task_excerpt: 'cache invalidation',
+        insight: 'DISABLED_INSIGHT',
+      }),
+      path.join(memoryDir, 'rules'),
+    )
+    const provider = new CapturingProvider()
+    setProvider(provider)
+    const generator = query('cache invalidation', { repoRoot, sessionId: 'insight-disabled' })
+    while (!(await generator.next()).done) {
+      /* drain */
+    }
+    expect(provider.capturedSystem).not.toContain('DISABLED_INSIGHT')
+    await flushJournal()
+    const events = (await fs.readFile(path.join(memoryDir, 'journal.jsonl'), 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+    const exposure = events.find((event) => event.kind === 'insight_retrieval')
+    expect(exposure.enabled).toBe(false)
+    expect(exposure.matches).toEqual([])
+  } finally {
+    if (prior === undefined)
+      Reflect.deleteProperty(process.env, 'OCTONOESIS_DISABLE_INSIGHT_RETRIEVAL')
+    else process.env.OCTONOESIS_DISABLE_INSIGHT_RETRIEVAL = prior
+  }
 })

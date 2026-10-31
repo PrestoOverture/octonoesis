@@ -242,6 +242,8 @@ describe('Journal Event Schema', () => {
   test('maps all known kinds to their schema versions', () => {
     expect(EVENT_SCHEMA_VERSIONS).toEqual({
       tool: 1,
+      rule_utility: 2,
+      insight_retrieval: 2,
       permission: 1,
       turn: 1,
       session: 1,

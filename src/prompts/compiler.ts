@@ -12,6 +12,7 @@ export interface ContextSource {
   content: string
   tokens?: number
   ruleIds?: string[]
+  insights?: { id: string; insight: string; score: number }[]
 }
 
 /** Token budget limits and per-source caps for prompt compilation. */
@@ -27,6 +28,7 @@ export interface CompiledContext {
   totalTokens: number
   dropped: string[]
   sessionStartRuleIds?: string[]
+  sessionStartInsights?: { id: string; score: number }[]
 }
 
 export const DEFAULT_CONTEXT_BUDGET: ContextBudget = {
@@ -37,6 +39,7 @@ export const DEFAULT_CONTEXT_BUDGET: ContextBudget = {
     memory_index: 4_000,
     relevant_memories: 4_000,
     active_rules: 2_000,
+    session_insights: 1_000,
     skill_catalog: 2_000,
     mcp_instructions: 2_000,
     dynamic_suffix: 1_000,
@@ -195,6 +198,11 @@ export function compileContext(sources: ContextSource[], budget: ContextBudget):
     preamble,
     totalTokens: estimateTokens(systemStable) + estimateTokens(preamble),
     dropped,
+    sessionStartInsights: includedSources(systemSources).flatMap((source) =>
+      (source.insights ?? [])
+        .filter((match) => source.content.includes(`### ${match.id}\n${match.insight}`))
+        .map(({ id, score }) => ({ id, score })),
+    ),
     sessionStartRuleIds: includedSources(systemSources).flatMap((source) =>
       (source.ruleIds ?? []).filter((id) => source.content.includes(`### ${id}\n`)),
     ),

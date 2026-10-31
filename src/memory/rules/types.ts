@@ -38,6 +38,8 @@ export interface RuleFile {
   created_at: string
   last_matched_at: string | null
   last_rebuilt_at: string | null
+  insight?: string // Short task-agnostic heuristic, separate from failure advice
+  task_excerpt?: string // Scrubbed originating task used only for lexical retrieval
   advice: string // Markdown description
 }
 

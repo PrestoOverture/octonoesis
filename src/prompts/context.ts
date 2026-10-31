@@ -3,7 +3,13 @@ import path from 'node:path'
 import { loadMemoryIndex } from '../memory/auto/store'
 import type { MemoryFile } from '../memory/auto/types'
 import { getMemoryAvailability, isMemoryDisabled } from '../memory/availability'
-import { formatSessionStartRules, selectSessionStartRules } from '../memory/rules/sessionStart'
+import {
+  type InsightMatch,
+  formatSessionStartInsights,
+  formatSessionStartRules,
+  insightRetrievalEnabled,
+  selectSessionStartRules,
+} from '../memory/rules/sessionStart'
 import type { RuleFile } from '../memory/rules/types'
 import type { Usage } from '../providers/types'
 import type { QueryLoopContext } from '../query/types'
@@ -82,6 +88,7 @@ export async function buildSessionContextSources(
   recalledMemories: MemoryFile[],
   skills: readonly SkillDefinition[] = [],
   rules: readonly RuleFile[] = [],
+  insights: readonly InsightMatch[] = [],
 ): Promise<ContextSource[]> {
   const [octonoesisMd, claudeMd, memoryIndex, dynamicSuffix] = await Promise.all([
     readOptionalFile(path.join(ctx.repoRoot, 'OCTONOESIS.md')),
@@ -126,6 +133,15 @@ export async function buildSessionContextSources(
     })
   }
   if (!isMemoryDisabled()) {
+    const insightContent = insightRetrievalEnabled() ? formatSessionStartInsights(insights) : ''
+    if (insightContent)
+      sources.push({
+        id: 'session_insights',
+        channel: 'systemStable',
+        priority: 'medium',
+        content: insightContent,
+        insights: [...insights],
+      })
     const selected = selectSessionStartRules(rules)
     const sessionStartRules = formatSessionStartRules(selected)
     if (sessionStartRules.length > 0) {
@@ -173,6 +189,7 @@ export async function assembleSessionContext(
   recalledMemories: MemoryFile[],
   skills: readonly SkillDefinition[] = [],
   rules: readonly RuleFile[] = [],
+  insights: readonly InsightMatch[] = [],
 ): Promise<CompiledContext> {
   const sources = await buildSessionContextSources(
     ctx,
@@ -181,6 +198,7 @@ export async function assembleSessionContext(
     recalledMemories,
     skills,
     rules,
+    insights,
   )
   const compiled = compileContext(sources, DEFAULT_CONTEXT_BUDGET)
   if (compiled.dropped.length > 0) {

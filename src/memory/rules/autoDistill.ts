@@ -207,6 +207,7 @@ export async function runSessionEndAutoDistill(
           try {
             const rule = disambiguateRuleId(
               await distillEpisode(episode, {
+                repoRoot,
                 model: options.model ?? getCheapestModel(),
                 extractorVersion: options.extractorVersion ?? AUTO_DISTILL_EXTRACTOR_VERSION,
               }),
