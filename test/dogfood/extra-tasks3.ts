@@ -21,7 +21,7 @@ export const extraClauses3 = {
   },
   'rational-math': {
     fraction:
-      'Export rational(n,d=1n), add(a,b), compare(a,b), and parse(text). Fractions are {n:bigint,d:bigint}. Normalize every result to coprime terms with positive denominator; zero is 0n/1n. Zero denominator throws RangeError. Do not mutate inputs. add returns the exact sum; compare returns -1, 0 or 1 by exact cross multiplication.',
+      'Export rational(n,d=1n), add(a,b), compare(a,b), and parse(text). Fractions are {n:bigint,d:bigint}. Normalize every result to coprime terms with positive denominator; zero is 0n/1n. Zero denominator throws RangeError. Do not mutate inputs. add and compare accept any fraction objects with a nonzero denominator, including unnormalized ones with a negative denominator, and treat them by value. add returns the exact sum; compare returns -1, 0 or 1 by exact value.',
     syntax:
       "parse accepts exactly two signed decimal integers separated by one slash, e.g. '-2/+4'; no whitespace or other syntax is accepted. Malformed text throws SyntaxError; a syntactically valid zero denominator throws RangeError. BigInt magnitude is unbounded.",
   },
