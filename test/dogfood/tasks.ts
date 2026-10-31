@@ -69,13 +69,13 @@ export const clauses = {
     constructor:
       'new Cache(loader, ttl, now) uses an injected clock function. The constructor must throw RangeError unless ttl is a positive finite number, including for 0, negative values, Infinity and NaN.',
     pending:
-      'get(key) returns a Promise; concurrent gets for the same key share ONE loader call. Different keys are independent.',
+      'get(key) returns a Promise; concurrent gets for the same key share ONE loader call. Different keys are independent. Pending ownership must be installed before invoking the loader and removed on settlement, including synchronous failure.',
     expiry:
       'Values including undefined are cached until now() >= completionTime + ttl; TTL starts when the loader completes, not when get is called.',
     rejection:
-      'Rejections are never cached. Loader may return synchronously or throw synchronously; get must always return a Promise and turn synchronous throws into rejections.',
+      'Rejections are never cached; the next get after a rejection must retry the loader. Loader may return synchronously or throw synchronously; get must always return a Promise and turn synchronous throws into rejections.',
     invalidation:
-      'invalidate(key) removes cached AND pending ownership; an already pending caller still gets its own result or rejection, but stale completion/rejection must not overwrite or delete a newer generation.',
+      'invalidate(key) removes cached AND pending ownership; an already pending caller still gets its own result or rejection, but stale completion/rejection must not overwrite or delete a newer generation. Always settle the original caller with the loader outcome, even after invalidation; ownership controls cache writes only.',
   },
   'event-bus': {
     registration:
@@ -107,8 +107,16 @@ export const initialSources: Record<Family, string> = {
     'export function overlay(layers) { return layers.map(x=>({...x})).sort((a,b)=>a.start-b.start) }',
   'atomic-transfer':
     'export function transfer(balances,moves) { for(const x of moves){ balances[x.from]-=x.amount; balances[x.to]+=x.amount } return balances }',
-  'single-flight':
-    'export class Cache { constructor(loader,ttl,now){this.loader=loader} async get(key){return this.loader(key)} invalidate(key){} }',
+  'single-flight': `export class Cache {
+ constructor(loader,ttl,now){this.loader=loader;this.ttl=ttl;this.now=now;this.entries=new Map();}
+ get(key){const existing=this.entries.get(key);if(existing?.pending)return existing.promise;
+ const entry={pending:true,promise:null};this.entries.set(key,entry);
+ // Install ownership before invoking user code. Keep caller settlement independent of cache ownership.
+ entry.promise=Promise.resolve().then(()=>this.loader(key)).finally(()=>{if(this.entries.get(key)===entry)this.entries.delete(key);});
+ // TODO: validate ttl, cache successful values until completion + ttl, and invalidate ownership.
+ return entry.promise;}
+ invalidate(key){}
+}`,
   'event-bus': 'export function createBus(){ return { on(){return ()=>false}, emit(){return 0} } }',
   'async-pool':
     'export class Pool { constructor(limit){} run(job,signal){return Promise.resolve().then(job)} }',

@@ -243,17 +243,20 @@ function clusterRows(effects: number[], pairsPerFamily = 40): Observation[] {
     })
 }
 test('strong within-family correlation widens primary CI versus naive McNemar and reports family effects', () => {
-  const rows = clusterRows([1, 1, 1, 1, 1, 1, 1, -1, -1, -1], 100)
+  const effects = families.map((_, i) => (i < Math.round(families.length * 0.7) ? 1 : -1))
+  const rows = clusterRows(effects, 100)
   const clustered = clusterStats(rows)
   const naive = pairedStats(rows)
-  expect(clustered.clusters).toBe(10)
-  expect(clustered.degrees_of_freedom).toBe(9)
-  expect(Object.keys(clustered.per_family).length).toBe(10)
-  expect(clustered.risk_difference).toBeCloseTo(0.4)
+  expect(clustered.clusters).toBe(families.length)
+  expect(clustered.degrees_of_freedom).toBe(families.length - 1)
+  expect(Object.keys(clustered.per_family).length).toBe(families.length)
+  expect(clustered.risk_difference).toBeCloseTo(
+    effects.reduce((a, b) => a + b, 0) / families.length,
+  )
   expect((clustered.ci95?.[1] as number) - (clustered.ci95?.[0] as number)).toBeGreaterThan(
     (naive.ci95?.[1] as number) - (naive.ci95?.[0] as number),
   )
-  expect(clustered.p_value).toBeGreaterThan(0.05)
+  expect(clustered.p_value as number).toBeGreaterThan(naive.p_value as number)
   expect(naive.p_value).toBeLessThan(0.001)
 })
 test('family-cluster test controls simulated null type-I error despite perfectly correlated variants', () => {
@@ -270,7 +273,7 @@ test('family-cluster test controls simulated null type-I error despite perfectly
     const effects = families.map(() => (random() < 0.5 ? -1 : 1))
     if ((clusterStats(clusterRows(effects, 20)).p_value as number) < 0.05) rejected++
   }
-  // Null rejection probability is 20/1024; the two zero-variance extremes are inconclusive.
+  // The two zero-variance extremes are inconclusive; the family count comes from the registry.
   expect(rejected / simulations).toBeLessThan(0.05)
   expect(rejected / simulations).toBeGreaterThan(0.005)
 })

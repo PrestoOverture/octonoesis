@@ -79,6 +79,7 @@ export function planPower(
   }
   return {
     ...assumptions,
+    degrees_of_freedom: g - 1,
     cluster: 'semantic task family',
     allocation: 'equal pairs per family; equal family weights in primary estimand',
     method:

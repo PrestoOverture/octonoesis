@@ -9,6 +9,8 @@ export const extraClauses = {
   'dependency-plan': {
     graph:
       'Export plan(nodes, edges), where nodes are unique strings and each edge [before,after] requires before to precede after. Return a new array containing every node exactly once in topological order. At each step choose the lexicographically smallest currently available node using JavaScript string comparison (<), regardless of input order. Duplicate edges count once; disconnected nodes participate in the same ordering. Names may be empty or prototype names.',
+    targets:
+      'An optional third argument targets is an array of node names. When supplied, return only those targets and all their transitive prerequisites, with the same smallest-currently-available ordering in that induced graph; empty targets returns []. Duplicate targets count once. Unknown targets throw RangeError. Validate endpoints and cycles in the entire graph even when targets excludes them. Never mutate targets; frozen targets are valid.',
     errors:
       'Throw RangeError for any unknown edge endpoint or any cycle, including self cycles. Never mutate nodes, edges or their nested arrays; frozen inputs are valid.',
   },
@@ -35,14 +37,14 @@ export type ExtraFamily = keyof typeof extraClauses
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json }
 export interface ExtraSubject {
   parseCSV(text: string): string[][]
-  plan(nodes: string[], edges: string[][]): string[]
+  plan(nodes: string[], edges: string[][], targets?: string[]): string[]
   mergePatch(target: Json, patch: Json): Json
   addDays(date: string, delta: number): string
   elect(candidates: string[], ballots: string[][]): string | null
 }
 export const extraInitial: Record<ExtraFamily, string> = {
   'csv-records': `export function parseCSV(text){return text.split('\\n').map(r=>r.split(','))}`,
-  'dependency-plan': 'export function plan(nodes,edges){return nodes.sort()}',
+  'dependency-plan': 'export function plan(nodes,edges){return [...nodes].sort()}',
   'merge-patch': 'export function mergePatch(target,patch){return {...target,...patch}}',
   'civil-date':
     'export function addDays(date,delta){return new Date(Date.parse(date)+delta*86400000).toISOString().slice(0,10)}',
@@ -57,7 +59,7 @@ export const extraSolutions: Record<ExtraFamily, string> = {
  if(c==='\\n'||c==='\\r'){if(c==='\\r'){if(text[i+1]!=='\\n')throw new SyntaxError('CR');i++;}row.push(field);rows.push(row);row=[];field='';state='start';if(i===text.length-1)return rows;continue;}
  if(state==='closed')throw new SyntaxError('after quote');if(c==='"'){if(state!=='start')throw new SyntaxError('quote');state='quoted';}else{field+=c;state='plain';}}
  if(state==='quoted')throw new SyntaxError('unclosed');row.push(field);rows.push(row);return rows;}`,
-  'dependency-plan': `export function plan(nodes,edges){const next=new Map(nodes.map(n=>[n,new Set()])),degree=new Map(nodes.map(n=>[n,0]));for(const [a,b] of edges){if(!next.has(a)||!next.has(b))throw new RangeError('endpoint');if(!next.get(a).has(b)){next.get(a).add(b);degree.set(b,degree.get(b)+1);}}const out=[];while(out.length<nodes.length){const ready=nodes.filter(n=>degree.get(n)===0).sort();if(!ready.length)throw new RangeError('cycle');const n=ready[0];out.push(n);degree.set(n,-1);for(const b of next.get(n))degree.set(b,degree.get(b)-1);}return out;}`,
+  'dependency-plan': `export function plan(nodes,edges,targets){const next=new Map(nodes.map(n=>[n,new Set()])),degree=new Map(nodes.map(n=>[n,0]));for(const [a,b] of edges){if(!next.has(a)||!next.has(b))throw new RangeError('endpoint');if(!next.get(a).has(b)){next.get(a).add(b);degree.set(b,degree.get(b)+1);}}const out=[];while(out.length<nodes.length){const ready=nodes.filter(n=>degree.get(n)===0).sort();if(!ready.length)throw new RangeError('cycle');const n=ready[0];out.push(n);degree.set(n,-1);for(const b of next.get(n))degree.set(b,degree.get(b)-1);}if(targets===undefined)return out;const wanted=new Set();const visit=n=>{if(!next.has(n))throw new RangeError('target');if(wanted.has(n))return;wanted.add(n);for(const [a,b] of edges)if(b===n)visit(a);};for(const n of targets)visit(n);return out.filter(n=>wanted.has(n));}`,
   'merge-patch': `const obj=x=>x!==null&&typeof x==='object'&&!Array.isArray(x);
  const clone=x=>Array.isArray(x)?x.map(clone):obj(x)?Object.fromEntries(Object.entries(x).map(([k,v])=>[k,clone(v)])):x;
  export function mergePatch(target,patch){if(!obj(patch))return clone(patch);const out=obj(target)?clone(target):{};for(const [k,v] of Object.entries(patch)){if(v===null)delete out[k];else Object.defineProperty(out,k,{value:mergePatch(Object.hasOwn(out,k)?out[k]:undefined,v),enumerable:true,writable:true,configurable:true});}return out;}`,

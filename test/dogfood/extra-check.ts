@@ -64,6 +64,47 @@ export const extraGroups: Record<ExtraFamily, AssertionGroup[]> = {
   ],
   'dependency-plan': [
     {
+      id: 'target-prerequisite-closure',
+      requires: [
+        c['dependency-plan'].targets,
+        c['dependency-plan'].graph,
+        c['dependency-plan'].errors,
+      ],
+      run(m, random) {
+        for (let i = 0; i < 30; i++) {
+          const root = `root${random(100000)}`
+          const nodes = freeze(['z', root, 'a', '', '__proto__', 'unrelated'])
+          const edges = freeze([
+            [root, 'z'],
+            ['a', root],
+            ['', 'a'],
+            ['__proto__', root],
+            [root, 'z'],
+          ])
+          const targets = freeze(['z', 'z'])
+          assert.deepEqual(m.plan(nodes, edges, targets), ['', '__proto__', 'a', root, 'z'])
+          assert.deepEqual(m.plan(nodes, edges, freeze([])), [])
+          assert.deepEqual(targets, ['z', 'z'])
+          assert.throws(() => m.plan(nodes, edges, ['missing']), RangeError)
+        }
+        for (const targets of [[], ['a']]) {
+          assert.throws(
+            () =>
+              m.plan(
+                ['a', 'b', 'c'],
+                [
+                  ['b', 'c'],
+                  ['c', 'b'],
+                ],
+                targets,
+              ),
+            RangeError,
+          )
+          assert.throws(() => m.plan(['a'], [['missing', 'a']], targets), RangeError)
+        }
+      },
+    },
+    {
       id: 'lexical-dag-and-duplicates',
       requires: [c['dependency-plan'].graph, c['dependency-plan'].errors],
       run(m, random) {
