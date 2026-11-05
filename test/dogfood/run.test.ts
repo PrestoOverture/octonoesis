@@ -87,6 +87,7 @@ test('keyless end-to-end: preregistration precedes sessions, training accumulate
     expect(environment.OCTONOESIS_MEMORY_DIR).toBe(path.join(dir, 'ledger'))
     expect(environment.SPARK_API_KEY).toBeUndefined()
     const { result } = await run({ dryRun: true, output: dir })
+    if (!result) throw new Error('Expected completed run')
     expect(result.completed_jobs).toBe(
       (DRY_TRAINING_PER_FAMILY + 2 * DRY_HELDOUT_PER_FAMILY) * families.length,
     )
@@ -141,6 +142,7 @@ test('interrupted sessions and torn appends resume without retries or deleting e
   const prefix = `${plan.jobs.map((job) => JSON.stringify({ kind: 'started', job, ledger: 'interrupted', plan_hash: digest(plan) })).join('\n')}\n{"kind":"res`
   await writeFile(path.join(dir, 'events.jsonl'), prefix)
   const { result } = await run({ dryRun: true, output: dir })
+  if (!result) throw new Error('Expected completed run')
   expect(result.verdict).toBe('inconclusive')
   expect(result.completed_jobs).toBe(plan.jobs.length)
   const log = await readFile(path.join(dir, 'events.jsonl'), 'utf8')
@@ -174,6 +176,7 @@ test('evaluation concurrency preserves pairs, outcomes, training lineage and has
   const parallelDir = await temporary()
   const serial = await run({ dryRun: true, output: serialDir, concurrency: 1 })
   const parallel = await run({ dryRun: true, output: parallelDir, concurrency: 3 })
+  if (!serial.result || !parallel.result) throw new Error('Expected completed runs')
   expect(parallel.result.primary).toEqual(serial.result.primary)
   expect(parallel.result.sensitivity).toEqual(serial.result.sensitivity)
   expect(parallel.result.arms).toEqual(serial.result.arms)

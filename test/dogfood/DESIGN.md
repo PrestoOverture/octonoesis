@@ -12,6 +12,45 @@ bun test/dogfood/run.ts --provider spark --model spark-x2.6 --concurrency 4 --ou
 
 That single command generates the stream, durably preregisters it, trains, evaluates, and writes `report.json` and `report.md`. Run **the same command and output path** to resume. Use a new empty directory for a new experiment. The output must be outside this repository and every `.octonoesis` directory, including symlink aliases. No production learning code is modified.
 
+For key rotation or bounded batches, keep the same registered configuration and output:
+
+```sh
+bun test/dogfood/run.ts --provider spark --model spark-x2.6 --concurrency 4 --stop-after-pairs 20 --output /tmp/octonoesis-spark-dogfood-006
+```
+
+`--stop-after-pairs N` admits at most N new evaluation pairs per invocation, including
+voided attempts. It does not limit training and is not preregistered; omit or change
+it on resume. Create `<output>/STOP` to stop admitting new training jobs or pairs.
+Already admitted jobs and both arms of admitted pairs drain before the lock is
+released. Either stop exits 0 with `Stopped; resume with the same --output` and
+writes no report. Remove STOP before resuming. Reports are generated only when
+every registered job has a committed, non-void result.
+
+The sole retry exception is outcome-blind: a session error string identifying a
+provider HTTP rejection (401/402/403/429) voids its entire training job or evaluation
+pair, including an already committed first arm. No task score, grader outcome,
+arm, or learned rule selects a void. A durable `void` event records the jobs, HTTP
+status and error. Both arms' ledgers and session artifacts move to
+`<output>/voided/<void-id>/{ledgers,sessions}/`; replay completes interrupted moves
+before retrying. On the next invocation both arms start from scratch in their
+original hashed order. A training void ends the invocation because later training
+requires that checkpoint; retry starts from the same prior committed checkpoint.
+The voided ledger never advances training. All other errors (including ordinary
+fatal errors, invalid JSON, external kills, user aborts and timeouts) retain their
+existing classifications and never-retry semantics. Hard-killed started work with
+no result or durable void still becomes ERROR on resume.
+
+Any 401/402/403 or three consecutive 429 voids trips the breaker: no further units
+are admitted, in-flight work drains, and exit 3 requests replacement of
+`SPARK_API_KEY` and resume with the same output. The streak follows completed units
+in event order across invocations; a completed non-void training job or whole pair
+resets it. Resume admits work again so a replacement key can be tested. API keys
+and `SPARK_BASE_URL` stay outside the immutable plan; provider, model, concurrency,
+source hash and stream remain pinned. JSON and Markdown reports disclose total
+voids, training/pair counts and HTTP reasons; voids do not count as committed ERRORs.
+Calibration has no batching or void/retry changes. Dry-run retains its scripted
+provider and measurement behavior and supports the same batching controls.
+
 Before preregistering, run a descriptive calibration probe on the revised stream:
 
 ```sh
@@ -103,10 +142,10 @@ The fixed pooled calibration policy above replaces the old per-family 10–90% g
 1. Create `stream.json` and immutable `preregistration.json` before scheduling any session. The plan records the hypothesis, metrics, exact task/arm order, fixed sample, test, validity gates and stopping rule. It hashes the task stream and executable harness/production sources plus dependency manifests. Each durable `started` event includes the plan hash. Resume rejects changed source, provider, model, stream or an altered plan after scheduling.
 2. Train sequentially with memory and automatic distillation enabled. Every session receives a dedicated external `OCTONOESIS_MEMORY_DIR`. Training checkpoint N contains the complete ledger from checkpoint N−1, including journal, episodes, rules and auto-memory. This is one persistent **logical ledger lineage**, implemented as full copy-on-session checkpoints for crash recovery. Successful ledger writes accumulate exactly as in normal use; no rules are manufactured, promoted or rewritten by the harness.
 3. Freeze the final trained checkpoint for the comparison. For every held-out variant, make two independent copies of that checkpoint and identical initial repositories. The rules-on arm retains all rule files; rules-off withholds the copied `rules/` directory, including archived rules. All other memory is initially identical. Both run the normal learning loop, including session-end learning. New evaluation learning stays in that session's branch and cannot leak into the other arm or later pairs. This isolates access to previously learned rules while retaining the normal query/verification machinery.
-4. Both arms occur exactly once for each task. Independent held-out pairs may execute concurrently from the frozen checkpoint, bounded by the preregistered worker count. A worker starts its second arm only after committing its first arm result. Completion events are serialized and keyed by job ID; reports sort observations into plan order, so concurrent completion order cannot change pair matching or results. No evaluation job starts until all training jobs finish. Their within-pair execution order is chosen by a preregistered hash of the task ID, reducing order drift. The IDs/seeds determine fixtures and ordering; they do **not** seed provider sampling. No override is added to production experiments or query code: train/frozen-held-out paired ablation is used instead of random `src/experiments` assignment, which would not guarantee matched pairs.
+4. Both arms commit exactly once for each task, excluding the provider-rejection voids described above. Independent held-out pairs may execute concurrently from the frozen checkpoint, bounded by the preregistered worker count. A worker starts its second arm only after committing its first arm result. Completion events are serialized and keyed by job ID; reports sort observations into plan order, so concurrent completion order cannot change pair matching or results. No evaluation job starts until all training jobs finish. Their within-pair execution order is chosen by a preregistered hash of the task ID, reducing order drift. The IDs/seeds determine fixtures and ordering; they do **not** seed provider sampling. No override is added to production experiments or query code: train/frozen-held-out paired ablation is used instead of random `src/experiments` assignment, which would not guarantee matched pairs.
 5. Preserve per-session `task.json`, `cli.json`, `check.json`, repository and ledger alongside append-only `events.jsonl`. Headless JSON parsing, timeout/process-group termination and status classification reuse `test/eval/run.ts`. A run lock prevents simultaneous writers. Inherited memory-disable and experiment switches are removed in the child environment; parent environment is not changed. Spark's main/distillation model is pinned with MODEL and SPARK_MODEL; the other providers retain their production cheapest-model defaults for distillation, covered by the source hash.
 
-Reports are written only after scheduling finishes and are immutable. Ordinary resume verifies existing reports rather than replacing them. Complete corrupted event lines fail closed. Torn trailing JSON is retained byte-for-byte and followed by a hash-identified recovery marker. A started session without a committed result becomes an operational error, is never retried, and cannot supply its half-mutated checkpoint to subsequent training. Already committed sessions are skipped. Interrupted submissions count as errors under the fixed tolerance below, and cannot be selectively retried. In-flight workers are drained before releasing the run lock on a scheduler failure. Large ledgers are copied in full; storage use grows with checkpoint size.
+Reports are written only after every planned job has a committed non-void result and are immutable. Ordinary resume verifies existing reports rather than replacing them. Complete corrupted event lines fail closed. Torn trailing JSON is retained byte-for-byte and followed by a hash-identified recovery marker. A started session without a committed result becomes an operational error, is never retried, and cannot supply its half-mutated checkpoint to subsequent training. Already committed sessions are skipped. Interrupted submissions count as errors under the fixed tolerance below, and cannot be selectively retried. In-flight workers are drained before releasing the run lock on a scheduler failure. Large ledgers are copied in full; storage use grows with checkpoint size.
 
 ## Metrics
 
@@ -148,7 +187,7 @@ Keyless confirmatory demonstration, with its computed and scheduled allocations 
 bun test/dogfood/run.ts --dry-run --stream-seed 4 --concurrency 3 --output /tmp/octonoesis-ten-family-dry
 ```
 
-**Stopping:** execute the entire registered schedule exactly once. No early efficacy stop, outcome-dependent extension, task replacement, rule curation, or adaptive sample size. Do not inspect intermediate p-values to choose when to stop. Recover interrupted work as described above. Generate inference after the fixed schedule; incomplete samples, failed calibration, absent treatment rules, exceeded error tolerance or sensitivity disagreement force `inconclusive`. A calibration Delta begins a new experiment instead of modifying this one.
+**Stopping:** commit the entire registered schedule exactly once, subject only to the outcome-blind provider-rejection void policy above. Operational batches drain without inference and do not change the fixed sample. No early efficacy stop, outcome-dependent extension, task replacement, rule curation, or adaptive sample size. Do not inspect intermediate p-values to choose when to stop. Recover interrupted work as described above. Generate inference after the fixed schedule; incomplete samples, failed calibration, absent treatment rules, exceeded error tolerance or sensitivity disagreement force `inconclusive`. A calibration Delta begins a new experiment instead of modifying this one.
 
 ## Threats to validity and scope of conclusions
 

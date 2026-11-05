@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
-import { createHash } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
 import {
   appendFile,
   cp,
@@ -9,6 +10,7 @@ import {
   readFile,
   readdir,
   realpath,
+  rename,
   rm,
   stat,
   writeFile,
@@ -49,6 +51,7 @@ export interface Options {
   provider?: string
   model?: string
   concurrency?: number
+  stopAfterPairs?: number
   calibrate?: boolean
   perFamily?: number
   streamSeed?: number
@@ -60,7 +63,24 @@ export interface Options {
 type Event =
   | { kind: 'started'; job: Job; ledger: string; plan_hash: string }
   | { kind: 'result'; observation: Observation }
+  | VoidEvent
   | { kind: 'recovered-tail'; fragment_hash: string }
+
+interface VoidEvent {
+  kind: 'void'
+  id: string
+  jobs: Job[]
+  reason: 401 | 402 | 403 | 429
+  error: string
+}
+
+/** SDK HTTP errors start with a status, or explicitly label it as HTTP/status. */
+export function providerRejection(error: string | undefined): VoidEvent['reason'] | undefined {
+  const match = error?.match(
+    /^(?:Error: )?(401|402|403|429)\b|\b(?:HTTP(?:\/\d(?:\.\d)?)?\s+|status(?: code)?[\s:=]+)(401|402|403|429)\b/i,
+  )
+  return match ? (Number(match[1] ?? match[2]) as VoidEvent['reason']) : undefined
+}
 
 function positiveInteger(value: string | number): number {
   const number = Number(value)
@@ -198,7 +218,7 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
   }
-  if ((await readdir(dir)).some((name) => name !== '.run-lock'))
+  if ((await readdir(dir)).some((name) => name !== '.run-lock' && name !== 'STOP'))
     throw new Error('New output directory must be empty')
   const tasks = loadStream(
     generateStream(
@@ -239,14 +259,14 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
       rule_hit_rate:
         'production verified-recovery hits / (hits + misses) on the next non-stale same-command verification; descriptive, not causal benefit',
     },
-    test: 'Primary: two-sided paired t-test alpha .05 on equally weighted family mean paired differences, family-cluster SE and Student-t 95% CI with G-1 df. Independent representative approximately Gaussian family effects; degenerate variance is inconclusive. Secondary: exact McNemar with naive paired Bonferroni-Wilson CI, descriptive only and never used for verdict. Risk difference on minus off. max_turns and agent wall-clock budget exhaustion are task FAIL, including deadline termination without headless JSON or a journal. Spawn/provider failures, external kills, invalid JSON outside deadline exhaustion and grader infrastructure failures remain ERROR. Infrastructure ERROR counts as failure in primary analysis. Sensitivity drops all ERROR-containing pairs; confirmation requires both analyses significant in the same direction. Operational tolerance: at most 5% of planned evaluation pairs affected, arm error counts differing by at most one, and at most 5% training errors. Secondary metrics descriptive only.',
+    test: 'Primary: two-sided paired t-test alpha .05 on equally weighted family mean paired differences, family-cluster SE and Student-t 95% CI with G-1 df. Independent representative approximately Gaussian family effects; degenerate variance is inconclusive. Secondary: exact McNemar with naive paired Bonferroni-Wilson CI, descriptive only and never used for verdict. Risk difference on minus off. max_turns and agent wall-clock budget exhaustion are task FAIL, including deadline termination without headless JSON or a journal. Spawn/provider failures other than HTTP 401/402/403/429, external kills, invalid JSON outside deadline exhaustion and grader infrastructure failures remain ERROR. Infrastructure ERROR counts as failure in primary analysis. Sensitivity drops all ERROR-containing pairs; confirmation requires both analyses significant in the same direction. Operational tolerance: at most 5% of planned evaluation pairs affected, arm error counts differing by at most one, and at most 5% training errors. Secondary metrics descriptive only.',
     power_design: powerDesign,
     sample_size: {
       training: tasks.filter((t) => t.split === 'train').length,
       pairs: tasks.filter((t) => t.split === 'heldout').length,
     },
     stopping_rule:
-      'Run all planned jobs exactly once. Training stays sequential; evaluation uses the registered concurrency (cap 10) with hashed within-pair order. No efficacy peeking, no early success or sample extension. Resume skips committed jobs; an interrupted started job becomes ERROR, never rerun. Final inference only after fixed sample; calibration failure, operational tolerance exceeded, or sensitivity disagreement => inconclusive.',
+      'Commit all planned jobs exactly once. Outcome-blind exception: only session error strings classified as provider HTTP 401/402/403/429 void the entire evaluation pair (both arms, same order) or training job; archive ledgers and rerun from scratch on next resume, training from the same prior checkpoint. Other ERRORs are never retried. STOP and invocation pair budgets drain without inference. Any 401/402/403 or three consecutive 429 voids halt new work until key replacement and resume. Training stays sequential; evaluation uses the registered concurrency (cap 10) with hashed within-pair order. No efficacy peeking, no early success or sample extension. Resume skips committed jobs; an interrupted started job becomes ERROR, never rerun. Final inference only after fixed sample; calibration failure, operational tolerance exceeded, or sensitivity disagreement => inconclusive.',
     evaluation_concurrency: concurrency,
     error_tolerance: {
       max_pair_fraction: 0.05,
@@ -378,6 +398,12 @@ export async function runSession(
       row.error = row.output.error
     } catch {
       row.error = 'Missing/invalid headless JSON'
+    }
+    // Preserve the provider rejection even when no learning journal was produced.
+    // Calibration retains its existing ERROR semantics.
+    if (!measurePublic && providerRejection(row.error)) {
+      row.duration_ms = Math.round(performance.now() - start)
+      return row
     }
     if (measurePublic) {
       const publicResult = await command(
@@ -621,23 +647,58 @@ function eventWriter(dir: string): (event: Event) => Promise<void> {
   }
 }
 
+/** A durable void precedes moves; replay finishes a move interrupted by a hard kill. */
+async function archiveVoid(dir: string, event: VoidEvent): Promise<void> {
+  const archive = path.join(dir, 'voided', event.id)
+  if (existsSync(path.join(archive, 'complete'))) return
+  for (const kind of ['ledgers', 'sessions']) {
+    await mkdir(path.join(archive, kind), { recursive: true })
+    for (const job of event.jobs) {
+      const destination = path.join(archive, kind, job.id)
+      if (existsSync(destination)) continue
+      try {
+        await rename(path.join(dir, kind, job.id), destination)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+      }
+    }
+  }
+  await jsonFile(path.join(archive, 'complete'), event)
+}
+
 async function resumeRows(dir: string, hash: string, jobs: Job[]): Promise<Observation[]> {
   const events = await readEvents(dir)
+  const rows = new Map<string, Observation>()
+  const starts = new Map<string, Job>()
   for (const event of events) {
     if (event.kind === 'recovered-tail') continue
-    const job = event.kind === 'started' ? event.job : event.observation.job
-    if (JSON.stringify(jobs.find((j) => j.id === job.id)) !== JSON.stringify(job))
-      throw new Error('Event does not match scheduled job')
-    if (event.kind === 'started' && event.plan_hash !== hash)
-      throw new Error('Preregistration/configuration changed after scheduling')
+    const scheduled =
+      event.kind === 'void'
+        ? event.jobs
+        : [event.kind === 'started' ? event.job : event.observation.job]
+    for (const job of scheduled)
+      if (JSON.stringify(jobs.find((j) => j.id === job.id)) !== JSON.stringify(job))
+        throw new Error('Event does not match scheduled job')
+    if (event.kind === 'started') {
+      if (event.plan_hash !== hash)
+        throw new Error('Preregistration/configuration changed after scheduling')
+      starts.set(event.job.id, event.job)
+    } else if (event.kind === 'result') {
+      if (rows.has(event.observation.job.id))
+        throw new Error('Duplicate result in append-only output')
+      rows.set(event.observation.job.id, event.observation)
+    } else {
+      await archiveVoid(dir, event)
+      for (const job of event.jobs) {
+        rows.delete(job.id)
+        starts.delete(job.id)
+      }
+    }
   }
-  const rows = events.flatMap((e) => (e.kind === 'result' ? [e.observation] : []))
-  const completed = new Set(rows.map((r) => r.job.id))
-  if (completed.size !== rows.length) throw new Error('Duplicate result in append-only output')
-  for (const event of events)
-    if (event.kind === 'started' && !completed.has(event.job.id)) {
+  for (const job of starts.values())
+    if (!rows.has(job.id)) {
       const row: Observation = {
-        job: event.job,
+        job,
         status: 'ERROR',
         fingerprints: [],
         hits: 0,
@@ -647,10 +708,28 @@ async function resumeRows(dir: string, hash: string, jobs: Job[]): Promise<Obser
         ledger: '',
       }
       await appendEvent(dir, { kind: 'result', observation: row })
-      rows.push(row)
-      completed.add(event.job.id)
+      rows.set(job.id, row)
     }
-  return rows
+  return [...rows.values()]
+}
+
+/** A completed non-void unit resets the streak; a first arm alone cannot reset it. */
+function rejectionStreak(events: Event[]): number {
+  let streak = 0
+  const arms = new Map<string, Set<string>>()
+  for (const event of events) {
+    if (event.kind === 'void') {
+      streak = event.reason === 429 ? streak + 1 : 0
+      for (const job of event.jobs) arms.delete(job.task.id)
+    } else if (event.kind === 'result') {
+      const job = event.observation.job
+      const pair = arms.get(job.task.id) ?? new Set<string>()
+      pair.add(job.id)
+      arms.set(job.task.id, pair)
+      if (job.arm === 'train' || pair.size === 2) streak = 0
+    }
+  }
+  return streak
 }
 
 async function performJob(
@@ -661,6 +740,8 @@ async function performJob(
   emit: (event: Event) => Promise<void>,
   previousLedger?: string,
   measurePublic = false,
+  session = runSession,
+  commit = true,
 ): Promise<Observation> {
   const ledger = path.join(dir, 'ledgers', job.id)
   await emit({ kind: 'started', job, ledger, plan_hash: hash })
@@ -671,7 +752,7 @@ async function performJob(
     else await mkdir(ledger, { recursive: true })
     if (job.arm === 'rules-off')
       await rm(path.join(ledger, 'rules'), { recursive: true, force: true })
-    row = await runSession(dir, job, config, ledger, measurePublic)
+    row = await session(dir, job, config, ledger, measurePublic)
   } catch (error) {
     row = {
       job,
@@ -684,16 +765,22 @@ async function performJob(
       error: String(error),
     }
   }
-  await emit({ kind: 'result', observation: row })
+  if (commit) await emit({ kind: 'result', observation: row })
   return row
 }
 
 export async function run(
   options: Options,
-): Promise<{ dir: string; result: ReturnType<typeof report> }> {
+  session = runSession,
+): Promise<
+  | { dir: string; exitCode: 0; result: ReturnType<typeof report> }
+  | { dir: string; exitCode: 0 | 3; result?: undefined }
+> {
   if (options.calibrate || options.perFamily !== undefined)
     throw new Error('Use --calibrate for calibration options')
-  requireProviderCredential(options)
+  if (options.stopAfterPairs !== undefined) positiveInteger(options.stopAfterPairs)
+  if (!options.output || !existsSync(path.join(options.output, 'STOP')))
+    requireProviderCredential(options)
   const dir = await assertIsolatedOutput(
     options.output ?? (await mkdtemp(path.join(os.tmpdir(), 'octonoesis-dogfood-'))),
   )
@@ -706,13 +793,59 @@ export async function run(
     const empty = path.join(dir, 'ledgers', 'empty')
     await mkdir(empty, { recursive: true })
     let trained = empty
+    let stopped = false
+    let breaker = false
+    let consecutive429 = rejectionStreak(await readEvents(dir))
+    let startedPairs = 0
+    const canStart = () => {
+      if (existsSync(path.join(dir, 'STOP'))) stopped = true
+      return !stopped && !breaker
+    }
+    const stopResult = () => {
+      console.log(
+        breaker
+          ? 'Provider rejected requests; replace SPARK_API_KEY and resume with the same --output'
+          : 'Stopped; resume with the same --output',
+      )
+      return { dir, exitCode: breaker ? (3 as const) : (0 as const) }
+    }
+    const perform = (job: Job) =>
+      performJob(dir, job, plan, digest(plan), emit, trained, false, session, false)
+    const commit = async (row: Observation, unitComplete: boolean) => {
+      if (unitComplete) consecutive429 = 0
+      await emit({ kind: 'result', observation: row })
+      rows.push(row)
+      console.log(`${rows.length}/${plan.jobs.length} ${row.job.id}: ${row.status}`)
+    }
+    const voidUnit = async (jobs: Job[], row: Observation, reason: VoidEvent['reason']) => {
+      // Count completed units, not individual arm successes, for the breaker.
+      consecutive429 = reason === 429 ? consecutive429 + 1 : 0
+      if (reason !== 429 || consecutive429 >= 3) breaker = true
+      const event: VoidEvent = {
+        kind: 'void',
+        id: randomUUID(),
+        jobs,
+        reason,
+        error: row.error as string,
+      }
+      await emit(event)
+      await archiveVoid(dir, event)
+      for (let i = rows.length - 1; i >= 0; i--)
+        if (jobs.some((job) => job.id === rows[i]?.job.id)) rows.splice(i, 1)
+    }
     // The training lineage always has exactly one writer, independent of --concurrency.
     for (const job of plan.jobs.filter((j) => j.arm === 'train')) {
-      const previous = rows.find((r) => r.job.id === job.id)
-      const row = previous ?? (await performJob(dir, job, plan, digest(plan), emit, trained))
-      if (!previous) {
-        rows.push(row)
-        console.log(`${rows.length}/${plan.jobs.length} ${job.id}: ${row.status}`)
+      let row = rows.find((r) => r.job.id === job.id)
+      if (!row) {
+        if (!canStart()) return stopResult()
+        row = await perform(job)
+        const reason = providerRejection(row.error)
+        if (reason) {
+          await voidUnit([job], row, reason)
+          // Later training cannot bypass this missing checkpoint.
+          return stopResult()
+        }
+        await commit(row, true)
       }
       if (row.ledger) trained = row.ledger
     }
@@ -720,21 +853,47 @@ export async function run(
       .filter((t) => t.split === 'heldout')
       .map((task) => plan.jobs.filter((j) => j.task.id === task.id))
     await runPool(pairs, plan.evaluation_concurrency, async (pair) => {
-      // A worker runs a whole pair in its registered hashed order. Other pairs are independent.
+      if (pair.every((job) => rows.some((r) => r.job.id === job.id))) return
+      if (!canStart()) return
+      if (options.stopAfterPairs !== undefined && startedPairs >= options.stopAfterPairs) {
+        stopped = true
+        return
+      }
+      // Admission and budget reservation are synchronous across workers.
+      startedPairs++
       for (const job of pair) {
         if (rows.some((r) => r.job.id === job.id)) continue
-        const row = await performJob(dir, job, plan, digest(plan), emit, trained)
-        rows.push(row)
-        console.log(`${rows.length}/${plan.jobs.length} ${job.id}: ${row.status}`)
+        const row = await perform(job)
+        const reason = providerRejection(row.error)
+        if (reason) {
+          await voidUnit(pair, row, reason)
+          return
+        }
+        await commit(row, job === pair[pair.length - 1])
       }
     })
+    if (options.stopAfterPairs !== undefined && startedPairs >= options.stopAfterPairs)
+      stopped = true
+    canStart()
+    if (stopped || breaker || rows.length !== plan.jobs.length) return stopResult()
     // Completion events are keyed by job; analysis and reports always use plan order.
     rows.sort(
       (a, b) =>
         plan.jobs.findIndex((j) => j.id === a.job.id) -
         plan.jobs.findIndex((j) => j.id === b.job.id),
     )
-    const result = report(plan, rows)
+    const voids = (await readEvents(dir)).filter(
+      (event): event is VoidEvent => event.kind === 'void',
+    )
+    const result = report(
+      plan,
+      rows,
+      voids.map(({ jobs, reason, error }) => ({
+        jobs: jobs.map((job) => job.id),
+        reason,
+        error,
+      })),
+    )
     // Immutable reports are materialized once; resume verifies them instead of overwriting.
     for (const [name, content] of [
       ['report.json', `${JSON.stringify(result, null, 2)}\n`],
@@ -751,7 +910,7 @@ export async function run(
           throw error
       }
     }
-    return { dir, result }
+    return { dir, result, exitCode: 0 }
   } finally {
     await unlock()
   }
@@ -966,15 +1125,21 @@ if (import.meta.main) {
       positiveInteger,
       1,
     )
+    .option(
+      '--stop-after-pairs <N>',
+      'Drain after at most N new evaluation pairs (not preregistered)',
+      positiveInteger,
+    )
     .option('--calibrate', 'Descriptive fresh-ledger probe; never writes a preregistration')
     .option('--per-family <K>', 'Calibration sessions per family', positiveInteger)
     .parse(process.argv)
   const options = program.opts<Options>()
   const execution = options.calibrate
     ? calibrate(options).then(({ dir }) => console.log(`Calibration output: ${dir}`))
-    : run(options).then(({ dir, result }) =>
-        console.log(`Verdict: ${result.verdict}\nOutput: ${dir}`),
-      )
+    : run(options).then(({ dir, result, exitCode }) => {
+        process.exitCode = exitCode
+        if (result) console.log(`Verdict: ${result.verdict}\nOutput: ${dir}`)
+      })
   execution.catch((error) => {
     console.error(String(error))
     process.exitCode = 1

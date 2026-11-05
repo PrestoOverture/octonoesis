@@ -175,7 +175,11 @@ export function errorTolerance(plan: Plan, rows: Observation[]) {
   }
 }
 
-export function report(plan: Plan, rows: Observation[]) {
+export function report(
+  plan: Plan,
+  rows: Observation[],
+  voids: { jobs: string[]; reason: number; error: string }[] = [],
+) {
   for (const row of rows) {
     const expected = plan.jobs.find((job) => job.id === row.job.id)
     if (!expected || JSON.stringify(expected) !== JSON.stringify(row.job))
@@ -284,6 +288,15 @@ export function report(plan: Plan, rows: Observation[]) {
         : 'harms'
   return {
     schema_version: 1,
+    voids: {
+      total: voids.length,
+      training_jobs: voids.filter((v) => v.jobs.length === 1).length,
+      evaluation_pairs: voids.filter((v) => v.jobs.length === 2).length,
+      reasons: Object.fromEntries(
+        [401, 402, 403, 429].map((code) => [code, voids.filter((v) => v.reason === code).length]),
+      ),
+      events: voids,
+    },
     mode: plan.mode,
     verdict,
     reasons,
@@ -327,5 +340,5 @@ export function markdown(result: ReturnType<typeof report>): string {
     )
     .join(
       '\n',
-    )}\n\n## Operational-error sensitivity\n\nPrimary analysis counts ERROR as failure. After dropping every pair containing ERROR: ${result.sensitivity.pairs} pairs, lift ${result.sensitivity.risk_difference ?? 'unavailable'}, p = ${result.sensitivity.p_value ?? 'unavailable'}, 95% CI ${JSON.stringify(result.sensitivity.ci95)}.\n\nAffected pairs: ${result.error_tolerance.affected_pairs}/${result.error_tolerance.max_affected_pairs} allowed; arm errors on/off: ${result.error_tolerance.rules_on_errors}/${result.error_tolerance.rules_off_errors}; training errors: ${result.error_tolerance.training_errors}/${result.error_tolerance.max_training_errors} allowed. Operational eligibility: ${result.error_tolerance.eligible}.\n\n## Calibration\n\n\`\`\`json\n${JSON.stringify({ gate: result.calibration_gate, families: result.calibration }, null, 2)}\n\`\`\`\n\n## Interpretation\n\n${result.limitations.join('\n\n')}\n\nThe CI uses ${p.method}. A null result is inconclusive, not evidence of equivalence. See preregistration.json for the fixed plan and events.jsonl for every attempted session.\n`
+    )}\n\n## Provider rejection voids\n\nVoided units: ${result.voids.total}; training jobs: ${result.voids.training_jobs}; evaluation pairs: ${result.voids.evaluation_pairs}. Reasons (HTTP status counts): ${JSON.stringify(result.voids.reasons)}.\n\n## Operational-error sensitivity\n\nPrimary analysis counts ERROR as failure. After dropping every pair containing ERROR: ${result.sensitivity.pairs} pairs, lift ${result.sensitivity.risk_difference ?? 'unavailable'}, p = ${result.sensitivity.p_value ?? 'unavailable'}, 95% CI ${JSON.stringify(result.sensitivity.ci95)}.\n\nAffected pairs: ${result.error_tolerance.affected_pairs}/${result.error_tolerance.max_affected_pairs} allowed; arm errors on/off: ${result.error_tolerance.rules_on_errors}/${result.error_tolerance.rules_off_errors}; training errors: ${result.error_tolerance.training_errors}/${result.error_tolerance.max_training_errors} allowed. Operational eligibility: ${result.error_tolerance.eligible}.\n\n## Calibration\n\n\`\`\`json\n${JSON.stringify({ gate: result.calibration_gate, families: result.calibration }, null, 2)}\n\`\`\`\n\n## Interpretation\n\n${result.limitations.join('\n\n')}\n\nThe CI uses ${p.method}. A null result is inconclusive, not evidence of equivalence. See preregistration.json for the fixed plan and events.jsonl for every attempted session.\n`
 }
