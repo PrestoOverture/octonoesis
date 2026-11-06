@@ -1,7 +1,22 @@
 import type { PermissionMode } from '../permissions/confirm'
 export type { PermissionMode } from '../permissions/confirm'
 import type { StreamEvent } from '../query'
-import type { ExitReason } from '../query/types'
+import type { ExitReason, TaskState } from '../query/types'
+import type { Todo } from '../state/todos'
+
+/** A saved session of this repository, as listed in the sidebar. */
+export type SessionSummary = {
+  id: string
+  updatedAt: string
+  preview: string
+  messageCount: number
+}
+/** Replayed display history of a resumed session. */
+export type HistoryEntry = { type: 'user' | 'task_notice'; text: string } | StreamEvent
+export type TaskSummary = Pick<
+  TaskState,
+  'id' | 'type' | 'status' | 'startTime' | 'endTime' | 'command'
+>
 
 export type PermissionDecision = 'allow_once' | 'allow_always' | 'deny'
 export type HostCommand = { v: 1 } & (
@@ -23,6 +38,11 @@ export type HostMessage = { v: 1 } & (
       preview?: string
     }
   | { type: 'turn_end'; exitReason: ExitReason; failure?: string }
+  | { type: 'history'; resumedFrom: string; updatedAt: string; entries: HistoryEntry[] }
+  | { type: 'sessions'; sessions: SessionSummary[] }
+  | { type: 'skills'; skills: { name: string; description: string }[] }
+  | { type: 'todos'; todos: Todo[] }
+  | { type: 'tasks'; tasks: TaskSummary[] }
   | { type: 'error' | 'fatal'; message: string }
 )
 
