@@ -1,10 +1,32 @@
 import { expect, test } from 'bun:test'
-import { type ReactNode, isValidElement } from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
+import { Fragment, type ReactNode, isValidElement } from 'react'
 import { Markdown } from './Markdown'
 
-const render = (text: string) =>
-  renderToStaticMarkup(<Markdown text={text} onOpenExternal={() => {}} />)
+const escapeHtml = (value: string) =>
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+// Markdown emits only intrinsic elements and fragments, so a small serializer stands in for
+// react-dom/server, which root CI does not install (desktop/node_modules is hutch-managed).
+function toHtml(node: ReactNode): string {
+  if (node === null || node === undefined || typeof node === 'boolean') return ''
+  if (typeof node === 'string' || typeof node === 'number') return escapeHtml(String(node))
+  if (Array.isArray(node)) return node.map(toHtml).join('')
+  if (!isValidElement<Record<string, unknown>>(node)) throw new Error('Unexpected node')
+  const children = toHtml(node.props.children as ReactNode)
+  if (node.type === Fragment) return children
+  if (typeof node.type !== 'string') throw new Error('Markdown must emit intrinsic elements')
+  const attributes = Object.entries(node.props)
+    .filter(([name, value]) => name !== 'children' && typeof value !== 'function')
+    .filter(([, value]) => value !== undefined && typeof value !== 'object')
+    .map(
+      ([name, value]) => ` ${name === 'className' ? 'class' : name}="${escapeHtml(String(value))}"`,
+    )
+    .join('')
+  if (node.type === 'hr' || node.type === 'br') return `<${node.type}${attributes}/>`
+  return `<${node.type}${attributes}>${children}</${node.type}>`
+}
+
+const render = (text: string) => toHtml(Markdown({ text, onOpenExternal: () => {} }))
 
 test('markdown maps headings, paragraphs, emphasis, strong and inline code to elements', () => {
   const html = render('# Title\n\nA *small* **strong** `code` sample.\n\n---')
