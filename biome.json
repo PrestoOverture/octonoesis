@@ -12,7 +12,13 @@
       "test/eval/tasks/**",
       "test/eval/results/**",
       "test/demo/seed-rules/**",
-      "test/demo/seed-rules-selfloop/**"
+      "test/demo/seed-rules-selfloop/**",
+      "desktop/node_modules/**",
+      "desktop/build/**",
+      "desktop/dist/**",
+      "desktop/.hutch/**",
+      "desktop/artifacts/**",
+      "desktop/.cottontail-tmp/**"
     ]
   },
   "linter": {
