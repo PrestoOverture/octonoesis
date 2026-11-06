@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test'
+import { editLineCounts } from '../../../src/host/editSummary'
 import { initialTranscript, transcript } from './transcript'
 
 test('assistant deltas concatenate, tool cards transition running to done and error', () => {
@@ -141,4 +142,52 @@ test('learning, compaction and task notices remain distinct transcript items', (
     event: { type: 'task_notice', text: 'Task completed' },
   })
   expect(state.items.map((item) => item.kind)).toEqual(['learning', 'notice', 'notice'])
+})
+
+test('permission_mode updates the pill state without resolving a pending request; ready resets Ask', () => {
+  const request = {
+    v: 1,
+    type: 'permission_request',
+    requestId: 'pending',
+    toolName: 'Edit',
+    input: {},
+  } as const
+  let state = transcript(initialTranscript, request)
+  for (const mode of ['accept-edits', 'bypass', 'ask'] as const) {
+    state = transcript(state, { v: 1, type: 'permission_mode', mode })
+    expect(state.permissionMode).toBe(mode)
+    expect(state.permission).toEqual(request)
+  }
+  state = transcript(state, { v: 1, type: 'permission_mode', mode: 'bypass' })
+  state = transcript(state, {
+    v: 1,
+    type: 'ready',
+    sessionId: 'new',
+    model: 'model',
+    repoRoot: '/repo',
+    version: '1',
+  })
+  expect(state.permissionMode).toBe('ask')
+})
+
+test('Edit summary counts the actual line diff and is retained on its tool card', () => {
+  expect(editLineCounts('keep\nold1\nold2\ntail\n', 'keep\nnew\ntail\n')).toEqual({
+    added: 1,
+    removed: 2,
+  })
+  expect(editLineCounts('same\n', 'same\n')).toEqual({ added: 0, removed: 0 })
+  expect(editLineCounts('', 'new\n')).toEqual({ added: 1, removed: 0 })
+  expect(editLineCounts('old\n', '')).toEqual({ added: 0, removed: 1 })
+  expect(editLineCounts('a\nb', 'a\nc')).toEqual({ added: 1, removed: 1 })
+  let state = transcript(initialTranscript, {
+    v: 1,
+    type: 'event',
+    event: { type: 'tool_use', id: 'edit', name: 'Edit', input: { path: 'file' } },
+  })
+  state = transcript(state, {
+    v: 1,
+    type: 'event',
+    event: { type: 'tool_done', id: 'edit', name: 'Edit', status: 'done', summary: '+1 −2 lines' },
+  })
+  expect(state.items.at(-1)).toMatchObject({ status: 'done', summary: '+1 −2 lines' })
 })

@@ -1,6 +1,6 @@
 import { Electroview } from 'electrobun/view'
-import { useEffect, useReducer, useRef, useState } from 'react'
-import type { HostCommand, PermissionDecision } from '../../../src/host/protocol'
+import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
+import type { HostCommand, PermissionDecision, PermissionMode } from '../../../src/host/protocol'
 import type { DesktopRPC } from '../shared/rpc'
 import { type Action, initialTranscript, primaryArgument, transcript } from '../shared/transcript'
 import compactNoe from './assets/noe-compact.svg'
@@ -24,10 +24,41 @@ export default function App() {
   const [state, dispatch] = useReducer(transcript, initialTranscript)
   const [text, setText] = useState('')
   const [opening, setOpening] = useState(false)
+  const [confirmBypass, setConfirmBypass] = useState(false)
+  const modeMenu = useRef<HTMLDetailsElement>(null)
+  const bypassDialog = useRef<HTMLDialogElement>(null)
   const end = useRef<HTMLDivElement>(null)
   const composer = useRef<HTMLTextAreaElement>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const permission = state.permission
+  const chooseMode = (mode: PermissionMode) => {
+    if (modeMenu.current) modeMenu.current.open = false
+    if (mode === state.permissionMode) return
+    if (mode === 'bypass') setConfirmBypass(true)
+    else send({ v: 1, type: 'set_permission_mode', mode })
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: measure the rendered text after input or session changes.
+  useLayoutEffect(() => {
+    const input = composer.current
+    if (!input) return
+    const resize = () => {
+      input.style.height = 'auto'
+      input.style.height = `${Math.min(input.scrollHeight, 172)}px`
+    }
+    resize()
+    let width = input.clientWidth
+    const observer = new ResizeObserver(() => {
+      if (input.clientWidth === width) return
+      width = input.clientWidth
+      resize()
+    })
+    observer.observe(input)
+    return () => observer.disconnect()
+  }, [text, state.ready])
+  useEffect(() => {
+    if (confirmBypass) bypassDialog.current?.showModal()
+    else bypassDialog.current?.close()
+  }, [confirmBypass])
   const openRepository = async () => {
     setOpening(true)
     try {
@@ -65,7 +96,7 @@ export default function App() {
   }, [permission])
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
-      if (permission && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (permission && !confirmBypass && !event.metaKey && !event.ctrlKey && !event.altKey) {
         const decision = ({ y: 'allow_once', a: 'allow_always', n: 'deny' } as const)[
           event.key.toLowerCase() as 'y' | 'a' | 'n'
         ]
@@ -109,6 +140,34 @@ export default function App() {
         <span className="title">
           {state.running ? 'Noe is working…' : state.ready ? 'Session' : ''}
         </span>
+        {state.ready && (
+          <details
+            ref={modeMenu}
+            className={`permission-mode ${state.permissionMode === 'bypass' ? 'warning' : ''}`}
+          >
+            <summary aria-label="Permission mode">
+              {state.permissionMode === 'bypass'
+                ? 'Bypass permissions'
+                : state.permissionMode === 'accept-edits'
+                  ? 'Accept edits'
+                  : 'Ask before edits'}{' '}
+              ▾
+            </summary>
+            <div className="mode-options">
+              {(['ask', 'accept-edits', 'bypass'] as const).map((mode) => (
+                <button
+                  type="button"
+                  key={mode}
+                  aria-pressed={state.permissionMode === mode}
+                  disabled={!state.connected}
+                  onClick={() => chooseMode(mode)}
+                >
+                  {mode === 'ask' ? 'Ask' : mode === 'accept-edits' ? 'Accept edits' : 'Bypass'}
+                </button>
+              ))}
+            </div>
+          </details>
+        )}
       </header>
       {!state.ready ? (
         <main className="welcome">
@@ -172,7 +231,7 @@ export default function App() {
                       </span>
                       <strong>{item.name}</strong>
                       <code title={item.argument}>{item.argument}</code>
-                      <span>{item.status}</span>
+                      <span>{item.summary ?? item.status}</span>
                     </div>
                   ) : (
                     // biome-ignore lint/suspicious/noArrayIndexKey: transcript entries are append-only.
@@ -194,6 +253,7 @@ export default function App() {
               <div className="composer">
                 <textarea
                   ref={composer}
+                  rows={2}
                   aria-label="Message Noe"
                   placeholder="Ask Noe to do something…"
                   value={text}
@@ -212,7 +272,9 @@ export default function App() {
                   }}
                 />
                 <div className="composer-actions">
-                  <span>{state.ready.model}</span>
+                  <span className="composer-hint">
+                    Enter to send · Shift / Option + Enter for newline
+                  </span>
                   {state.running ? (
                     <button type="button" onClick={() => send({ v: 1, type: 'cancel' })}>
                       ■ Stop
@@ -229,7 +291,6 @@ export default function App() {
                   )}
                 </div>
               </div>
-              <div className="hint">Enter to send · Shift / Option + Enter for newline</div>
             </div>
           </main>
         </div>
@@ -248,6 +309,32 @@ export default function App() {
           {state.ready?.model} {state.ready ? `· v${state.ready.version}` : ''}
         </span>
       </footer>
+      <dialog
+        ref={bypassDialog}
+        aria-labelledby="bypass-title"
+        onCancel={() => setConfirmBypass(false)}
+      >
+        <h2 id="bypass-title">Bypass permissions?</h2>
+        <p>
+          Every tool will run without asking for permission, including shell commands and file
+          changes. Only enable this for a session you trust. Configured deny rules still apply.
+        </p>
+        <div className="permission-actions">
+          <button type="button" onClick={() => setConfirmBypass(false)}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="bypass-confirm"
+            onClick={() => {
+              send({ v: 1, type: 'set_permission_mode', mode: 'bypass' })
+              setConfirmBypass(false)
+            }}
+          >
+            Enable Bypass
+          </button>
+        </div>
+      </dialog>
       <dialog
         ref={dialog}
         onCancel={(event) => {

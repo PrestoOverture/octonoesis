@@ -2,7 +2,7 @@
 declare const Bun: any
 
 import { expect, test } from 'bun:test'
-import { mkdtemp, readFile, realpath, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
@@ -101,6 +101,11 @@ const messageSchema = z.discriminatedUnion('type', [
     ]),
     failure: z.string().optional(),
   }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('permission_mode'),
+    mode: z.enum(['ask', 'accept-edits', 'bypass']),
+  }),
   z.object({ v: z.literal(1), type: z.literal('error'), message: z.string() }),
   z.object({ v: z.literal(1), type: z.literal('fatal'), message: z.string() }),
 ])
@@ -115,8 +120,17 @@ async function launch(
     stderr: () => string
   }) => Promise<void>,
   missingKey = false,
+  denyBash = false,
 ) {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'octonoesis-host-')))
+  await writeFile(join(dir, 'edit.txt'), 'keep\nold1\nold2\ntail\n')
+  if (denyBash) {
+    await mkdir(join(dir, '.octonoesis'))
+    await writeFile(
+      join(dir, '.octonoesis/config.json'),
+      JSON.stringify({ permissions: { denyPatterns: ['Bash'] } }),
+    )
+  }
   const child = Bun.spawn({
     cmd: [
       process.execPath,
@@ -191,6 +205,8 @@ async function launch(
     if (!missingKey) {
       await next('ready')
       expect(messages[0]?.type).toBe('ready')
+      await next('permission_mode')
+      expect(messages[1]).toEqual({ v: 1, type: 'permission_mode', mode: 'ask' })
     }
     await check({
       child,
@@ -350,4 +366,99 @@ test('host startup failure is fatal and exits nonzero', async () => {
     expect(messages[0]?.type).toBe('fatal')
     expect(await child.exited).not.toBe(0)
   }, true)
+})
+
+for (const mode of ['bypass', 'accept-edits'] as const) {
+  test(`host ${mode} auto-allows Edit and ${mode === 'bypass' ? 'auto-allows' : 'prompts for'} Bash`, async () => {
+    await launch(async ({ send, next, messages, dir }) => {
+      const after = messages.length
+      send({ v: 1, type: 'set_permission_mode', mode })
+      expect(await next('permission_mode', after)).toEqual({ v: 1, type: 'permission_mode', mode })
+      send({ v: 1, type: 'submit', text: 'edit-bash' })
+      if (mode === 'accept-edits') {
+        const request = await next('permission_request', after)
+        if (request.type !== 'permission_request') throw new Error('Missing Bash prompt')
+        expect(request.toolName).toBe('Bash')
+        // Edit already ran before Bash's permission check.
+        expect(await readFile(join(dir, 'edit.txt'), 'utf8')).toBe('keep\nnew\ntail\n')
+        send({
+          v: 1,
+          type: 'permission_reply',
+          requestId: request.requestId,
+          decision: 'allow_once',
+        })
+      }
+      expect(await next('turn_end', after)).toEqual({
+        v: 1,
+        type: 'turn_end',
+        exitReason: 'completed',
+      })
+      expect(await readFile(join(dir, 'bash-ran.txt'), 'utf8')).toBe('ran')
+      expect(await readFile(join(dir, 'edit.txt'), 'utf8')).toBe('keep\nnew\ntail\n')
+      expect(
+        messages.slice(after).filter((message) => message.type === 'permission_request').length,
+      ).toBe(mode === 'bypass' ? 0 : 1)
+      const edit = messages.find(
+        (message) =>
+          message.type === 'event' &&
+          message.event.type === 'tool_done' &&
+          message.event.name === 'Edit',
+      )
+      if (edit?.type !== 'event' || edit.event.type !== 'tool_done')
+        throw new Error('Missing Edit completion')
+      expect(edit.event.status).toBe('done')
+      expect(edit.event.summary).toBe('+1 −2 lines')
+    })
+  })
+}
+
+test('host invalid permission mode errors and keeps Ask; switching leaves pending prompt unresolved and affects next check', async () => {
+  await launch(async ({ send, next, messages, dir }) => {
+    const after = messages.length
+    send('{"v":1,"type":"set_permission_mode","mode":"invalid"}')
+    await next('error', after)
+    send({ v: 1, type: 'submit', text: 'edit-bash' })
+    const request = await next('permission_request', after)
+    if (request.type !== 'permission_request') throw new Error('Missing Edit prompt')
+    expect(request.toolName).toBe('Edit')
+    const switching = messages.length
+    send({ v: 1, type: 'set_permission_mode', mode: 'bypass' })
+    await next('permission_mode', switching)
+    // Round-trip a subsequent command as a barrier; the pending Edit still has not run.
+    send('{"v":1,"type":"unknown"}')
+    await next('error', switching)
+    expect(await readFile(join(dir, 'edit.txt'), 'utf8')).toBe('keep\nold1\nold2\ntail\n')
+    expect(messages.some((message) => message.type === 'turn_end')).toBe(false)
+    send({ v: 1, type: 'permission_reply', requestId: request.requestId, decision: 'deny' })
+    await next('turn_end', after)
+    expect(await readFile(join(dir, 'edit.txt'), 'utf8')).toBe('keep\nold1\nold2\ntail\n')
+    expect(await readFile(join(dir, 'bash-ran.txt'), 'utf8')).toBe('ran')
+    expect(messages.filter((message) => message.type === 'permission_request').length).toBe(1)
+  })
+})
+
+test('host Bypass still honors config denyPatterns', async () => {
+  await launch(
+    async ({ send, next, dir, messages }) => {
+      const after = messages.length
+      send({ v: 1, type: 'set_permission_mode', mode: 'bypass' })
+      await next('permission_mode', after)
+      send({ v: 1, type: 'submit', text: 'edit-bash' })
+      await next('turn_end', after)
+      expect(await readFile(join(dir, 'edit.txt'), 'utf8')).toBe('keep\nnew\ntail\n')
+      await expect(readFile(join(dir, 'bash-ran.txt'), 'utf8')).rejects.toThrow()
+      expect(messages.some((message) => message.type === 'permission_request')).toBe(false)
+      expect(
+        messages.some(
+          (message) =>
+            message.type === 'event' &&
+            message.event.type === 'tool_done' &&
+            message.event.name === 'Bash' &&
+            message.event.status === 'error',
+        ),
+      ).toBe(true)
+    },
+    false,
+    true,
+  )
 })

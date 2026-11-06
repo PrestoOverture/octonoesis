@@ -1,3 +1,5 @@
+import type { PermissionMode } from '../permissions/confirm'
+export type { PermissionMode } from '../permissions/confirm'
 import type { StreamEvent } from '../query'
 import type { ExitReason } from '../query/types'
 
@@ -5,12 +7,14 @@ export type PermissionDecision = 'allow_once' | 'allow_always' | 'deny'
 export type HostCommand = { v: 1 } & (
   | { type: 'submit'; text: string }
   | { type: 'cancel' }
+  | { type: 'set_permission_mode'; mode: PermissionMode }
   | { type: 'permission_reply'; requestId: string; decision: PermissionDecision }
   | { type: 'shutdown' }
 )
 export type HostMessage = { v: 1 } & (
   | { type: 'ready'; sessionId: string; model: string; repoRoot: string; version: string }
   | { type: 'event'; event: StreamEvent }
+  | { type: 'permission_mode'; mode: PermissionMode }
   | {
       type: 'permission_request'
       requestId: string
@@ -32,6 +36,9 @@ export function parseHostCommand(line: string): HostCommand {
     case 'cancel':
     case 'shutdown':
       return value
+    case 'set_permission_mode':
+      if (['ask', 'accept-edits', 'bypass'].includes(value.mode)) return value
+      break
     case 'permission_reply':
       if (
         typeof value.requestId === 'string' &&

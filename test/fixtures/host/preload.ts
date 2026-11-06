@@ -32,6 +32,31 @@ setProvider({
         if (opts.signal.aborted) resolve()
         else opts.signal.addEventListener('abort', () => resolve(), { once: true })
       })
+    } else if (prompt === 'edit-bash') {
+      const lastUser = messages.map((message) => message.role).lastIndexOf('user')
+      const step = messages.slice(lastUser + 1).filter((message) => message.role === 'tool').length
+      const calls = [
+        { name: 'Read', input: { path: 'edit.txt' } },
+        {
+          name: 'Edit',
+          input: {
+            path: 'edit.txt',
+            old_string: 'keep\nold1\nold2\ntail\n',
+            new_string: 'keep\nnew\ntail\n',
+          },
+        },
+        { name: 'Bash', input: { command: 'printf ran > bash-ran.txt' } },
+      ]
+      const call = calls[step]
+      if (call) {
+        yield { type: 'tool_use', id: `mode-${step}`, ...call }
+        yield {
+          type: 'message_end',
+          stopReason: 'tool_use',
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }
+        return
+      }
     } else if (prompt === 'write' && messages.at(-1)?.role !== 'tool') {
       const events: StreamEvent[] = [
         {

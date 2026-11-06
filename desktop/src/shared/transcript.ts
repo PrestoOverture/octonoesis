@@ -1,4 +1,4 @@
-import type { HostMessage, PermissionDecision } from '../../../src/host/protocol'
+import type { HostMessage, PermissionDecision, PermissionMode } from '../../../src/host/protocol'
 
 export type Item =
   | { kind: 'user' | 'assistant' | 'learning' | 'notice' | 'failure'; text: string }
@@ -8,17 +8,20 @@ export type Item =
       name: string
       argument: string
       status: 'running' | 'done' | 'error'
+      summary?: string
     }
 export type Permission = Extract<HostMessage, { type: 'permission_request' }>
 export type Transcript = {
   items: Item[]
   ready?: Extract<HostMessage, { type: 'ready' }>
   permission?: Permission
+  permissionMode: PermissionMode
   running: boolean
   connected: boolean
   status: { turn: number; context: number; cost: number; priced: boolean }
 }
 export const initialTranscript: Transcript = {
+  permissionMode: 'ask',
   items: [],
   running: false,
   connected: false,
@@ -53,6 +56,8 @@ export function transcript(state: Transcript, action: Action): Transcript {
   switch (action.type) {
     case 'ready':
       return { ...initialTranscript, ready: action, connected: true }
+    case 'permission_mode':
+      return { ...state, permissionMode: action.mode }
     case 'user':
       return { ...append({ kind: 'user', text: action.text }), running: true }
     case 'permission_request':
@@ -111,7 +116,13 @@ export function transcript(state: Transcript, action: Action): Transcript {
             ...state,
             items: state.items.map((item) =>
               item.kind === 'tool' && item.id === event.id
-                ? { ...item, status: event.status }
+                ? {
+                    ...item,
+                    status: event.status,
+                    ...(item.name === 'Edit' && event.status === 'done'
+                      ? { summary: event.summary }
+                      : {}),
+                  }
                 : item,
             ),
           }

@@ -2,6 +2,7 @@ import { Console } from 'node:console'
 import readline from 'node:readline'
 import { createPatch } from 'diff'
 import { version } from '../../package.json'
+import { editLineCounts } from './editSummary'
 import { type HostMessage, type PermissionDecision, parseHostCommand } from './protocol'
 
 // Engine forks relaunch Bun.main with this flag, just as they do for the CLI.
@@ -31,7 +32,9 @@ try {
   const { getRepoRoot, getMemoryDir } = await import('../utils/path')
   const { getResolvedModel } = await import('../providers')
   const { formatSessionSummary } = await import('../state/session')
-  const { registerPromptHandler, unregisterPromptHandler } = await import('../permissions/confirm')
+  const { registerPromptHandler, unregisterPromptHandler, setPermissionMode } = await import(
+    '../permissions/confirm'
+  )
   const { query, formatQueryFailure } = await import('../query')
   const { rewriteSkillSlashCommand } = await import('../skills/execute')
   const repoRoot = getRepoRoot()
@@ -54,6 +57,7 @@ try {
     crlfDelay: Number.POSITIVE_INFINITY,
   })
 
+  setPermissionMode('ask')
   registerPromptHandler(
     (toolName, input, signal) =>
       new Promise((resolve) => {
@@ -110,6 +114,7 @@ try {
     repoRoot,
     version,
   })
+  send({ v: 1, type: 'permission_mode', mode: 'ask' })
   input.on('line', (line) => {
     if (stopping) return
     try {
@@ -120,6 +125,10 @@ try {
           break
         case 'cancel':
           controller?.abort()
+          break
+        case 'set_permission_mode':
+          setPermissionMode(command.mode)
+          send({ v: 1, type: 'permission_mode', mode: command.mode })
           break
         case 'permission_reply': {
           const settle = pending.get(command.requestId)
@@ -135,6 +144,7 @@ try {
             try {
               const prompt = await rewriteSkillSlashCommand(command.text, repoRoot)
               const generator = query(prompt, ctx, turnController.signal)
+              const editSummaries = new Map<string, string>()
               while (true) {
                 const step = await generator.next()
                 if (step.done) {
@@ -146,8 +156,26 @@ try {
                   })
                   break
                 }
-                if (step.value.type === 'session_state') priced = step.value.priced
-                send({ v: 1, type: 'event', event: step.value })
+                let event = step.value
+                if (event.type === 'tool_use' && event.name === 'Edit') {
+                  const input = event.input as { old_string?: unknown; new_string?: unknown }
+                  if (
+                    typeof input?.old_string === 'string' &&
+                    typeof input?.new_string === 'string'
+                  ) {
+                    const { added, removed } = editLineCounts(input.old_string, input.new_string)
+                    editSummaries.set(event.id, `+${added} −${removed} lines`)
+                  }
+                }
+                if (
+                  event.type === 'tool_done' &&
+                  event.status === 'done' &&
+                  editSummaries.has(event.id)
+                ) {
+                  event = { ...event, summary: editSummaries.get(event.id) }
+                }
+                if (event.type === 'session_state') priced = event.priced
+                send({ v: 1, type: 'event', event })
               }
             } catch (error) {
               send({

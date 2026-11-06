@@ -256,12 +256,18 @@ aside {
   padding-left: 12px;
 }
 .composer-area {
+  flex: none;
+  min-width: 0;
   width: 100%;
   max-width: 924px;
   padding: 12px 32px 16px;
   margin: auto;
 }
 .composer {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -269,27 +275,76 @@ aside {
 }
 textarea {
   display: block;
-  resize: vertical;
+  flex: none;
+  resize: none;
   width: 100%;
-  min-height: 65px;
-  max-height: 220px;
+  min-height: 46px;
+  max-height: 172px;
+  overflow-y: auto;
+  line-height: 21px;
   color: inherit;
   border: 0;
   background: transparent;
   padding: 2px;
 }
 .composer-actions {
+  flex: none;
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
   color: var(--muted);
   font-size: 12px;
 }
-.hint {
-  text-align: center;
+.composer-hint {
+  flex: 1 1 180px;
+  min-width: 0;
   font-size: 11px;
   color: var(--muted);
-  padding-top: 8px;
+}
+.composer-actions button {
+  flex: none;
+  margin-left: auto;
+}
+.permission-mode {
+  position: relative;
+  flex: none;
+  font-size: 12px;
+}
+.permission-mode summary {
+  list-style: none;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+.permission-mode.warning summary,
+.bypass-confirm {
+  color: #ffc857;
+  border-color: #ffc857;
+}
+.mode-options {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 160px;
+}
+.mode-options button {
+  text-align: left;
+  white-space: nowrap;
+}
+.mode-options button[aria-pressed="true"] {
+  border-color: var(--cyan);
 }
 footer {
   height: 28px;
