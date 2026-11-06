@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from 'electrobun/main'
 import { type HostMessage, parseHostCommand } from '../../../src/host/protocol'
+import { externalUrl } from '../shared/externalUrl'
 import type { DesktopRPC } from '../shared/rpc'
 
 // Build-time path: bundled main code lives inside the app, not desktop/src/bun.
@@ -35,6 +36,10 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
   maxRequestTime: 15000,
   handlers: {
     requests: {
+      openExternal: ({ url }) => {
+        const validated = externalUrl(url)
+        return { opened: validated ? Utils.openExternal(validated) : false }
+      },
       openRepository: async () => {
         if (closing || opening) return { opened: false }
         opening = true
@@ -158,6 +163,34 @@ Electrobun.events.on('before-quit', (event) => {
 for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, quit)
 
 ApplicationMenu.setApplicationMenu([
-  { label: 'Octonoesis', submenu: [{ role: 'quit', label: 'Quit Octonoesis' }] },
-  { label: 'Window', submenu: [{ role: 'close', label: 'Close Window' }] },
+  {
+    label: 'Octonoesis',
+    submenu: [
+      { role: 'about' },
+      { type: 'separator' },
+      { role: 'hide' },
+      { role: 'hideOthers' },
+      { role: 'showAll' },
+      { type: 'separator' },
+      { role: 'quit', label: 'Quit Octonoesis' },
+    ],
+  },
+  {
+    label: 'Edit',
+    submenu: [
+      { role: 'undo' },
+      { role: 'redo' },
+      { type: 'separator' },
+      { role: 'cut' },
+      { role: 'copy' },
+      { role: 'paste' },
+      { role: 'pasteAndMatchStyle' },
+      { role: 'delete' },
+      { role: 'selectAll' },
+    ],
+  },
+  {
+    label: 'Window',
+    submenu: [{ role: 'minimize' }, { role: 'zoom' }, { role: 'close', label: 'Close Window' }],
+  },
 ])

@@ -141,14 +141,14 @@ export function transcript(state: Transcript, action: Action): Transcript {
         case 'compact':
           return append({
             kind: 'notice',
-            text: `Context compacted: ${event.preTokens} → ${event.postTokens} tokens`,
+            text: `Context compacted: ${event.preTokens} → ${event.postTokens} ${event.postTokens === 1 ? 'token' : 'tokens'}`,
           })
         case 'stream_retry':
           return append({ kind: 'notice', text: `Retry ${event.attempt}: ${event.reason}` })
         case 'rule_recall':
           return append({
             kind: 'learning',
-            text: `Recalled ${event.rules.length} rules: ${event.rules.map((rule) => rule.id).join(', ')}`,
+            text: `Recalled ${event.rules.length} ${event.rules.length === 1 ? 'rule' : 'rules'}: ${event.rules.map((rule) => rule.id).join(', ')}`,
           })
         case 'rule_outcome':
           return append({
@@ -158,7 +158,7 @@ export function transcript(state: Transcript, action: Action): Transcript {
         case 'rules_learned':
           return append({
             kind: 'learning',
-            text: `Learned ${event.created.length} rules · updated ${event.updated}`,
+            text: `Learned ${event.created.length} ${event.created.length === 1 ? 'rule' : 'rules'} · updated ${event.updated}`,
           })
         case 'message_end':
           return state

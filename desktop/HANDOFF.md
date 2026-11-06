@@ -1,74 +1,78 @@
 ### Changed Files
 
-Delta on top of `dad849b`, on `feat/desktop-d1`. The original D1 implementation remains in that parent commit.
+Delta on top of `9e46d2c`, on `feat/desktop-d1`; no prior commit is amended.
 
-- `src/permissions/confirm.ts` — Export a mode-only setter reused by the existing CLI configurator; preserve permission decision logic and pending prompts.
-- `src/host/protocol.ts` — Add validated set_permission_mode commands and permission_mode messages using the existing PermissionMode type.
-- `src/host/main.ts` — Start in Ask, acknowledge mode changes immediately after ready and on switches, and correct successful Edit summaries in the host.
-- `src/host/editSummary.ts` — Count added/removed lines with the existing root diffLines dependency, excluding unchanged context.
-- `desktop/src/shared/transcript.ts` — Track permission mode without resolving pending permissions; retain successful Edit summaries on tool cards.
-- `desktop/src/shared/transcript.test.ts` — Test mode updates/reset, pending-request preservation, actual line counts, and Edit summary retention.
-- `desktop/src/mainview/App.tsx` — Add the three-mode title-bar menu and in-app Bypass confirmation; resize composer input and display corrected Edit summaries.
-- `desktop/src/mainview/index.css` — Separate input/action rows, cap input growth at about eight lines, and style the mode menu and amber Bypass pill.
-- `test/fixtures/host/preload.ts` — Script real Read/Edit/Bash calls through the existing provider-injection fixture.
-- `test/integration/host-protocol.test.ts` — Validate mode handshake, Bypass/Accept edits, invalid modes, pending prompts, deny-pattern precedence, and Edit summary output.
-- `desktop/HANDOFF.md` — Record this Delta Contract, current validation, acceptance evidence, and limitations.
+- `desktop/src/bun/index.ts` — Add the standard App/Edit/Window role menus and the guarded system-browser openExternal request.
+- `desktop/src/shared/rpc.ts` — Type the narrow openExternal URL request and boolean response.
+- `desktop/src/shared/externalUrl.ts` — Share strict absolute HTTP/HTTPS URL validation between renderer and main process.
+- `desktop/src/shared/externalUrl.test.ts` — Cover allowed HTTP/HTTPS and rejected JavaScript/file/data/custom/relative/malformed URLs.
+- `desktop/src/shared/Markdown.tsx` — Map marked GFM lexer tokens to React elements and escaped text; intercept link navigation.
+- `desktop/src/shared/markdown.test.tsx` — Cover code, incomplete fences, inline formatting, nested lists, tables, inert HTML/links, and click delegation.
+- `desktop/src/mainview/App.tsx` — Render accumulated assistant text through Markdown and route external links over typed RPC.
+- `desktop/src/mainview/index.css` — Scope readable markdown typography, code panels/language labels, tables and horizontal scrolling.
+- `desktop/src/shared/transcript.ts` — Pluralize learned/recalled rules and compaction tokens correctly.
+- `desktop/src/shared/transcript.test.ts` — Test singular/plural learning and compaction notices.
+- `desktop/package.json` — Declare only marked at exact version 18.0.14 as the new dependency.
+- `desktop/hutch.lock` — Lock the declared marked dependency installed by Hutch.
+- `desktop/HANDOFF.md` — Record this delta, verification, native acceptance evidence and remaining limitations.
 
 ### Validation
 
+- Devkit sources inspected: `ApplicationMenu.ts`, `menuRoles.ts`, `proc/native.ts` (`ApplicationMenuItemConfig`), and `Utils.ts` (`openExternal(url): boolean`). Menus use the verified role names and `{ type: "separator" }` shape.
+- Native macOS composer acceptance: entered `clipboard-check`; ⌘A/⌘C, Right, ⌘V produced `clipboard-checkclipboard-check`; ⌘A/⌘X emptied the input; ⌘Z restored the exact text. No prompt was submitted to a provider.
 - `npx tsc --noEmit` — exit 0, no diagnostics.
-- `bun run lint` — exit 0: `Checked 396 files ... No fixes applied.`
-- `bun run build` — exit 0: `Bundled 822 modules ... cli.js 4.17 MB`.
-- `timeout 600 bun test > /tmp/d1-delta-final-bun-test.log 2>&1` — exit 0:
+- `bun run lint` — exit 0: `Checked 400 files ... No fixes applied.`
+- `bun run build` — exit 0: root CLI bundle succeeded.
+- `timeout 600 bun test > /tmp/d1-md-final-bun-test.log 2>&1` — exit 0:
 
 ```text
- 1248 pass
+ 1257 pass
  0 fail
- 18230 expect() calls
-Ran 1248 tests across 208 files. [119.86s]
+ 18291 expect() calls
+Ran 1257 tests across 210 files. [120.23s]
 ```
-
-- `CI=true timeout 600 bun test > /tmp/d1-delta-ci-bun-test.log 2>&1` — exit 0:
+- `CI=true timeout 600 bun test > /tmp/d1-md-ci-bun-test.log 2>&1` — exit 0:
 
 ```text
- 1248 pass
+ 1257 pass
  0 fail
- 17999 expect() calls
-Ran 1248 tests across 208 files. [141.46s]
+ 18055 expect() calls
+Ran 1257 tests across 210 files. [111.38s]
 ```
-- In `desktop/`, all Hutch commands used `PATH="$HOME/.hutch/bin:$PATH" DASH_RELEASE_OFFLINE=1`:
+- An earlier full run hit the unchanged two-second TUI history wait in `daily-driver-input.test.tsx`. Its isolated recheck passed (`4 pass, 0 fail`), followed by passing full normal/CI runs; that file and TUI code were not changed.
+- Focused markdown/URL/reducer tests — `16 pass, 0 fail, 91 expect() calls` across 3 files.
+- In `desktop/`, Hutch commands used `PATH="$HOME/.hutch/bin:$PATH" DASH_RELEASE_OFFLINE=1`:
+  - `hutch install` — installed `marked@18.0.14` and saved `hutch.lock`; no root-package fallback was needed.
+  - `hutch install --frozen-lockfile` — exit 0, 77 installs checked across 128 packages without changes.
   - `hutch pm exec -- tsc --noEmit` — exit 0, no diagnostics.
   - `hutch pm exec -- vite build && hutch electrobun build --env=dev` — exit 0:
 
 ```text
+../../dist/assets/noe-compact-Ukfhr7Cw.svg    6.16 kB │ gzip:  0.58 kB
 ../../dist/assets/noe-f11-BHSwU1Qc.svg       16.48 kB │ gzip:  1.20 kB
-../../dist/assets/index-D9qs7LyX.css          5.90 kB │ gzip:  1.84 kB
-../../dist/assets/index-Co1BglHV.js         161.94 kB │ gzip: 52.47 kB
-✓ built in 411ms
+../../dist/assets/index-Y6gcXt_z.css          7.31 kB │ gzip:  2.15 kB
+../../dist/assets/index-DxlX16If.js         210.28 kB │ gzip: 67.01 kB
+✓ built in 762ms
 hutch electrobun: macOS icon source not found: /Users/kwang/projects/octonoesis-wt/desktop-d1/desktop/icon.iconset
 electrobun build complete: /Users/kwang/projects/octonoesis-wt/desktop-d1/desktop/build/dev-macos-arm64
 ```
 
-- Focused host/reducer suite — `19 pass, 0 fail, 116 expect() calls` across 2 files.
-- Mutation checks — deliberately broken mode switching and the original incorrect `+3 −4 lines` summary both failed the targeted real-host test; temporary mutants were removed.
-- Playwright skill browser QA used the actual React/CSS with a temporary local RPC adapter; adapter/configuration were removed afterward. The shipped webview still loads only `views://` and production output contains no QA adapter.
-- Composer geometry: 20 cases at widths 800, 801, 1024, 1280, 1600px with 1/4/8/20 input lines. Minimum input/action-row gap: 12px. Maximum input height: 172px. Twenty-line inputs scroll (424px scroll height). Send and Stop both remain below the textarea.
-- Permission UI: Bypass selection sends no command before confirmation; Cancel retains Ask. Confirming sends Bypass, then Accept edits and Ask switches succeed. Bypass text/border compute to `rgb(255, 200, 87)` (`#FFC857`).
-- Browser QA artifacts: `/tmp/d1-delta-layout.log`, `/tmp/d1-delta-mode-ui.log`, `/tmp/d1-delta-composer-800.png`, `/tmp/d1-delta-bypass.png`.
-- `git diff --check` — clean. No changes to dependencies, unrelated tests, `docs/`, `book/`, `cc-src/`, or `misc/`.
+- Playwright skill QA used the actual React/CSS with a temporary local RPC adapter. At 800px: unfinished fence remained a code panel; code content scrolled horizontally (1397px content in a 578px panel); nested lists/table/blockquote rendered; raw HTML created no image/script elements; an HTTP link was delegated to openExternal without changing the webview URL. The adapter/configuration were removed; shipped assets contain no adapter.
+- QA artifacts: `/tmp/d1-md-visual.log`, `/tmp/d1-md-readable-800.png`; native launch log: `/tmp/d1-md-native.log`.
+- `git diff --check` — clean. Root dependencies, engine/TUI code, unrelated tests and forbidden directories are unchanged.
 
 ### Success Conditions
 
-- [x] Permission mode switching — Ask/Accept edits/Bypass map to the existing engine mode setter; host acknowledgement follows ready; fresh sessions default to Ask; invalid modes error; Bypass confirms in-app and uses the amber warning pill. Subprocess tests prove real Edit/Bash execution, pending-request preservation, next-check switching, and deny-pattern precedence.
-- [x] Composer overlap — flex column input/action rows and auto-height input capped at 172px; all 20 browser geometry cases pass, including Send/Stop checks.
-- [x] Edit summary accuracy — actual line diff returns `+1 −2 lines` for a four-line old/three-line new replacement with unchanged context. Verified through helper/reducer tests and real host Edit completion.
-- [x] All required root and desktop checks green; final outputs above.
-- [x] New conventional commit on `feat/desktop-d1`: `fix(desktop): add permission modes and fix composer and Edit summaries`. Parent `dad849b` remains unchanged; this handoff is included.
+- [x] Composer copy/paste/select-all/cut/undo acceptance verified in the native macOS application; standard App/Edit/Window menus use devkit roles.
+- [x] Assistant markdown readability verified through pure mapping tests and a visual streaming preview. Code fences, inline code, formatting, lists, blockquotes, tables, hr and HTTP links render as elements; HTML stays literal and unsafe links inert.
+- [x] openExternal validates URLs in the main process before calling Utils.openExternal; only HTTP/HTTPS are accepted. Validation unit tests and intercepted primary/middle-click tests pass.
+- [x] Learning and compaction grammar tests pass for singular and plural counts.
+- [x] All named root and desktop checks pass; final command outputs are recorded above.
+- [x] New conventional commit on `feat/desktop-d1`: `fix(desktop): restore edit shortcuts and render safe markdown`, including this handoff. Parent `9e46d2c` remains unchanged.
 
 ### Risks & Deviations
 
-- No scope deviations. The only shared engine change is the small mode setter; CLI configuration still emits its existing stderr warning and retains identical decision ordering. The host uses the setter without emitting that CLI warning. Pending permission promises are never settled by a mode switch.
-- Edit line counts are corrected at the desktop host boundary, preserving existing TUI/one-shot output. Counts describe the actual diff of old_string versus new_string as requested; they do not attempt to multiply counts for replace_all matches elsewhere in a file.
-- Browser acceptance checks use a local RPC adapter; real engine behavior is tested through subprocesses without API keys/network. Native end-to-end UI interaction and live providers were not rerun for this delta.
-- Existing D1 limitations remain: development engine checkout required (standalone packaging is D4), and the absent seeded icon.iconset produces a nonfatal build warning.
-- No new root or desktop dependencies. The root diff package computes summaries in the host; the webview does not import it.
+- No scope deviations. Markdown is intentionally pulled forward into D1 by this contract; there is no HTML injection API, syntax highlighter, or additional dependency beyond marked@18.0.14.
+- Markdown images remain literal text so assistant output does not load remote resources. Relative/non-HTTP links are inert.
+- Native clipboard acceptance was verified directly. Markdown layout and link interception used a local RPC adapter; actual system-browser launch was not invoked during QA to avoid external navigation. The privileged handler uses the verified Electrobun Utils API and the tested URL validator.
+- Existing D1 limitations remain: the development build depends on an engine checkout (standalone packaging is D4), and the absent icon.iconset produces a nonfatal build warning.

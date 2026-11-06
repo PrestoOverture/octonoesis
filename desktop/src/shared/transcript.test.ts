@@ -191,3 +191,52 @@ test('Edit summary counts the actual line diff and is retained on its tool card'
   })
   expect(state.items.at(-1)).toMatchObject({ status: 'done', summary: '+1 −2 lines' })
 })
+
+test('learning notices use singular rule only for a count of one', () => {
+  for (const count of [0, 1, 2]) {
+    const noun = count === 1 ? 'rule' : 'rules'
+    const learned = transcript(initialTranscript, {
+      v: 1,
+      type: 'event',
+      event: {
+        type: 'rules_learned',
+        created: Array.from({ length: count }, (_, i) => ({
+          id: String(i),
+          status: 'candidate' as const,
+        })),
+        updated: 1,
+      },
+    })
+    expect(learned.items.at(-1)).toEqual({
+      kind: 'learning',
+      text: `Learned ${count} ${noun} · updated 1`,
+    })
+    const recalled = transcript(initialTranscript, {
+      v: 1,
+      type: 'event',
+      event: {
+        type: 'rule_recall',
+        trigger: 'session_start',
+        rules: Array.from({ length: count }, (_, i) => ({ id: String(i), confidence: 0.5 })),
+      },
+    })
+    expect(recalled.items.at(-1)).toEqual({
+      kind: 'learning',
+      text: `Recalled ${count} ${noun}: ${Array.from({ length: count }, (_, i) => String(i)).join(', ')}`,
+    })
+  }
+})
+
+test('compaction notice pluralizes the remaining token count', () => {
+  for (const count of [1, 2]) {
+    const state = transcript(initialTranscript, {
+      v: 1,
+      type: 'event',
+      event: { type: 'compact', preTokens: 10, postTokens: count, durationMs: 1 },
+    })
+    expect(state.items.at(-1)).toEqual({
+      kind: 'notice',
+      text: `Context compacted: 10 → ${count} ${count === 1 ? 'token' : 'tokens'}`,
+    })
+  }
+})

@@ -1,6 +1,7 @@
 import { Electroview } from 'electrobun/view'
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react'
 import type { HostCommand, PermissionDecision, PermissionMode } from '../../../src/host/protocol'
+import { Markdown } from '../shared/Markdown'
 import type { DesktopRPC } from '../shared/rpc'
 import { type Action, initialTranscript, primaryArgument, transcript } from '../shared/transcript'
 import compactNoe from './assets/noe-compact.svg'
@@ -112,6 +113,15 @@ export default function App() {
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   })
+  const openExternal = async (url: string) => {
+    try {
+      const result = await rpc.request.openExternal({ url })
+      if (!result.opened)
+        dispatch({ v: 1, type: 'error', message: 'Could not open link in the system browser.' })
+    } catch (error) {
+      dispatch({ v: 1, type: 'error', message: String(error) })
+    }
+  }
   const submit = () => {
     if (!text.trim() || state.running || !state.connected) return
     dispatch({ type: 'user', text })
@@ -236,7 +246,11 @@ export default function App() {
                   ) : (
                     // biome-ignore lint/suspicious/noArrayIndexKey: transcript entries are append-only.
                     <div key={index} className={`message ${item.kind}`}>
-                      {item.text}
+                      {item.kind === 'assistant' ? (
+                        <Markdown text={item.text} onOpenExternal={openExternal} />
+                      ) : (
+                        item.text
+                      )}
                     </div>
                   ),
                 )}
