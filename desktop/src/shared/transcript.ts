@@ -1,4 +1,13 @@
-import type { HostMessage, PermissionDecision, PermissionMode } from '../../../src/host/protocol'
+import type {
+  HistoryEntry,
+  HostMessage,
+  PermissionDecision,
+  PermissionMode,
+  SessionSummary,
+  TaskSummary,
+} from '../../../src/host/protocol'
+import { primaryArg } from '../../../src/query/toolSummary'
+import type { Todo } from '../../../src/state/todos'
 
 export type Item =
   | { kind: 'user' | 'assistant' | 'learning' | 'notice' | 'failure'; text: string }
@@ -18,14 +27,30 @@ export type Transcript = {
   permissionMode: PermissionMode
   running: boolean
   connected: boolean
-  status: { turn: number; context: number; cost: number; priced: boolean }
+  status: {
+    turn: number
+    context: number
+    cost: number
+    priced: boolean
+    inputTokens: number
+    outputTokens: number
+  }
+  sessions: SessionSummary[]
+  resumedFrom?: string
+  skills: { name: string; description: string }[]
+  todos: Todo[]
+  tasks: TaskSummary[]
 }
 export const initialTranscript: Transcript = {
   permissionMode: 'ask',
   items: [],
   running: false,
   connected: false,
-  status: { turn: 0, context: 0, cost: 0, priced: false },
+  status: { turn: 0, context: 0, cost: 0, priced: false, inputTokens: 0, outputTokens: 0 },
+  sessions: [],
+  skills: [],
+  todos: [],
+  tasks: [],
 }
 export type Action =
   | HostMessage
@@ -33,22 +58,128 @@ export type Action =
   | { type: 'permission_resolved'; requestId: string; decision: PermissionDecision }
   | { type: 'host_exit'; message: string }
 
-export function primaryArgument(input: unknown): string {
-  if (!input || typeof input !== 'object') return String(input ?? '')
-  const value = input as Record<string, unknown>
-  for (const key of [
-    'path',
-    'file_path',
-    'command',
-    'pattern',
-    'url',
-    'description',
-    'prompt',
-    'skill',
-  ]) {
-    if (typeof value[key] === 'string') return value[key].replaceAll('\n', ' ')
+/** The tool's main argument as the TUI shows it: one line, repo-relative paths. */
+export function toolArgument(name: string, input: unknown, repoRoot?: string): string {
+  const argument = primaryArg(name, input, repoRoot)
+  return argument || (name === 'TodoWrite' ? '' : JSON.stringify(input ?? null))
+}
+
+const TASK_NOTICE_PREFIX = '<task-notification>'
+const tag = (source: string, name: string) =>
+  source.match(new RegExp(`<${name}>([\\s\\S]*?)<\\/${name}>`))?.[1]?.trim()
+
+/** Compact label for a synthetic `<task-notification>` message, as in the TUI. */
+export function taskNoticeLabel(text: string): string {
+  const generic = 'Task › background task update'
+  if (!text.startsWith(TASK_NOTICE_PREFIX)) return text.trim() ? text : generic
+  const taskId = tag(text, 'task_id')
+  const status = tag(text, 'status')
+  const summary = tag(text, 'summary')?.replace(/\s+/g, ' ')
+  if (!taskId || !status || !summary) return generic
+  return `Task › ${taskId} ${status}: ${summary.length > 80 ? `${summary.slice(0, 79)}…` : summary}`
+}
+
+function event(state: Transcript, entry: HistoryEntry): Transcript {
+  const append = (item: Item) => ({ ...state, items: [...state.items, item] })
+  const repoRoot = state.ready?.repoRoot
+  switch (entry.type) {
+    case 'user':
+      return append({ kind: 'user', text: entry.text })
+    case 'text_delta': {
+      const last = state.items.at(-1)
+      if (last?.kind === 'assistant')
+        return {
+          ...state,
+          items: [...state.items.slice(0, -1), { ...last, text: last.text + entry.text }],
+        }
+      return append({ kind: 'assistant', text: entry.text })
+    }
+    case 'tool_use':
+      return append({
+        kind: 'tool',
+        id: entry.id,
+        name: entry.name,
+        argument: toolArgument(entry.name, entry.input, repoRoot),
+        status: 'running',
+      })
+    case 'tool_done':
+      return {
+        ...state,
+        items: state.items.map((item) =>
+          item.kind === 'tool' && item.id === entry.id
+            ? {
+                ...item,
+                status: entry.status,
+                ...(entry.summary ? { summary: entry.summary } : {}),
+              }
+            : item,
+        ),
+      }
+    case 'session_state':
+      return {
+        ...state,
+        status: {
+          turn: entry.sessionState.turns,
+          context: entry.sessionState.contextUtilization,
+          cost: entry.sessionState.costUsd,
+          priced: entry.priced,
+          inputTokens: entry.sessionState.usage.input_tokens,
+          outputTokens: entry.sessionState.usage.output_tokens,
+        },
+      }
+    case 'task_notice':
+      return append({ kind: 'notice', text: taskNoticeLabel(entry.text) })
+    case 'compact':
+      return append({
+        kind: 'notice',
+        text: `Context compacted: ${entry.preTokens} → ${entry.postTokens} ${entry.postTokens === 1 ? 'token' : 'tokens'}`,
+      })
+    case 'stream_retry': {
+      // The provider replays the whole reply: drop its partial text and unstarted tools.
+      const items = state.items.filter(
+        (item, index) =>
+          !(item.kind === 'tool' && item.status === 'running') &&
+          !(index === state.items.length - 1 && item.kind === 'assistant'),
+      )
+      return {
+        ...state,
+        items: [
+          ...items,
+          { kind: 'notice', text: `Connection lost, retrying (${entry.attempt}/2)` },
+        ],
+      }
+    }
+    case 'rule_recall':
+      if (!entry.rules.length) return state
+      return append({
+        kind: 'learning',
+        text: `Recalled ${entry.rules.length} ${entry.rules.length === 1 ? 'rule' : 'rules'}: ${entry.rules.map((rule) => rule.id).join(', ')}`,
+      })
+    case 'rule_outcome':
+      return append({
+        kind: 'learning',
+        text: `${entry.id}: ${entry.hit ? 'helped' : 'missed'} · ${entry.before.toFixed(2)} → ${entry.after.toFixed(2)}`,
+      })
+    case 'rules_learned':
+      if (!entry.created.length && !entry.updated) return state
+      return append({
+        kind: 'learning',
+        text: entry.created.length
+          ? `Learned ${entry.created.length} ${entry.created.length === 1 ? 'rule' : 'rules'} · updated ${entry.updated}`
+          : `Strengthened ${entry.updated} ${entry.updated === 1 ? 'rule' : 'rules'}`,
+      })
+    case 'message_end':
+      return state
   }
-  return JSON.stringify(input)
+}
+
+/** Running tools end as failures when their turn ends without a tool_done (cancel). */
+function settleRunning(items: Item[]): Item[] {
+  return items.map((item) =>
+    item.kind === 'tool' && item.status === 'running'
+      ? { ...item, status: 'error', summary: 'cancelled' }
+      : item,
+  )
 }
 
 export function transcript(state: Transcript, action: Action): Transcript {
@@ -69,7 +200,8 @@ export function transcript(state: Transcript, action: Action): Transcript {
     case 'host_exit':
     case 'fatal':
       return {
-        ...append({ kind: 'failure', text: action.message }),
+        ...state,
+        items: [...settleRunning(state.items), { kind: 'failure', text: action.message }],
         running: false,
         connected: false,
         permission: undefined,
@@ -82,87 +214,43 @@ export function transcript(state: Transcript, action: Action): Transcript {
         running: false,
         permission: undefined,
         items: [
-          ...state.items.map(
-            (item): Item =>
-              item.kind === 'tool' && item.status === 'running'
-                ? { ...item, status: 'error' }
-                : item,
-          ),
+          ...settleRunning(state.items),
           ...(action.failure ? [{ kind: 'failure' as const, text: action.failure }] : []),
         ],
       }
-    case 'event': {
-      const event = action.event
-      switch (event.type) {
-        case 'text_delta': {
-          const last = state.items.at(-1)
-          if (last?.kind === 'assistant')
-            return {
-              ...state,
-              items: [...state.items.slice(0, -1), { ...last, text: last.text + event.text }],
-            }
-          return append({ kind: 'assistant', text: event.text })
-        }
-        case 'tool_use':
-          return append({
-            kind: 'tool',
-            id: event.id,
-            name: event.name,
-            argument: primaryArgument(event.input),
-            status: 'running',
-          })
-        case 'tool_done':
-          return {
-            ...state,
-            items: state.items.map((item) =>
-              item.kind === 'tool' && item.id === event.id
-                ? {
-                    ...item,
-                    status: event.status,
-                    ...(item.name === 'Edit' && event.status === 'done'
-                      ? { summary: event.summary }
-                      : {}),
-                  }
-                : item,
-            ),
-          }
-        case 'session_state':
-          return {
-            ...state,
-            status: {
-              turn: event.sessionState.turns,
-              context: event.sessionState.contextUtilization,
-              cost: event.sessionState.costUsd,
-              priced: event.priced,
-            },
-          }
-        case 'task_notice':
-          return append({ kind: 'notice', text: event.text })
-        case 'compact':
-          return append({
+    case 'history': {
+      const replayed = action.entries.reduce(event, state)
+      return {
+        ...replayed,
+        items: [
+          ...settleRunning(replayed.items),
+          {
             kind: 'notice',
-            text: `Context compacted: ${event.preTokens} → ${event.postTokens} ${event.postTokens === 1 ? 'token' : 'tokens'}`,
-          })
-        case 'stream_retry':
-          return append({ kind: 'notice', text: `Retry ${event.attempt}: ${event.reason}` })
-        case 'rule_recall':
-          return append({
-            kind: 'learning',
-            text: `Recalled ${event.rules.length} ${event.rules.length === 1 ? 'rule' : 'rules'}: ${event.rules.map((rule) => rule.id).join(', ')}`,
-          })
-        case 'rule_outcome':
-          return append({
-            kind: 'learning',
-            text: `${event.id}: ${event.hit ? 'helped' : 'missed'} · ${event.before.toFixed(2)} → ${event.after.toFixed(2)}`,
-          })
-        case 'rules_learned':
-          return append({
-            kind: 'learning',
-            text: `Learned ${event.created.length} ${event.created.length === 1 ? 'rule' : 'rules'} · updated ${event.updated}`,
-          })
-        case 'message_end':
-          return state
+            text: `Resumed session from ${new Date(action.updatedAt).toLocaleString()}`,
+          },
+        ],
+        resumedFrom: action.resumedFrom,
       }
     }
+    case 'sessions':
+      return { ...state, sessions: action.sessions }
+    case 'skills':
+      return { ...state, skills: action.skills }
+    case 'todos':
+      return { ...state, todos: action.todos }
+    case 'tasks':
+      return { ...state, tasks: action.tasks }
+    case 'event':
+      return event(state, action.event)
   }
+}
+
+/** Skills whose `/name` completes the composer's leading slash command. */
+export function slashMatches(
+  text: string,
+  skills: Transcript['skills'],
+): Transcript['skills'] | undefined {
+  const match = text.match(/^\/([a-z0-9-]*)$/)
+  if (!match) return
+  return skills.filter((skill) => skill.name.startsWith(match[1] ?? '')).slice(0, 8)
 }
