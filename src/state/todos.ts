@@ -32,6 +32,19 @@ export function setTodos(todos: Todo[]): void {
 }
 
 /**
+ * Subscribes to todo list replacements outside React (the desktop host).
+ *
+ * @param listener Called after every setTodos.
+ * @return A function that removes the listener.
+ */
+export function subscribeTodos(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+/**
  * A custom hook to access the todo list reactive to updates.
  *
  * @return The reactive array of todo items.

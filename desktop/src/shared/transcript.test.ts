@@ -1,6 +1,12 @@
 import { expect, test } from 'bun:test'
 import { editLineCounts } from '../../../src/host/editSummary'
-import { initialTranscript, transcript } from './transcript'
+import {
+  initialTranscript,
+  slashMatches,
+  taskNoticeLabel,
+  toolArgument,
+  transcript,
+} from './transcript'
 
 test('assistant deltas concatenate, tool cards transition running to done and error', () => {
   let state = transcript(initialTranscript, { type: 'user', text: 'hello' })
@@ -108,7 +114,14 @@ test('ready initializes session and session_state maps turn, context and cost st
       },
     },
   })
-  expect(state.status).toEqual({ turn: 3, context: 0.34, cost: 0.04, priced: true })
+  expect(state.status).toEqual({
+    turn: 3,
+    context: 0.34,
+    cost: 0.04,
+    priced: true,
+    inputTokens: 10,
+    outputTokens: 5,
+  })
   const restarted = transcript(state, {
     v: 1,
     type: 'ready',
@@ -139,9 +152,17 @@ test('learning, compaction and task notices remain distinct transcript items', (
   state = transcript(state, {
     v: 1,
     type: 'event',
-    event: { type: 'task_notice', text: 'Task completed' },
+    event: {
+      type: 'task_notice',
+      text: '<task-notification><task_id>b1</task_id><status>completed</status><summary>bun   test\npassed</summary></task-notification>',
+    },
   })
   expect(state.items.map((item) => item.kind)).toEqual(['learning', 'notice', 'notice'])
+  expect(state.items.at(-1)).toEqual({
+    kind: 'notice',
+    text: 'Task › b1 completed: bun test passed',
+  })
+  expect(taskNoticeLabel('<task-notification>broken')).toBe('Task › background task update')
 })
 
 test('permission_mode updates the pill state without resolving a pending request; ready resets Ask', () => {
@@ -193,7 +214,21 @@ test('Edit summary counts the actual line diff and is retained on its tool card'
 })
 
 test('learning notices use singular rule only for a count of one', () => {
-  for (const count of [0, 1, 2]) {
+  expect(
+    transcript(initialTranscript, {
+      v: 1,
+      type: 'event',
+      event: { type: 'rule_recall', trigger: 'session_start', rules: [] },
+    }).items,
+  ).toEqual([])
+  expect(
+    transcript(initialTranscript, {
+      v: 1,
+      type: 'event',
+      event: { type: 'rules_learned', created: [], updated: 0 },
+    }).items,
+  ).toEqual([])
+  for (const count of [1, 2]) {
     const noun = count === 1 ? 'rule' : 'rules'
     const learned = transcript(initialTranscript, {
       v: 1,
@@ -211,6 +246,13 @@ test('learning notices use singular rule only for a count of one', () => {
       kind: 'learning',
       text: `Learned ${count} ${noun} · updated 1`,
     })
+    expect(
+      transcript(initialTranscript, {
+        v: 1,
+        type: 'event',
+        event: { type: 'rules_learned', created: [], updated: count },
+      }).items.at(-1),
+    ).toEqual({ kind: 'learning', text: `Strengthened ${count} ${noun}` })
     const recalled = transcript(initialTranscript, {
       v: 1,
       type: 'event',
@@ -239,4 +281,134 @@ test('compaction notice pluralizes the remaining token count', () => {
       text: `Context compacted: 10 → ${count} ${count === 1 ? 'token' : 'tokens'}`,
     })
   }
+})
+
+const ready = {
+  v: 1,
+  type: 'ready',
+  sessionId: 'new',
+  model: 'model',
+  repoRoot: '/repo',
+  version: '1',
+} as const
+
+test('tool cards show repo-relative arguments and keep every tool summary', () => {
+  let state = transcript(initialTranscript, ready)
+  state = transcript(state, {
+    v: 1,
+    type: 'event',
+    event: { type: 'tool_use', id: 'r', name: 'Read', input: { path: '/repo/src/a.ts' } },
+  })
+  state = transcript(state, {
+    v: 1,
+    type: 'event',
+    event: { type: 'tool_done', id: 'r', name: 'Read', status: 'done', summary: '12 lines' },
+  })
+  expect(state.items.at(-1)).toMatchObject({ argument: 'src/a.ts', summary: '12 lines' })
+  expect(toolArgument('Bash', { command: 'cd /repo && bun test\nmore' }, '/repo')).toBe('bun test')
+  expect(toolArgument('TodoWrite', { todos: [] }, '/repo')).toBe('')
+})
+
+test('history replays a resumed session, settles open tools and notes the resume', () => {
+  let state = transcript(initialTranscript, ready)
+  state = transcript(state, {
+    v: 1,
+    type: 'history',
+    resumedFrom: 'old',
+    updatedAt: '2026-11-07T00:00:00.000Z',
+    entries: [
+      { type: 'user', text: 'fix it' },
+      { type: 'text_delta', text: 'On it.' },
+      { type: 'tool_use', id: 't', name: 'Edit', input: { path: '/repo/a.ts' } },
+      { type: 'tool_done', id: 't', name: 'Edit', status: 'done', summary: '+1 −1 lines' },
+      { type: 'tool_use', id: 'dangling', name: 'Read', input: { path: 'b' } },
+    ],
+  })
+  expect(state.resumedFrom).toBe('old')
+  expect(state.items.slice(0, 4)).toEqual([
+    { kind: 'user', text: 'fix it' },
+    { kind: 'assistant', text: 'On it.' },
+    {
+      kind: 'tool',
+      id: 't',
+      name: 'Edit',
+      argument: 'a.ts',
+      status: 'done',
+      summary: '+1 −1 lines',
+    },
+    {
+      kind: 'tool',
+      id: 'dangling',
+      name: 'Read',
+      argument: 'b',
+      status: 'error',
+      summary: 'cancelled',
+    },
+  ])
+  expect(state.items.at(-1)).toMatchObject({ kind: 'notice' })
+  expect(state.running).toBe(false)
+})
+
+test('sessions, skills, todos and tasks replace their lists; ready clears them', () => {
+  let state = transcript(initialTranscript, ready)
+  state = transcript(state, {
+    v: 1,
+    type: 'sessions',
+    sessions: [{ id: 'a', updatedAt: 'x', preview: 'p', messageCount: 2 }],
+  })
+  state = transcript(state, {
+    v: 1,
+    type: 'skills',
+    skills: [{ name: 'deploy', description: 'd' }],
+  })
+  state = transcript(state, {
+    v: 1,
+    type: 'todos',
+    todos: [{ id: '1', content: 'Write tests', status: 'open' }],
+  })
+  state = transcript(state, {
+    v: 1,
+    type: 'tasks',
+    tasks: [{ id: 'b1', type: 'shell', status: 'running', startTime: 1 }],
+  })
+  expect([
+    state.sessions.length,
+    state.skills.length,
+    state.todos.length,
+    state.tasks.length,
+  ]).toEqual([1, 1, 1, 1])
+  const fresh = transcript(state, ready)
+  expect([fresh.sessions, fresh.skills, fresh.todos, fresh.tasks]).toEqual([[], [], [], []])
+})
+
+test('stream retry drops the partial reply and unstarted tools', () => {
+  let state = transcript(initialTranscript, { type: 'user', text: 'go' })
+  state = transcript(state, { v: 1, type: 'event', event: { type: 'text_delta', text: 'Half' } })
+  state = transcript(state, {
+    v: 1,
+    type: 'event',
+    event: { type: 'tool_use', id: 'x', name: 'Read', input: { path: 'a' } },
+  })
+  state = transcript(state, {
+    v: 1,
+    type: 'event',
+    event: { type: 'stream_retry', attempt: 1, reason: 'reset' },
+  })
+  expect(state.items).toEqual([
+    { kind: 'user', text: 'go' },
+    { kind: 'assistant', text: 'Half' },
+    { kind: 'notice', text: 'Connection lost, retrying (1/2)' },
+  ])
+})
+
+test('slash completion matches skill names only for a leading bare command', () => {
+  const skills = [
+    { name: 'deploy', description: '' },
+    { name: 'debug', description: '' },
+    { name: 'test', description: '' },
+  ]
+  expect(slashMatches('/de', skills)?.map((skill) => skill.name)).toEqual(['deploy', 'debug'])
+  expect(slashMatches('/', skills)?.length).toBe(3)
+  expect(slashMatches('/deploy now', skills)).toBeUndefined()
+  expect(slashMatches('hello /de', skills)).toBeUndefined()
 })

@@ -108,6 +108,60 @@ const messageSchema = z.discriminatedUnion('type', [
   }),
   z.object({ v: z.literal(1), type: z.literal('error'), message: z.string() }),
   z.object({ v: z.literal(1), type: z.literal('fatal'), message: z.string() }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('history'),
+    resumedFrom: z.string(),
+    updatedAt: z.string(),
+    entries: z.array(
+      z.union([
+        z.object({ type: z.enum(['user', 'task_notice']), text: z.string() }).strict(),
+        eventSchema,
+      ]),
+    ),
+  }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('sessions'),
+    sessions: z.array(
+      z
+        .object({
+          id: z.string(),
+          updatedAt: z.string(),
+          preview: z.string(),
+          messageCount: z.number(),
+        })
+        .strict(),
+    ),
+  }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('skills'),
+    skills: z.array(z.object({ name: z.string(), description: z.string() }).strict()),
+  }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('todos'),
+    todos: z.array(
+      z.object({ id: z.string(), content: z.string(), status: z.enum(['open', 'completed']) }),
+    ),
+  }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('tasks'),
+    tasks: z.array(
+      z
+        .object({
+          id: z.string(),
+          type: z.enum(['shell', 'agent']),
+          status: z.enum(['pending', 'running', 'completed', 'failed', 'killed']),
+          startTime: z.number(),
+          endTime: z.number().optional(),
+          command: z.string().optional(),
+        })
+        .strict(),
+    ),
+  }),
 ])
 
 async function launch(
@@ -121,9 +175,11 @@ async function launch(
   }) => Promise<void>,
   missingKey = false,
   denyBash = false,
+  setup?: (dir: string) => Promise<string[]>,
 ) {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'octonoesis-host-')))
   await writeFile(join(dir, 'edit.txt'), 'keep\nold1\nold2\ntail\n')
+  const args = (await setup?.(dir)) ?? []
   if (denyBash) {
     await mkdir(join(dir, '.octonoesis'))
     await writeFile(
@@ -137,6 +193,7 @@ async function launch(
       '--preload',
       resolve('test/fixtures/host/preload.ts'),
       resolve(process.env.HOST_TEST_ENTRY || 'src/host/main.ts'),
+      ...args,
     ],
     cwd: dir,
     env: {
@@ -202,7 +259,7 @@ async function launch(
     }
   }
   try {
-    if (!missingKey) {
+    if (!missingKey && !args.includes('--expect-fatal')) {
       await next('ready')
       expect(messages[0]?.type).toBe('ready')
       await next('permission_mode')
@@ -462,3 +519,121 @@ test('host Bypass still honors config denyPatterns', async () => {
     true,
   )
 })
+
+const savedMessages = [
+  { role: 'user', content: 'earlier question' },
+  {
+    role: 'assistant',
+    content: [
+      { type: 'text', text: 'Fixing it.' },
+      {
+        type: 'tool_use',
+        id: 'saved-edit',
+        name: 'Edit',
+        input: { path: 'edit.txt', old_string: 'a\nb\n', new_string: 'a\nc\n' },
+      },
+    ],
+  },
+  { role: 'tool', tool_use_id: 'saved-edit', content: 'ok' },
+  { role: 'assistant', content: [{ type: 'text', text: 'Done.' }] },
+] as const
+
+async function saveFixture(dir: string, repoRoot = dir) {
+  const { saveSession } = await import('../../src/state/sessionStore')
+  await saveSession(
+    // biome-ignore lint/suspicious/noExplicitAny: readonly fixture literal.
+    { sessionId: 'saved-1', model: 'fixture', repoRoot, messages: savedMessages as any },
+    { memoryDir: dir },
+  )
+}
+
+test('host startup sends sessions, skills and todos; a turn refreshes the session list', async () => {
+  await launch(async ({ send, next, messages }) => {
+    const sessions = await next('sessions')
+    if (sessions.type !== 'sessions') throw new Error('Missing sessions')
+    expect(sessions.sessions).toEqual([])
+    expect((await next('skills')).type).toBe('skills')
+    expect(await next('todos')).toEqual({ v: 1, type: 'todos', todos: [] })
+    const after = messages.length
+    send({ v: 1, type: 'submit', text: 'hello' })
+    await next('turn_end', after)
+    const refreshed = await next('sessions', after)
+    if (refreshed.type !== 'sessions') throw new Error('Missing refreshed sessions')
+    const ready = messages[0]
+    if (ready?.type !== 'ready') throw new Error('Missing ready')
+    expect(
+      refreshed.sessions.map(({ id, preview, messageCount }) => ({ id, preview, messageCount })),
+    ).toEqual([{ id: ready.sessionId, preview: 'hello', messageCount: 2 }])
+  })
+})
+
+test('host --resume replays history, keeps context under a new id, and supersedes the old entry', async () => {
+  await launch(
+    async ({ send, next, messages }) => {
+      const ready = messages[0]
+      if (ready?.type !== 'ready') throw new Error('Missing ready')
+      expect(ready.sessionId).not.toBe('saved-1')
+      const history = await next('history')
+      if (history.type !== 'history') throw new Error('Missing history')
+      expect(history.resumedFrom).toBe('saved-1')
+      expect(history.entries[0]).toEqual({ type: 'user', text: 'earlier question' })
+      expect(
+        history.entries.find((entry) => entry.type === 'tool_done' && entry.id === 'saved-edit'),
+      ).toEqual({
+        type: 'tool_done',
+        id: 'saved-edit',
+        name: 'Edit',
+        status: 'done',
+        summary: '+1 −1 lines',
+      })
+      const status = messages.find(
+        (message) => message.type === 'event' && message.event.type === 'session_state',
+      )
+      if (status?.type !== 'event' || status.event.type !== 'session_state')
+        throw new Error('Missing resumed session_state')
+      expect(status.event.sessionState.turns).toBe(0)
+      expect(status.event.sessionState.contextUtilization).toBeGreaterThan(0)
+      const initial = await next('sessions')
+      if (initial.type !== 'sessions') throw new Error('Missing sessions')
+      expect(initial.sessions.map((session) => session.id)).toEqual(['saved-1'])
+      const after = messages.length
+      send({ v: 1, type: 'submit', text: 'context' })
+      await next('turn_end', after)
+      expect(JSON.stringify(messages.slice(after))).toContain('users=2')
+      const sessions = await next('sessions', after)
+      if (sessions.type !== 'sessions') throw new Error('Missing sessions')
+      expect(sessions.sessions.map((session) => session.id)).toEqual([ready.sessionId])
+      expect(sessions.sessions[0]?.preview).toBe('earlier question')
+    },
+    false,
+    false,
+    async (dir) => {
+      await saveFixture(dir)
+      return ['--resume', 'saved-1']
+    },
+  )
+})
+
+for (const [label, setup] of [
+  ['an unknown session', async () => ['--resume', 'missing-1', '--expect-fatal']],
+  [
+    "another repository's session",
+    async (dir: string) => {
+      await saveFixture(dir, '/elsewhere')
+      return ['--resume', 'saved-1', '--expect-fatal']
+    },
+  ],
+] as const) {
+  test(`host --resume of ${label} is fatal`, async () => {
+    await launch(
+      async ({ next, child, messages }) => {
+        await next('fatal')
+        expect(messages[0]?.type).toBe('fatal')
+        expect(await child.exited).not.toBe(0)
+      },
+      false,
+      false,
+      setup,
+    )
+  })
+}
