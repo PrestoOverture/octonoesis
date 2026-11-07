@@ -311,6 +311,17 @@ export async function listFileHistory(memoryDir: string, repoRoot: string) {
   )
 }
 
+/** Prior bytes a checkpoint recorded, read through the same containment checks as restore. */
+export async function readFileSnapshot(
+  memoryDir: string,
+  sessionId: string,
+  snapshot: string,
+): Promise<Buffer | undefined> {
+  if (snapshot === 'absent') return undefined
+  const directory = sessionDirectory(memoryDir, sessionId)
+  return fs.readFile(await restorePath(await fs.realpath(directory), snapshot))
+}
+
 export interface RestoreItem {
   path: string
   snapshot: string

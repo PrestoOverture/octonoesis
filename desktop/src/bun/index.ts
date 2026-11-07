@@ -26,11 +26,15 @@ import type { DesktopRPC } from '../shared/rpc'
 // Build-time path: bundled main code lives inside the app, not desktop/src/bun.
 declare const OCTONOESIS_DEV_ENGINE_ROOT: string
 const engineRoot = process.env.OCTONOESIS_ENGINE_ROOT || OCTONOESIS_DEV_ENGINE_ROOT
-let host: ReturnType<typeof Bun.spawn<'pipe', 'pipe', 'pipe'>> | undefined
-let repoRoot: string | undefined
+type Child = ReturnType<typeof Bun.spawn<'pipe', 'pipe', 'pipe'>>
+/** Live sessions: one engine host process each, keyed by the id the webview addresses. */
+const hosts = new Map<string, { child: Child; repoRoot: string }>()
+const stopping = new Set<Promise<void>>()
+// Repositories the user picked in this window; the webview may only start hosts in these.
+const repositories = new Set<string>()
+const MAX_SESSIONS = 6
 let closing = false
 let opening = false
-let stopping: Promise<void> | undefined
 let startupDone = false
 // Message types only (never content): OCTONOESIS_DEV_TRACE=1 in a dev build.
 let tracing = process.env.OCTONOESIS_DEV_TRACE === '1'
@@ -61,30 +65,30 @@ function provider(value: unknown): Provider {
   return value
 }
 
-function stopHost() {
-  if (stopping) return stopping
-  const child = host
-  if (!child) return Promise.resolve()
-  host = undefined
-  stopping = (async () => {
-    child.kill('SIGTERM')
-    const deadline = setTimeout(() => child.kill('SIGKILL'), 3000)
+function stopHost(key: string) {
+  const host = hosts.get(key)
+  if (!host) return Promise.resolve()
+  hosts.delete(key)
+  const stop = (async () => {
+    host.child.kill('SIGTERM')
+    const deadline = setTimeout(() => host.child.kill('SIGKILL'), 3000)
     try {
-      await child.exited
+      await host.child.exited
     } finally {
       clearTimeout(deadline)
-      stopping = undefined
     }
   })()
-  return stopping
+  stopping.add(stop)
+  void stop.finally(() => stopping.delete(stop))
+  return stop
 }
+const stopAll = () => Promise.all([...hosts.keys()].map(stopHost))
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error))
 
 /** One host start or switch at a time; failures become the request's error text. */
-async function exclusive(
-  start: () => Promise<{ opened: boolean; error?: string }>,
-): Promise<{ opened: boolean; error?: string }> {
+type Opened = { opened: boolean; key?: string; error?: string }
+async function exclusive(start: () => Promise<Opened>): Promise<Opened> {
   if (closing || opening) return { opened: false }
   opening = true
   try {
@@ -96,9 +100,16 @@ async function exclusive(
   }
 }
 
-async function startHost(root: string, resumeId?: string) {
-  await stopHost()
+function knownRepository(root: unknown): string {
+  if (typeof root !== 'string' || !repositories.has(root))
+    throw new Error('Open this repository first.')
+  return root
+}
+
+async function startHost(root: string, resumeId?: string): Promise<Opened> {
   if (closing) return { opened: false }
+  if (hosts.size >= MAX_SESSIONS)
+    throw new Error(`At most ${MAX_SESSIONS} sessions can run at once. Close one first.`)
   const entry = resolve(engineRoot, 'src/host/main.ts')
   if (!existsSync(entry))
     throw new Error(
@@ -112,8 +123,10 @@ async function startHost(root: string, resumeId?: string) {
     stderr: 'pipe',
     env: { ...env, OCTONOESIS_REPO_ROOT: root },
   })
-  host = child
-  repoRoot = root
+  const key = crypto.randomUUID()
+  hosts.set(key, { child, repoRoot: root })
+  repositories.add(root)
+  const live = () => hosts.get(key)?.child === child
   const relay = async () => {
     const reader = child.stdout.getReader()
     const decoder = new TextDecoder()
@@ -126,11 +139,15 @@ async function startHost(root: string, resumeId?: string) {
         while (newline !== -1) {
           const line = buffer.slice(0, newline)
           buffer = buffer.slice(newline + 1)
-          if (host === child) {
+          if (live()) {
             const message = JSON.parse(line) as HostMessage
             if (message.v !== 1) throw new Error('Unsupported host protocol')
-            trace('host →', message.type === 'event' ? `event:${message.event.type}` : message.type)
-            rpc.send.host(message)
+            trace(
+              key.slice(0, 8),
+              'host →',
+              message.type === 'event' ? `event:${message.event.type}` : message.type,
+            )
+            rpc.send.host({ key, message })
           }
           newline = buffer.indexOf('\n')
         }
@@ -138,7 +155,7 @@ async function startHost(root: string, resumeId?: string) {
       }
       if (buffer) throw new Error('Incomplete host protocol line')
     } catch (error) {
-      if (host === child) rpc.send.hostExit({ message: `Host protocol failure: ${String(error)}` })
+      if (live()) rpc.send.hostExit({ key, message: `Host protocol failure: ${String(error)}` })
       child.kill('SIGTERM')
     } finally {
       reader.releaseLock()
@@ -159,13 +176,14 @@ async function startHost(root: string, resumeId?: string) {
   })()
   void child.exited.then(async (code) => {
     await relayed
-    if (host !== child) return
-    host = undefined
+    if (!live()) return
+    hosts.delete(key)
     rpc.send.hostExit({
-      message: `Engine exited (${code}). Open a repository to start a new session.`,
+      key,
+      message: `Engine exited (${code}). Start a new session to continue.`,
     })
   })
-  return { opened: true }
+  return { opened: true, key }
 }
 
 const rpc = BrowserView.defineRPC<DesktopRPC>({
@@ -181,14 +199,19 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
         if (startupDone || (await BuildConfig.get()).isPackaged) return { opened: false }
         startupDone = true
         const screen = process.env.OCTONOESIS_DEV_SCREEN === 'settings' ? 'settings' : undefined
+        const panelFlag = process.env.OCTONOESIS_DEV_PANEL
+        const panel =
+          panelFlag === 'changes' || panelFlag === 'timeline' || panelFlag === 'learning'
+            ? panelFlag
+            : undefined
         const prompt = process.env.OCTONOESIS_DEV_PROMPT || undefined
         const mode = process.env.OCTONOESIS_DEV_PERMISSION_MODE
         const permissionMode = mode === 'accept-edits' || mode === 'bypass' ? mode : undefined
         const repository = process.env.OCTONOESIS_DEV_OPEN
-        if (!repository) return { opened: false, screen }
+        if (!repository) return { opened: false, screen, panel }
         const opened = await exclusive(async () => startHost(await realpath(repository)))
-        if (!opened.opened) return { ...opened, screen }
-        return { ...opened, screen, prompt, permissionMode }
+        if (!opened.opened) return { ...opened, screen, panel }
+        return { ...opened, screen, panel, prompt, permissionMode }
       },
       openRepository: () =>
         exclusive(async () => {
@@ -200,17 +223,18 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
           if (!paths[0] || closing) return { opened: false }
           return startHost(await realpath(paths[0]))
         }),
-      newSession: () =>
+      newSession: ({ repoRoot }) => exclusive(async () => startHost(knownRepository(repoRoot))),
+      resumeSession: ({ repoRoot, sessionId }) =>
         exclusive(async () => {
-          if (!repoRoot) return { opened: false, error: 'No repository is open.' }
-          return startHost(repoRoot)
+          if (typeof sessionId !== 'string' || !/^[A-Za-z0-9_-]+$/.test(sessionId))
+            throw new Error('Invalid session id')
+          return startHost(knownRepository(repoRoot), sessionId)
         }),
-      resumeSession: ({ sessionId }) =>
-        exclusive(async () => {
-          if (!repoRoot) return { opened: false, error: 'No repository is open.' }
-          if (!/^[A-Za-z0-9_-]+$/.test(sessionId)) throw new Error('Invalid session id')
-          return startHost(repoRoot, sessionId)
-        }),
+      closeSession: async ({ key }) => {
+        if (!hosts.has(key)) return { closed: false }
+        await stopHost(key)
+        return { closed: true }
+      },
       getProviderSettings: () => currentSettings(),
       setProvider: async (params) => {
         const settings = await readSettings()
@@ -252,15 +276,16 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
       },
     },
     messages: {
-      command: (command) => {
+      command: ({ key, command }) => {
         try {
           const validated = parseHostCommand(JSON.stringify(command))
-          if (!host) throw new Error('No active engine. Open a repository to reconnect.')
-          trace('→ host', validated.type)
+          const host = hosts.get(key)?.child
+          if (!host) throw new Error('This session has ended. Start a new session to continue.')
+          trace(key.slice(0, 8), '→ host', validated.type)
           host.stdin.write(`${JSON.stringify(validated)}\n`)
           host.stdin.flush()
         } catch (error) {
-          rpc.send.host({ v: 1, type: 'error', message: String(error) })
+          rpc.send.host({ key, message: { v: 1, type: 'error', message: String(error) } })
         }
       },
     },
@@ -275,15 +300,15 @@ const window = new BrowserWindow({
 
 const quit = () => {
   closing = true
-  void stopHost().then(() => Utils.quit())
+  void Promise.all([stopAll(), ...stopping]).then(() => Utils.quit())
 }
 window.on('will-close', (event) => {
-  if (!host && !stopping) return
+  if (!hosts.size && !stopping.size) return
   ;(event as { response: { allow: boolean } }).response = { allow: false }
   quit()
 })
 Electrobun.events.on('before-quit', (event) => {
-  if (!host && !stopping) return
+  if (!hosts.size && !stopping.size) return
   event.response = { allow: false }
   quit()
 })

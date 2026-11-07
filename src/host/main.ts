@@ -2,7 +2,8 @@ import { Console } from 'node:console'
 import readline from 'node:readline'
 import { createPatch } from 'diff'
 import { version } from '../../package.json'
-import { editSummary, historyEntries, sessionSummaries } from './history'
+import { checkpointTimeline, ruleSummaries, sessionChanges } from './checkpoints'
+import { editSummary, historyEntries, rewindNotice, sessionSummaries } from './history'
 import {
   type HostMessage,
   type PermissionDecision,
@@ -47,6 +48,9 @@ try {
   const { loadSkills } = await import('../skills/loader')
   const { listSessions, loadSession } = await import('../state/sessionStore')
   const { getTodos, subscribeTodos } = await import('../state/todos')
+  const { loadFileHistory, planFileRestore, restoreFiles } = await import('../state/fileHistory')
+  const { loadAllRules } = await import('../memory/rules/store')
+  const path = await import('node:path')
   const { contextTokensWithEstimation, getContextWindowSize } = await import('../utils/tokens')
   const { estimateCost } = await import('../utils/cost')
   const repoRoot = getRepoRoot()
@@ -70,6 +74,8 @@ try {
   let controller: AbortController | undefined
   let stopping: Promise<void> | undefined
   let priced = false
+  // Files rewound since the last turn; the next prompt tells the model about them.
+  let rewindNotes: string[] = []
   const pending = new Map<string, (decision: PermissionDecision) => void>()
   const input = readline.createInterface({
     input: process.stdin,
@@ -167,8 +173,55 @@ try {
       console.error(`Could not list saved sessions: ${detail(error)}`)
     }
   }
+  const fileHistory = async () => {
+    try {
+      return await loadFileHistory(memoryDir, ctx.sessionId, repoRoot)
+    } catch (error) {
+      // No Write/Edit yet: the session has no manifest.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+      throw error
+    }
+  }
+  let lastCheckpoints = ''
+  const sendCheckpoints = async () => {
+    try {
+      const timeline = checkpointTimeline(await fileHistory())
+      const serialized = JSON.stringify(timeline)
+      if (serialized === lastCheckpoints) return
+      lastCheckpoints = serialized
+      send({ v: 1, type: 'checkpoints', ...timeline })
+    } catch (error) {
+      console.error(`Could not read file checkpoints: ${detail(error)}`)
+    }
+  }
+  const rewind = async (seq: number, force: boolean) => {
+    try {
+      const history = await fileHistory()
+      if (!history?.entries.some((entry) => entry.seq === seq))
+        throw new Error(`Checkpoint ${seq} is not part of this session`)
+      const plan = planFileRestore(history, seq)
+      await restoreFiles(memoryDir, ctx.sessionId, history, plan, force)
+      const restored = plan.map((item) => item.path)
+      rewindNotes.push(
+        `Before checkpoint ${seq}: ${plan.map((item) => `${item.snapshot === 'absent' ? 'deleted' : 'restored'} ${item.path}`).join(', ')}`,
+      )
+      send({ v: 1, type: 'rewound', seq, restored })
+    } catch (error) {
+      const changed = detail(error).match(
+        /^File changed after session's last write: (.*) \(use --force/,
+      )
+      send({
+        v: 1,
+        type: 'rewind_failed',
+        seq,
+        conflict: !!changed,
+        message: changed ? `${changed[1]} changed after Noe's last write to it.` : detail(error),
+      })
+    }
+  }
   // Never await before the line handler below: readline drops lines nobody listens for.
   void sendSessions()
+  void sendCheckpoints()
   void loadSkills(repoRoot).then(
     (skills) =>
       send({
@@ -212,6 +265,43 @@ try {
           setPermissionMode(command.mode)
           send({ v: 1, type: 'permission_mode', mode: command.mode })
           break
+        case 'get_changes':
+          void fileHistory()
+            .then((history) => sessionChanges(memoryDir, ctx.sessionId, history))
+            .then(
+              (files) => send({ v: 1, type: 'changes', files }),
+              (error) =>
+                send({
+                  v: 1,
+                  type: 'error',
+                  message: `Could not compute changes: ${detail(error)}`,
+                }),
+            )
+          break
+        case 'get_learning':
+          void loadAllRules(path.join(memoryDir, 'rules')).then(
+            (rules) => send({ v: 1, type: 'learning', rules: ruleSummaries(rules) }),
+            (error) =>
+              send({ v: 1, type: 'error', message: `Could not load rules: ${detail(error)}` }),
+          )
+          break
+        case 'rewind': {
+          if (active) {
+            send({
+              v: 1,
+              type: 'rewind_failed',
+              seq: command.seq,
+              conflict: false,
+              message: 'Wait for the current turn to finish before rewinding.',
+            })
+            break
+          }
+          active = rewind(command.seq, command.force === true).finally(() => {
+            active = undefined
+            void sendCheckpoints()
+          })
+          break
+        }
         case 'permission_reply': {
           const settle = pending.get(command.requestId)
           if (!settle) throw new Error('Unknown permission request')
@@ -224,7 +314,10 @@ try {
           controller = turnController
           active = (async () => {
             try {
-              const prompt = await rewriteSkillSlashCommand(command.text, repoRoot)
+              const notes = rewindNotes
+              rewindNotes = []
+              const prompt =
+                rewindNotice(notes) + (await rewriteSkillSlashCommand(command.text, repoRoot))
               const generator = query(prompt, ctx, turnController.signal)
               const editSummaries = new Map<string, string>()
               while (true) {
@@ -252,6 +345,8 @@ try {
                 }
                 if (event.type === 'session_state') priced = event.priced
                 send({ v: 1, type: 'event', event })
+                if (event.type === 'tool_done' && ['Write', 'Edit', 'Bash'].includes(event.name))
+                  void sendCheckpoints()
               }
             } catch (error) {
               send({
@@ -265,6 +360,7 @@ try {
               controller = undefined
               // Query finalization saved the session; refresh the sidebar list.
               void sendSessions()
+              void sendCheckpoints()
             }
           })()
         }

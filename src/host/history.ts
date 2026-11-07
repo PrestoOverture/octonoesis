@@ -5,6 +5,22 @@ import { editLineCounts } from './editSummary'
 import type { HistoryEntry, SessionSummary } from './protocol'
 
 const TASK_NOTICE_PREFIX = '<task-notification>'
+const REWIND_OPEN = '<rewind-notice>'
+const REWIND_CLOSE = '</rewind-notice>'
+
+/** Prefix for the next prompt after a desktop rewind, so the model re-reads restored files. */
+export function rewindNotice(notes: string[]): string {
+  if (!notes.length) return ''
+  return `${REWIND_OPEN}\nThe user rewound files since your last turn (shell command effects were not reverted). ${notes.join('; ')}. Re-read any of these files before relying on or editing them.\n${REWIND_CLOSE}\n\n`
+}
+
+/** The user's own text of a prompt, without a leading rewind notice. */
+export function withoutRewindNotice(text: string): { text: string; rewound: boolean } {
+  if (!text.startsWith(REWIND_OPEN)) return { text, rewound: false }
+  const end = text.indexOf(REWIND_CLOSE)
+  if (end === -1) return { text, rewound: false }
+  return { text: text.slice(end + REWIND_CLOSE.length).replace(/^\n+/, ''), rewound: true }
+}
 
 /** Changed-line summary for an Edit input, matching what the live stream reports. */
 export function editSummary(input: unknown): string | undefined {
@@ -25,7 +41,9 @@ export function historyEntries(messages: CanonicalMessage[]): HistoryEntry[] {
   const entries: HistoryEntry[] = []
   for (const message of messages) {
     if (message.role === 'user') {
-      const text = userText(message)
+      const { text, rewound } = withoutRewindNotice(userText(message))
+      if (rewound)
+        entries.push({ type: 'task_notice', text: 'Files were rewound before this turn' })
       entries.push({ type: text.startsWith(TASK_NOTICE_PREFIX) ? 'task_notice' : 'user', text })
     } else if (message.role === 'assistant') {
       for (const block of message.content) {
@@ -72,7 +90,7 @@ export function historyEntries(messages: CanonicalMessage[]): HistoryEntry[] {
 function preview(messages: CanonicalMessage[], limit = 80): string {
   for (const message of messages) {
     if (message.role !== 'user') continue
-    const text = userText(message).replace(/\s+/g, ' ').trim()
+    const text = withoutRewindNotice(userText(message)).text.replace(/\s+/g, ' ').trim()
     if (!text || text.startsWith(TASK_NOTICE_PREFIX)) continue
     const characters = Array.from(text)
     return characters.length > limit ? `${characters.slice(0, limit).join('')}…` : text

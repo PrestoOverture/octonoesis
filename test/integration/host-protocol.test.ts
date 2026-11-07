@@ -162,6 +162,70 @@ const messageSchema = z.discriminatedUnion('type', [
         .strict(),
     ),
   }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('checkpoints'),
+    entries: z.array(
+      z
+        .object({
+          seq: z.number(),
+          ts: z.string(),
+          tool: z.enum(['Write', 'Edit']),
+          path: z.string(),
+          created: z.boolean(),
+        })
+        .strict(),
+    ),
+    commands: z.array(
+      z.object({ afterSeq: z.number(), ts: z.string(), command: z.string() }).strict(),
+    ),
+  }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('changes'),
+    files: z.array(
+      z
+        .object({
+          path: z.string(),
+          status: z.enum(['added', 'modified', 'deleted']),
+          added: z.number(),
+          removed: z.number(),
+          patch: z.string().optional(),
+          note: z.enum(['binary', 'too_large']).optional(),
+        })
+        .strict(),
+    ),
+  }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('learning'),
+    rules: z.array(
+      z
+        .object({
+          id: z.string(),
+          status: z.string(),
+          confidence: z.number(),
+          hits: z.number(),
+          misses: z.number(),
+          scope: z.enum(['repo', 'global']),
+          advice: z.string(),
+        })
+        .strict(),
+    ),
+  }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('rewound'),
+    seq: z.number(),
+    restored: z.array(z.string()),
+  }),
+  z.object({
+    v: z.literal(1),
+    type: z.literal('rewind_failed'),
+    seq: z.number(),
+    message: z.string(),
+    conflict: z.boolean(),
+  }),
 ])
 
 async function launch(
@@ -637,3 +701,145 @@ for (const [label, setup] of [
     )
   })
 }
+
+test('host checkpoints, changes and rewind: files restored, shell kept, model told, conflicts flagged', async () => {
+  await launch(async ({ send, next, dir, messages }) => {
+    expect(await next('checkpoints')).toEqual({
+      v: 1,
+      type: 'checkpoints',
+      entries: [],
+      commands: [],
+    })
+    let after = messages.length
+    send({ v: 1, type: 'set_permission_mode', mode: 'bypass' })
+    send({ v: 1, type: 'submit', text: 'edit-bash' })
+    await next('turn_end', after)
+    expect(await readFile(join(dir, 'bash-ran.txt'), 'utf8')).toBe('ran')
+    const timeline = messages.filter((message) => message.type === 'checkpoints').at(-1)
+    if (timeline?.type !== 'checkpoints') throw new Error('Missing checkpoints')
+    expect(
+      timeline.entries.map(({ seq, tool, path, created }) => ({ seq, tool, path, created })),
+    ).toEqual([{ seq: 1, tool: 'Edit', path: 'edit.txt', created: false }])
+    expect(timeline.commands.map(({ afterSeq, command }) => ({ afterSeq, command }))).toEqual([
+      { afterSeq: 1, command: 'printf ran > bash-ran.txt' },
+    ])
+
+    after = messages.length
+    send({ v: 1, type: 'get_changes' })
+    const changes = await next('changes', after)
+    if (changes.type !== 'changes') throw new Error('Missing changes')
+    expect(
+      changes.files.map(({ path, status, added, removed }) => ({ path, status, added, removed })),
+    ).toEqual([{ path: 'edit.txt', status: 'modified', added: 1, removed: 2 }])
+    expect(changes.files[0]?.patch).toContain('-old1\n-old2\n+new')
+
+    after = messages.length
+    send({ v: 1, type: 'rewind', seq: 1 })
+    expect(await next('rewound', after)).toEqual({
+      v: 1,
+      type: 'rewound',
+      seq: 1,
+      restored: ['edit.txt'],
+    })
+    expect(await readFile(join(dir, 'edit.txt'), 'utf8')).toBe('keep\nold1\nold2\ntail\n')
+    expect(await readFile(join(dir, 'bash-ran.txt'), 'utf8')).toBe('ran')
+    after = messages.length
+    send({ v: 1, type: 'get_changes' })
+    expect(await next('changes', after)).toEqual({ v: 1, type: 'changes', files: [] })
+
+    // The restored file no longer matches the session's last write: refuse unless forced.
+    after = messages.length
+    send({ v: 1, type: 'rewind', seq: 1 })
+    expect(await next('rewind_failed', after)).toEqual({
+      v: 1,
+      type: 'rewind_failed',
+      seq: 1,
+      conflict: true,
+      message: "edit.txt changed after Noe's last write to it.",
+    })
+    after = messages.length
+    send({ v: 1, type: 'rewind', seq: 1, force: true })
+    await next('rewound', after)
+    after = messages.length
+    send({ v: 1, type: 'rewind', seq: 9 })
+    const missing = await next('rewind_failed', after)
+    expect(missing.type === 'rewind_failed' && missing.conflict).toBe(false)
+
+    after = messages.length
+    send({ v: 1, type: 'submit', text: 'hello' })
+    await next('turn_end', after)
+    expect(JSON.stringify(messages.slice(after))).toContain(
+      'saw-rewind restored-edit=true user=true',
+    )
+    // Only the first prompt after a rewind carries the notice.
+    after = messages.length
+    send({ v: 1, type: 'submit', text: 'hello' })
+    await next('turn_end', after)
+    expect(JSON.stringify(messages.slice(after))).not.toContain('saw-rewind')
+
+    after = messages.length
+    send({ v: 1, type: 'submit', text: 'wait' })
+    await next('event', after)
+    send({ v: 1, type: 'rewind', seq: 1 })
+    const busy = await next('rewind_failed', after)
+    expect(busy.type === 'rewind_failed' && busy.message).toBe(
+      'Wait for the current turn to finish before rewinding.',
+    )
+    send({ v: 1, type: 'cancel' })
+    await next('turn_end', after)
+    after = messages.length
+    send('{"v":1,"type":"rewind","seq":0}')
+    await next('error', after)
+  })
+})
+
+test('host lists the rule pool strongest first', async () => {
+  await launch(
+    async ({ send, next, messages }) => {
+      const after = messages.length
+      send({ v: 1, type: 'get_learning' })
+      const learning = await next('learning', after)
+      if (learning.type !== 'learning') throw new Error('Missing learning')
+      expect(learning.rules.map((rule) => [rule.id, rule.confidence])).toEqual([
+        ['rule-strong', 0.9],
+        ['rule-weak', 0.3],
+      ])
+      expect(learning.rules[0]?.advice).toBe('Run the tests first.')
+    },
+    false,
+    false,
+    async (dir) => {
+      const { saveRule } = await import('../../src/memory/rules/store')
+      for (const [id, alpha, beta, confidence] of [
+        ['rule-weak', 3, 7, 0.3],
+        ['rule-strong', 9, 1, 0.9],
+      ] as const)
+        await saveRule(
+          {
+            id,
+            triggers: { tools: ['Bash'], command_prefix: [], error_signatures: [] },
+            scope: 'repo',
+            alpha,
+            beta,
+            confidence,
+            evidence: [],
+            hits: 0,
+            misses: 0,
+            challenged_by: [],
+            anchor: { file: '' },
+            status: 'active',
+            user_confirmed: false,
+            extractor_version: 'test',
+            model_id: 'test',
+            prompt_hash: 'test',
+            created_at: new Date().toISOString(),
+            last_matched_at: null,
+            last_rebuilt_at: null,
+            advice: 'Run the tests first.',
+          },
+          join(dir, 'rules'),
+        )
+      return []
+    },
+  )
+})
