@@ -1,8 +1,11 @@
 import type {
+  CheckpointTimeline,
+  FileChange,
   HistoryEntry,
   HostMessage,
   PermissionDecision,
   PermissionMode,
+  RuleSummary,
   SessionSummary,
   TaskSummary,
 } from '../../../src/host/protocol'
@@ -40,6 +43,13 @@ export type Transcript = {
   skills: { name: string; description: string }[]
   todos: Todo[]
   tasks: TaskSummary[]
+  checkpoints: CheckpointTimeline
+  /** Checkpoints whose changes a rewind has undone. */
+  reverted: number[]
+  /** Latest `get_changes` / `get_learning` answers; undefined until first asked. */
+  changes?: FileChange[]
+  rules?: RuleSummary[]
+  rewindError?: Extract<HostMessage, { type: 'rewind_failed' }>
 }
 export const initialTranscript: Transcript = {
   permissionMode: 'ask',
@@ -51,12 +61,15 @@ export const initialTranscript: Transcript = {
   skills: [],
   todos: [],
   tasks: [],
+  checkpoints: { entries: [], commands: [] },
+  reverted: [],
 }
 export type Action =
   | HostMessage
   | { type: 'user'; text: string }
   | { type: 'permission_resolved'; requestId: string; decision: PermissionDecision }
   | { type: 'host_exit'; message: string }
+  | { type: 'rewind_dismissed' }
 
 /** The tool's main argument as the TUI shows it: one line, repo-relative paths. */
 export function toolArgument(name: string, input: unknown, repoRoot?: string): string {
@@ -240,6 +253,30 @@ export function transcript(state: Transcript, action: Action): Transcript {
       return { ...state, todos: action.todos }
     case 'tasks':
       return { ...state, tasks: action.tasks }
+    case 'checkpoints':
+      return { ...state, checkpoints: { entries: action.entries, commands: action.commands } }
+    case 'changes':
+      return { ...state, changes: action.files }
+    case 'learning':
+      return { ...state, rules: action.rules }
+    case 'rewound': {
+      const undone = state.checkpoints.entries
+        .map((entry) => entry.seq)
+        .filter((seq) => seq >= action.seq && !state.reverted.includes(seq))
+      const count = action.restored.length
+      return {
+        ...append({
+          kind: 'notice',
+          text: `Rewound ${count} ${count === 1 ? 'file' : 'files'} to before change #${action.seq}`,
+        }),
+        reverted: [...state.reverted, ...undone],
+        rewindError: undefined,
+      }
+    }
+    case 'rewind_failed':
+      return { ...state, rewindError: action }
+    case 'rewind_dismissed':
+      return { ...state, rewindError: undefined }
     case 'event':
       return event(state, action.event)
   }

@@ -1,34 +1,46 @@
 import { Electroview } from 'electrobun/view'
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useReducer,
+  useRef,
+  useState,
+} from 'react'
 import type { HostCommand, PermissionDecision, PermissionMode } from '../../../src/host/protocol'
 import { Markdown } from '../shared/Markdown'
 import { activityBlocks } from '../shared/activity'
 import type { DesktopRPC } from '../shared/rpc'
+import { type Action, initialTranscript, slashMatches, toolArgument } from '../shared/transcript'
 import {
-  type Action,
-  initialTranscript,
-  slashMatches,
-  toolArgument,
-  transcript,
-} from '../shared/transcript'
+  MAX_SESSIONS,
+  type WorkspaceAction,
+  initialWorkspace,
+  liveSessionIds,
+  sessionStatus,
+  sessionTitle,
+  workspace,
+} from '../shared/workspace'
 import { ActivityGroup, ToolCard } from './Activity'
 import { SettingsDialog } from './Settings'
+import { type PanelTab, SidePanel } from './SidePanel'
 import compactNoe from './assets/noe-compact.svg'
 import noe from './assets/noe-f11.svg'
 
-let push: ((action: Action) => void) | undefined
+let push: ((action: WorkspaceAction) => void) | undefined
 const rpc = Electroview.defineRPC<DesktopRPC>({
   maxRequestTime: 15000,
   handlers: {
     requests: {},
     messages: {
-      host: (message) => push?.(message),
-      hostExit: ({ message }) => push?.({ type: 'host_exit', message }),
+      host: ({ key, message }) => push?.({ type: 'session', key, action: message }),
+      hostExit: ({ key, message }) =>
+        push?.({ type: 'session', key, action: { type: 'host_exit', message } }),
     },
   },
 })
 new Electroview({ rpc })
-const send = (command: HostCommand) => rpc.send.command(command)
 const settingsRequests = {
   get: () => rpc.request.getProviderSettings(undefined),
   setProvider: (provider: Parameters<typeof rpc.request.setProvider>[0]['provider']) =>
@@ -45,6 +57,14 @@ const formatTokens = (value: number) =>
     : value >= 1000
       ? `${(value / 1000).toFixed(1)}k`
       : String(value)
+const repoName = (root: string | undefined) => root?.split('/').filter(Boolean).at(-1)
+const STATUS_LABEL = {
+  permission: 'Needs permission',
+  running: 'Working',
+  idle: 'Idle',
+  starting: 'Starting…',
+  disconnected: 'Ended',
+} as const
 const relativeTime = (iso: string) => {
   const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60_000)
   if (minutes < 1) return 'just now'
@@ -55,13 +75,36 @@ const relativeTime = (iso: string) => {
 }
 
 export default function App() {
-  const [state, dispatch] = useReducer(transcript, initialTranscript)
-  const [text, setText] = useState('')
+  const [ws, dispatchWorkspace] = useReducer(workspace, initialWorkspace)
+  const active = ws.active
+  const state = (active && ws.sessions[active]) || initialTranscript
+  const dispatch = useCallback(
+    (action: Action) => {
+      if (active) dispatchWorkspace({ type: 'session', key: active, action })
+      else if (action.type === 'error' || action.type === 'host_exit')
+        setWelcomeErrors((errors) => [...errors, action.message])
+    },
+    [active],
+  )
+  const send = (command: HostCommand) => {
+    if (active) rpc.send.command({ key: active, command })
+  }
+  const [welcomeErrors, setWelcomeErrors] = useState<string[]>([])
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const text = (active && drafts[active]) || ''
+  const setText = (value: string) => {
+    if (active) setDrafts((current) => ({ ...current, [active]: value }))
+  }
+  const [panelOpen, setPanelOpen] = useState(true)
+  const [panelTab, setPanelTab] = useState<PanelTab>('changes')
   const [opening, setOpening] = useState(false)
   const [confirmBypass, setConfirmBypass] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [pendingPrompt, setPendingPrompt] = useState<string>()
-  const [pendingMode, setPendingMode] = useState<PermissionMode>()
+  const [pending, setPending] = useState<{
+    key: string
+    prompt?: string
+    mode?: PermissionMode
+  }>()
   const [slashIndex, setSlashIndex] = useState(0)
   const [now, setNow] = useState(() => Date.now())
   const modeMenu = useRef<HTMLDetailsElement>(null)
@@ -93,29 +136,41 @@ export default function App() {
     })
     observer.observe(input)
     return () => observer.disconnect()
-  }, [text, state.ready])
+  }, [text, state.ready, active])
   useEffect(() => {
     if (confirmBypass) bypassDialog.current?.showModal()
     else bypassDialog.current?.close()
   }, [confirmBypass])
-  const switchHost = async (request: () => Promise<{ opened: boolean; error?: string }>) => {
+  const startSession = async (
+    request: () => Promise<{ opened: boolean; key?: string; error?: string }>,
+  ) => {
     setOpening(true)
     try {
       const result = await request()
       if (result.error) dispatch({ v: 1, type: 'error', message: result.error })
+      if (result.key) dispatchWorkspace({ type: 'opened', key: result.key })
+      return result.key
     } catch (error) {
-      dispatch({ type: 'host_exit', message: String(error) })
+      dispatch({ v: 1, type: 'error', message: String(error) })
     } finally {
       setOpening(false)
     }
   }
   const openRepository = () =>
-    switchHost(() =>
+    startSession(() =>
       rpc.request.openRepository(undefined, { maxRequestTime: Number.POSITIVE_INFINITY }),
     )
-  const newSession = () => switchHost(() => rpc.request.newSession(undefined))
-  const resumeSession = (sessionId: string) =>
-    switchHost(() => rpc.request.resumeSession({ sessionId }))
+  const repoRoot = state.ready?.repoRoot
+  const newSession = () =>
+    repoRoot ? startSession(() => rpc.request.newSession({ repoRoot })) : openRepository()
+  const resumeSession = (sessionId: string) => {
+    if (repoRoot) void startSession(() => rpc.request.resumeSession({ repoRoot, sessionId }))
+  }
+  const closeSession = (key: string) => {
+    dispatchWorkspace({ type: 'close', key })
+    void rpc.request.closeSession({ key }).catch(() => undefined)
+  }
+  // biome-ignore lint/correctness/useExhaustiveDependencies: dev launch options run once.
   useEffect(() => {
     void (async () => {
       const startup = await rpc.request.startup(undefined, {
@@ -123,8 +178,10 @@ export default function App() {
       })
       if (startup.error) dispatch({ v: 1, type: 'error', message: startup.error })
       if (startup.screen === 'settings') setSettingsOpen(true)
-      if (startup.permissionMode) setPendingMode(startup.permissionMode)
-      if (startup.prompt) setPendingPrompt(startup.prompt)
+      if (startup.key) {
+        dispatchWorkspace({ type: 'opened', key: startup.key })
+        setPending({ key: startup.key, prompt: startup.prompt, mode: startup.permissionMode })
+      }
     })()
   }, [])
   const runningTasks = state.tasks.filter(
@@ -141,7 +198,7 @@ export default function App() {
     dispatch({ type: 'permission_resolved', requestId: permission.requestId, decision })
   }
   useEffect(() => {
-    push = dispatch
+    push = dispatchWorkspace
     return () => {
       push = undefined
     }
@@ -177,6 +234,15 @@ export default function App() {
       } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'o') {
         event.preventDefault()
         if (!opening) void openRepository()
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
+        event.preventDefault()
+        if (!opening && ws.order.length < MAX_SESSIONS) void newSession()
+      } else if ((event.metaKey || event.ctrlKey) && /^[1-9]$/.test(event.key)) {
+        const key = ws.order[Number(event.key) - 1]
+        if (key) {
+          event.preventDefault()
+          dispatchWorkspace({ type: 'focus', key })
+        }
       }
     }
     window.addEventListener('keydown', key)
@@ -202,13 +268,11 @@ export default function App() {
   }
   // biome-ignore lint/correctness/useExhaustiveDependencies: submit the dev prompt once connected.
   useEffect(() => {
-    if (!state.connected) return
-    if (pendingMode) {
-      send({ v: 1, type: 'set_permission_mode', mode: pendingMode })
-      setPendingMode(undefined)
-    }
-    if (pendingPrompt && !state.running && submitText(pendingPrompt)) setPendingPrompt(undefined)
-  }, [pendingMode, pendingPrompt, state.connected, state.running])
+    if (!pending || pending.key !== active || !state.connected) return
+    if (pending.mode) send({ v: 1, type: 'set_permission_mode', mode: pending.mode })
+    if (pending.prompt && !state.running) submitText(pending.prompt)
+    setPending(undefined)
+  }, [pending, active, state.connected, state.running])
   const slash = slashMatches(text, state.skills)
   const slashOpen = !!slash?.length
   const completeSlash = (index: number) => {
@@ -217,18 +281,15 @@ export default function App() {
     setSlashIndex(0)
   }
   const blocks = useMemo(() => activityBlocks(state.items), [state.items])
-  // A resumed session continues under a new id; its old entry is the current session.
-  const savedSessions = state.sessions.filter(
-    (session) => session.id !== state.ready?.sessionId && session.id !== state.resumedFrom,
-  )
-  const currentSaved =
-    state.sessions.find((session) => session.id === state.ready?.sessionId) ??
-    state.sessions.find((session) => session.id === state.resumedFrom)
+  // Saved sessions of this repository not already open (a resumed one runs under a new id).
+  const live = liveSessionIds(ws)
+  const savedSessions = state.sessions.filter((session) => !live.has(session.id))
+  const atLimit = ws.order.length >= MAX_SESSIONS
   const doneTodos = state.todos.filter((todo) => todo.status === 'completed').length
   const missingKey = state.items.some(
     (item) => item.kind === 'failure' && MISSING_KEY.test(item.text),
   )
-  const repoName = state.ready?.repoRoot.split('/').filter(Boolean).at(-1)
+  const name = repoName(repoRoot)
   const value = (permission?.input ?? {}) as Record<string, unknown>
   const diff = permission?.preview
     ? permission.preview.split('\n')
@@ -245,10 +306,10 @@ export default function App() {
   return (
     <div className="app">
       <header>
-        <strong>{repoName ?? 'Octonoesis'}</strong>
-        <span className="muted">{state.ready ? state.ready.repoRoot : ''}</span>
+        <strong>{name ?? 'Octonoesis'}</strong>
+        <span className="muted">{repoRoot ?? ''}</span>
         <span className="title">
-          {state.running ? 'Noe is working…' : state.ready ? 'Session' : ''}
+          {state.running ? 'Noe is working…' : state.ready ? sessionTitle(state) : ''}
         </span>
         {state.ready && (
           <details
@@ -278,8 +339,19 @@ export default function App() {
             </div>
           </details>
         )}
+        {active && (
+          <button
+            type="button"
+            className="panel-toggle"
+            aria-pressed={panelOpen}
+            onClick={() => setPanelOpen(!panelOpen)}
+            title={panelOpen ? 'Hide the session panel' : 'Show changes, timeline and learning'}
+          >
+            {panelOpen ? 'Hide panel' : 'Panel'}
+          </button>
+        )}
       </header>
-      {!state.ready ? (
+      {!active ? (
         <main className="welcome">
           <img src={noe} alt="Noe, the Octonoesis mascot" />
           <h1>Octonoesis</h1>
@@ -297,71 +369,104 @@ export default function App() {
               Provider settings
             </button>
           </div>
-          {state.items.map(
-            (item, index) =>
-              item.kind === 'failure' && (
-                // biome-ignore lint/suspicious/noArrayIndexKey: transcript entries are append-only.
-                <p className="failure" key={index}>
-                  {item.text}
-                </p>
-              ),
-          )}
+          {welcomeErrors.map((message, index) => (
+            // biome-ignore lint/suspicious/noArrayIndexKey: errors are append-only.
+            <p className="failure" key={index}>
+              {message}
+            </p>
+          ))}
         </main>
       ) : (
         <div className="workspace">
           <aside>
-            <div className="sidebar-heading">REPOSITORY</div>
-            <strong>{repoName}</strong>
-            <div className="repo-path">{state.ready.repoRoot}</div>
-            <button type="button" onClick={openRepository} disabled={opening}>
-              Open repository…
-            </button>
             <div className="sidebar-heading sessions">
               SESSIONS
               <button
                 type="button"
                 className="new-session"
-                disabled={opening || state.running}
-                onClick={newSession}
-                title="Start a new session in this repository"
+                disabled={opening || atLimit}
+                onClick={() => void newSession()}
+                title={
+                  atLimit
+                    ? `At most ${MAX_SESSIONS} sessions can run at once`
+                    : `Start a new session in ${name ?? 'this repository'} (⌘N)`
+                }
               >
                 + New
               </button>
             </div>
-            <div className="session-list">
-              <div className="session current" aria-current="true">
-                <span className="activity">●</span>
-                <div>
-                  <div className="session-title">
-                    {currentSaved?.preview ??
-                      (state.resumedFrom ? 'Resumed session' : 'Current session')}
+            <div className="session-list live">
+              {ws.order.map((key, index) => {
+                const session = ws.sessions[key]
+                if (!session) return null
+                const status = sessionStatus(session)
+                return (
+                  <div
+                    key={key}
+                    className={`session live-session ${key === active ? 'current' : ''}`}
+                    aria-current={key === active}
+                  >
+                    <button
+                      type="button"
+                      className="session-open"
+                      onClick={() => dispatchWorkspace({ type: 'focus', key })}
+                      title={index < 9 ? `⌘${index + 1}` : undefined}
+                    >
+                      <span className={`status-dot ${status}`} aria-hidden="true" />
+                      <div>
+                        <div className="session-title">{sessionTitle(session)}</div>
+                        <div className="muted">
+                          {repoName(session.ready?.repoRoot) ?? '…'} · {STATUS_LABEL[status]}
+                        </div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      className="session-close"
+                      aria-label={`Close ${sessionTitle(session)}`}
+                      title={
+                        session.running ? 'Stop this session and close it' : 'Close this session'
+                      }
+                      onClick={() => closeSession(key)}
+                    >
+                      ×
+                    </button>
                   </div>
-                  <div className="muted">{state.connected ? 'Active' : 'Disconnected'}</div>
-                </div>
-              </div>
-              {savedSessions.map((session) => (
-                <button
-                  type="button"
-                  key={session.id}
-                  className="session"
-                  disabled={opening || state.running}
-                  title={state.running ? 'Wait for the current turn to finish' : session.preview}
-                  onClick={() => resumeSession(session.id)}
-                >
-                  <div className="session-title">{session.preview}</div>
-                  <div className="muted">
-                    {relativeTime(session.updatedAt)} · {session.messageCount} messages
-                  </div>
-                </button>
-              ))}
+                )
+              })}
             </div>
+            <button type="button" onClick={openRepository} disabled={opening || atLimit}>
+              Open repository… <kbd>⌘O</kbd>
+            </button>
+            {savedSessions.length > 0 && (
+              <>
+                <div className="sidebar-heading saved">SAVED IN {name?.toUpperCase()}</div>
+                <div className="session-list">
+                  {savedSessions.map((session) => (
+                    <button
+                      type="button"
+                      key={session.id}
+                      className="session"
+                      disabled={opening || atLimit}
+                      title={session.preview}
+                      onClick={() => resumeSession(session.id)}
+                    >
+                      <div className="session-title">{session.preview}</div>
+                      <div className="muted">
+                        {relativeTime(session.updatedAt)} · {session.messageCount} messages
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
             <button type="button" className="settings-link" onClick={() => setSettingsOpen(true)}>
               Provider settings
             </button>
             <div className="sidebar-bottom">
               <img src={compactNoe} alt="" />
               <div>
-                Noe<div className="muted">{state.ready.model}</div>
+                Noe<div className="muted">{state.ready?.model ?? ''}</div>
               </div>
             </div>
           </aside>
@@ -372,7 +477,11 @@ export default function App() {
                   <div className="empty">
                     <img src={compactNoe} alt="" />
                     <h2>What are we building?</h2>
-                    <p>Ask Noe to explore, fix, or build something in {repoName}.</p>
+                    <p>
+                      {state.ready
+                        ? `Ask Noe to explore, fix, or build something in ${name}.`
+                        : 'Starting the session…'}
+                    </p>
                   </div>
                 )}
                 {blocks.map((block) =>
@@ -396,9 +505,13 @@ export default function App() {
                   </button>
                 )}
                 {state.running && <div className="activity working">● Noe is working…</div>}
-                {!state.connected && (
-                  <button type="button" onClick={openRepository} disabled={opening}>
-                    Reopen repository…
+                {!state.connected && state.ready && (
+                  <button
+                    type="button"
+                    onClick={() => void newSession()}
+                    disabled={opening || atLimit}
+                  >
+                    Start a new session
                   </button>
                 )}
                 <div ref={end} />
@@ -524,6 +637,15 @@ export default function App() {
               </div>
             </div>
           </main>
+          {panelOpen && (
+            <SidePanel
+              tab={panelTab}
+              onTab={setPanelTab}
+              state={state}
+              send={send}
+              onDismissRewindError={() => dispatch({ type: 'rewind_dismissed' })}
+            />
+          )}
         </div>
       )}
       <footer>
@@ -595,9 +717,7 @@ export default function App() {
               <img src={compactNoe} alt="" />
               <div>
                 <h2 id="permission-title">Noe wants to use {permission.toolName}</h2>
-                <code>
-                  {toolArgument(permission.toolName, permission.input, state.ready?.repoRoot)}
-                </code>
+                <code>{toolArgument(permission.toolName, permission.input, repoRoot)}</code>
               </div>
             </div>
             {diff.length > 0 ? (

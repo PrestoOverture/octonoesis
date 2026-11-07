@@ -412,3 +412,37 @@ test('slash completion matches skill names only for a leading bare command', () 
   expect(slashMatches('/deploy now', skills)).toBeUndefined()
   expect(slashMatches('hello /de', skills)).toBeUndefined()
 })
+
+test('checkpoints, changes and rules replace; a rewind marks later changes reverted', () => {
+  let state = transcript(initialTranscript, {
+    v: 1,
+    type: 'checkpoints',
+    entries: [
+      { seq: 1, ts: 't', tool: 'Edit', path: 'a', created: false },
+      { seq: 2, ts: 't', tool: 'Write', path: 'b', created: true },
+    ],
+    commands: [],
+  })
+  state = transcript(state, { v: 1, type: 'changes', files: [] })
+  state = transcript(state, { v: 1, type: 'learning', rules: [] })
+  expect(state.changes).toEqual([])
+  expect(state.rules).toEqual([])
+  state = transcript(state, {
+    v: 1,
+    type: 'rewind_failed',
+    seq: 2,
+    message: 'b changed',
+    conflict: true,
+  })
+  expect(state.rewindError?.conflict).toBe(true)
+  expect(transcript(state, { type: 'rewind_dismissed' }).rewindError).toBeUndefined()
+  state = transcript(state, { v: 1, type: 'rewound', seq: 2, restored: ['b'] })
+  expect(state.reverted).toEqual([2])
+  expect(state.rewindError).toBeUndefined()
+  state = transcript(state, { v: 1, type: 'rewound', seq: 1, restored: ['a', 'b'] })
+  expect(state.reverted).toEqual([2, 1])
+  expect(state.items.map((item) => (item.kind === 'notice' ? item.text : ''))).toEqual([
+    'Rewound 1 file to before change #2',
+    'Rewound 2 files to before change #1',
+  ])
+})
