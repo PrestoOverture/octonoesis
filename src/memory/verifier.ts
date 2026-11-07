@@ -1,6 +1,7 @@
 import { preToolUseHook } from '../permissions/hooks.ts'
 import { getResolvedModel } from '../providers/index.ts'
 import { bashTool } from '../tools/Bash.ts'
+import type { ToolContext } from '../tools/Tool.ts'
 import { defaultCachedExtractor } from './fingerprint/cache.ts'
 import type { Fingerprint } from './fingerprint/extract.ts'
 import { scrub } from './fingerprint/scrub.ts'
@@ -32,6 +33,7 @@ export interface VerifyResult {
  * @param signal Optional abort signal for cancellation.
  * @param isVerificationRun Whether this is a verification run.
  * @param timeoutMs Optional Bash execution timeout in milliseconds.
+ * @param session Optional session identity, so the command lands in that session's file history.
  * @returns A promise resolving to the VerifyResult.
  */
 export async function verify(
@@ -40,6 +42,7 @@ export async function verify(
   signal?: AbortSignal,
   isVerificationRun = true,
   timeoutMs?: number,
+  session?: Pick<ToolContext, 'sessionId' | 'memoryDir'>,
 ): Promise<VerifyResult> {
   const hookResult = await preToolUseHook('Bash', { command }, { repoRoot, abortSignal: signal })
   if (hookResult.action === 'deny') {
@@ -54,7 +57,7 @@ export async function verify(
 
   const result = await bashTool.call(
     { command: effectiveCommand, timeout_ms: timeoutMs },
-    { repoRoot, abortSignal: signal },
+    { repoRoot, abortSignal: signal, sessionId: session?.sessionId, memoryDir: session?.memoryDir },
   )
   if (!result.ok) {
     throw new Error(result.error)

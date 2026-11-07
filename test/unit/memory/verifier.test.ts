@@ -56,6 +56,21 @@ describe('Verifier Runner', () => {
     await rm(join(tempDir, 'journal.jsonl'), { force: true })
   })
 
+  it('records the command in the calling session file history', async () => {
+    await verify('echo verified', tempDir, undefined, true, undefined, {
+      sessionId: 'verify-session',
+      memoryDir: tempDir,
+    })
+    // Flush the verify journal event so it cannot land in the next test's journal.
+    await flushJournal()
+    const manifest = JSON.parse(
+      await readFile(join(tempDir, 'file-history', 'verify-session', 'manifest.json'), 'utf8'),
+    )
+    expect(manifest.commands.map((command: { command: string }) => command.command)).toEqual([
+      'echo verified',
+    ])
+  })
+
   it('should return PASS and zero fingerprints when command exits with 0', async () => {
     const result = await verify('echo "Everything is fine"', tempDir)
     expect(result.verdict).toBe('PASS')
