@@ -86,7 +86,17 @@ header .muted {
 }
 .title {
   margin-left: auto;
+  min-width: 0;
+  max-width: 36%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: var(--muted);
+  white-space: nowrap;
+}
+header > strong,
+header > .permission-mode,
+header > .panel-toggle {
+  flex: none;
   white-space: nowrap;
 }
 .muted,

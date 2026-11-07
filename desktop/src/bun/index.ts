@@ -199,14 +199,19 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
         if (startupDone || (await BuildConfig.get()).isPackaged) return { opened: false }
         startupDone = true
         const screen = process.env.OCTONOESIS_DEV_SCREEN === 'settings' ? 'settings' : undefined
+        const panelFlag = process.env.OCTONOESIS_DEV_PANEL
+        const panel =
+          panelFlag === 'changes' || panelFlag === 'timeline' || panelFlag === 'learning'
+            ? panelFlag
+            : undefined
         const prompt = process.env.OCTONOESIS_DEV_PROMPT || undefined
         const mode = process.env.OCTONOESIS_DEV_PERMISSION_MODE
         const permissionMode = mode === 'accept-edits' || mode === 'bypass' ? mode : undefined
         const repository = process.env.OCTONOESIS_DEV_OPEN
-        if (!repository) return { opened: false, screen }
+        if (!repository) return { opened: false, screen, panel }
         const opened = await exclusive(async () => startHost(await realpath(repository)))
-        if (!opened.opened) return { ...opened, screen }
-        return { ...opened, screen, prompt, permissionMode }
+        if (!opened.opened) return { ...opened, screen, panel }
+        return { ...opened, screen, panel, prompt, permissionMode }
       },
       openRepository: () =>
         exclusive(async () => {

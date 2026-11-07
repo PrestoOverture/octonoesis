@@ -11,7 +11,12 @@ export type DesktopRPC = {
       /** Dev builds only: OCTONOESIS_DEV_* launch options for unattended review. */
       startup: {
         params: undefined
-        response: { screen?: 'settings'; prompt?: string; permissionMode?: PermissionMode } & Opened
+        response: {
+          screen?: 'settings'
+          panel?: 'changes' | 'timeline' | 'learning'
+          prompt?: string
+          permissionMode?: PermissionMode
+        } & Opened
       }
       openExternal: { params: { url: string }; response: { opened: boolean } }
       openRepository: { params: undefined; response: Opened }

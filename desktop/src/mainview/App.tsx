@@ -178,6 +178,7 @@ export default function App() {
       })
       if (startup.error) dispatch({ v: 1, type: 'error', message: startup.error })
       if (startup.screen === 'settings') setSettingsOpen(true)
+      if (startup.panel) setPanelTab(startup.panel)
       if (startup.key) {
         dispatchWorkspace({ type: 'opened', key: startup.key })
         setPending({ key: startup.key, prompt: startup.prompt, mode: startup.permissionMode })
