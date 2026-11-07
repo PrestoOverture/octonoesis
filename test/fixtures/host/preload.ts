@@ -73,6 +73,12 @@ setProvider({
       ]
       yield* events
       return
+    } else if (prompt?.startsWith('<rewind-notice>')) {
+      // The host prefixes the next prompt after a rewind; echo what the model was told.
+      yield {
+        type: 'text_delta',
+        text: `saw-rewind restored-edit=${prompt.includes('restored edit.txt')} user=${prompt.endsWith('\n\nhello')}`,
+      }
     } else {
       yield { type: 'text_delta', text: 'hello ' }
       yield { type: 'text_delta', text: 'world' }
