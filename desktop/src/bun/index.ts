@@ -6,10 +6,12 @@ import Electrobun, {
   BrowserView,
   BrowserWindow,
   BuildConfig,
+  PATHS,
   Utils,
 } from 'electrobun/main'
 import { type HostMessage, parseHostCommand } from '../../../src/host/protocol'
 import { externalUrl } from '../shared/externalUrl'
+import { loginShellPath } from '../shared/loginPath'
 import {
   KEYCHAIN_SERVICE,
   PROVIDERS,
@@ -23,9 +25,24 @@ import {
 } from '../shared/providers'
 import type { DesktopRPC } from '../shared/rpc'
 
-// Build-time path: bundled main code lives inside the app, not desktop/src/bun.
+// Dev builds run the engine from this checkout (embedded at build time); packaged builds
+// run the bundle scripts/build-engine.ts copies into the app.
 declare const OCTONOESIS_DEV_ENGINE_ROOT: string
 const engineRoot = process.env.OCTONOESIS_ENGINE_ROOT || OCTONOESIS_DEV_ENGINE_ROOT
+async function engineEntry() {
+  if ((await BuildConfig.get()).isPackaged)
+    return resolve(PATHS.RESOURCES_FOLDER, 'app/engine/host.js')
+  const entry = resolve(engineRoot, 'src/host/main.ts')
+  if (!existsSync(entry))
+    throw new Error(
+      `Engine not found at ${entry}. Set OCTONOESIS_ENGINE_ROOT for this development build.`,
+    )
+  return entry
+}
+// Started once at launch so the first session does not wait on the user's shell rc files.
+const shellPath = BuildConfig.get().then((config) =>
+  config.isPackaged ? loginShellPath(process.env.SHELL) : undefined,
+)
 type Child = ReturnType<typeof Bun.spawn<'pipe', 'pipe', 'pipe'>>
 /** Live sessions: one engine host process each, keyed by the id the webview addresses. */
 const hosts = new Map<string, { child: Child; repoRoot: string }>()
@@ -110,12 +127,13 @@ async function startHost(root: string, resumeId?: string): Promise<Opened> {
   if (closing) return { opened: false }
   if (hosts.size >= MAX_SESSIONS)
     throw new Error(`At most ${MAX_SESSIONS} sessions can run at once. Close one first.`)
-  const entry = resolve(engineRoot, 'src/host/main.ts')
-  if (!existsSync(entry))
-    throw new Error(
-      `Engine not found at ${entry}. Set OCTONOESIS_ENGINE_ROOT for this development build.`,
-    )
-  const env = await hostEnvironment(await readSettings(), process.env, Bun.secrets)
+  const entry = await engineEntry()
+  const path = await shellPath
+  const env = await hostEnvironment(
+    await readSettings(),
+    path ? { ...process.env, PATH: path } : process.env,
+    Bun.secrets,
+  )
   const child = Bun.spawn([process.execPath, entry, ...(resumeId ? ['--resume', resumeId] : [])], {
     cwd: root,
     stdin: 'pipe',

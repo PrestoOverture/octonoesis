@@ -1,0 +1,92 @@
+name: Desktop
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  desktop-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v5
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+
+      - name: Install Engine Dependencies
+        run: bun install --frozen-lockfile
+
+      # The electrobun npm package only bootstraps Hutch (digest-checked) into ~/.hutch.
+      - name: Install Hutch
+        run: |
+          npx --yes electrobun@2.0.6 --version > /dev/null
+          echo "$HOME/.hutch/bin" >> "$GITHUB_PATH"
+
+      - name: Install Desktop Dependencies
+        working-directory: desktop
+        run: hutch install --frozen-lockfile
+
+      - name: Typecheck Desktop
+        working-directory: desktop
+        run: hutch pm exec -- tsc --noEmit
+
+      # Developer ID signing and notarization switch on only when these secrets exist.
+      - name: Build App
+        working-directory: desktop
+        env:
+          ELECTROBUN_DEVELOPER_ID: ${{ secrets.ELECTROBUN_DEVELOPER_ID }}
+          ELECTROBUN_TEAMID: ${{ secrets.ELECTROBUN_TEAMID }}
+          ELECTROBUN_APPLEID: ${{ secrets.ELECTROBUN_APPLEID }}
+          ELECTROBUN_APPLEIDPASS: ${{ secrets.ELECTROBUN_APPLEIDPASS }}
+        run: hutch run build
+
+      # The packaged engine must start from the app's own Bun with no checkout on PATH.
+      - name: Smoke Test Packaged Engine
+        working-directory: desktop
+        run: |
+          command -v zstd > /dev/null || brew install zstd
+          X=$(mktemp -d)
+          zstd -dq build/stable-macos-arm64/Octonoesis.app/Contents/Resources/*.tar.zst -o "$X/app.tar"
+          tar -xf "$X/app.tar" -C "$X"
+          A="$X/Octonoesis.app/Contents"
+          test -f "$A/Resources/app/engine/host.js"
+          test -x "$A/Resources/app/engine/node_modules/@vscode/ripgrep-darwin-arm64/bin/rg"
+          R=$(mktemp -d)
+          cd "$R" && git init -q
+          OUT=$(printf '%s\n' '{"v":1,"type":"shutdown"}' | env -i PATH=/usr/bin:/bin HOME="$R" SPARK_API_KEY=smoke "$A/MacOS/bun" "$A/Resources/app/engine/host.js" 2>/dev/null)
+          echo "$OUT" | head -1 | grep -q '"type":"ready"'
+
+      - name: Check DMG Size
+        working-directory: desktop
+        run: |
+          SIZE=$(wc -c < artifacts/macos-arm64-Octonoesis.dmg)
+          echo "DMG size: $SIZE bytes"
+          # 80 MB
+          if [ "$SIZE" -gt 83886080 ]; then
+            echo "Error: DMG exceeds 80MB"
+            exit 1
+          fi
+
+      - name: Upload DMG Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Octonoesis-macos-arm64.dmg
+          path: desktop/artifacts/macos-arm64-Octonoesis.dmg
+
+      - name: Upload Release Asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/artifacts/macos-arm64-Octonoesis.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

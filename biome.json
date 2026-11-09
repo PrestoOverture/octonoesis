@@ -18,6 +18,7 @@
       "desktop/dist/**",
       "desktop/.hutch/**",
       "desktop/artifacts/**",
+      "desktop/engine/**",
       "desktop/.cottontail-tmp/**"
     ]
   },
