@@ -21,7 +21,7 @@
 
 <img src="demo/desktop.gif" alt="Octonoesis 桌面应用：让它修复失败的购物车测试，工具活动折叠显示，修复完成，Changes 面板列出被修改的文件" width="800">
 
-从 [Releases](https://github.com/PrestoOverture/octonoesis/releases) 下载 `Octonoesis-macos-arm64.dmg`，把应用拖进「应用程序」。首次启动时它会先自解压，点 **Close** 后再打开一次即可。不需要安装 Bun，应用自带运行时和引擎。在 **Provider settings** 里填入模型密钥，密钥存放在 macOS 钥匙串中。
+从 [Releases](https://github.com/PrestoOverture/octonoesis/releases) 下载 `Octonoesis-macos-arm64.dmg`，把应用拖进「应用程序」。首次启动时它会先自解压，点 **Close**；如果应用没有自动打开，再打开一次即可。不需要安装 Bun，应用自带运行时和引擎。在 **Provider settings** 里填入模型密钥，密钥存放在 macOS 钥匙串中。
 
 应用暂未公证，第一次打开会被 macOS 拦截。请到 **系统设置 → 隐私与安全性** 点 **仍要打开**，或者清除隔离标记：`xattr -dr com.apple.quarantine /Applications/Octonoesis.app`。
 

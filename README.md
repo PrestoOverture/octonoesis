@@ -21,7 +21,7 @@ The same engine also runs in a native macOS app. Each session is its own engine 
 
 <img src="demo/desktop.gif" alt="Octonoesis desktop app: a prompt to fix failing cart tests, collapsed tool activity, the fix, and the Changes panel listing the edited file" width="800">
 
-Download `Octonoesis-macos-arm64.dmg` from [Releases](https://github.com/PrestoOverture/octonoesis/releases) and drag the app to Applications. On first launch it unpacks itself; click **Close**, then open it again. Bun is not required, because the app bundles its own runtime and the engine. Add a provider key under **Provider settings**; it is stored in the macOS Keychain.
+Download `Octonoesis-macos-arm64.dmg` from [Releases](https://github.com/PrestoOverture/octonoesis/releases) and drag the app to Applications. On first launch it unpacks itself; click **Close**, and open it again if it does not start on its own. Bun is not required, because the app bundles its own runtime and the engine. Add a provider key under **Provider settings**; it is stored in the macOS Keychain.
 
 The app is not notarized yet. The first time you open it, macOS will block it; go to **System Settings → Privacy & Security** and click **Open Anyway**. You can also clear the quarantine flag instead: `xattr -dr com.apple.quarantine /Applications/Octonoesis.app`.
 
