@@ -16,7 +16,7 @@ hutch pm exec -- tsc --noEmit
 hutch run start        # vite build + dev build + launch
 ```
 
-Install Hutch with `npx electrobun@2.0.6 --version`. `hutch electrobun dev` copies only
+Install Hutch with its installer: `curl -fsSL https://hutch.blackboard.sh/hutch/install.sh | sh -s -- --version 0.29.0`. `hutch electrobun dev` copies only
 `dist/`, so run `vite build` first (`hutch run start` does). Dev builds run the engine straight
 from this checkout; the path is embedded at build time, and `OCTONOESIS_ENGINE_ROOT`
 overrides it.

@@ -26,11 +26,12 @@ jobs:
       - name: Install Engine Dependencies
         run: bun install --frozen-lockfile
 
-      # The electrobun npm package only bootstraps Hutch (digest-checked) into ~/.hutch.
+      # Hutch's official installer (the one the electrobun npm bootstrap runs): exact version,
+      # SHA-256-checked archive, launcher in ~/.hutch/bin.
       - name: Install Hutch
         run: |
-          # Any command triggers the download; this one only prints usage and exits 1.
-          npx --yes electrobun@2.0.6 --version > /dev/null || true
+          curl -fsSL https://hutch.blackboard.sh/hutch/install.sh -o "$RUNNER_TEMP/hutch-install.sh"
+          sh "$RUNNER_TEMP/hutch-install.sh" --channel production --version 0.29.0
           test -x "$HOME/.hutch/bin/hutch"
           echo "$HOME/.hutch/bin" >> "$GITHUB_PATH"
 
