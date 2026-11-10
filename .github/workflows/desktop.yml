@@ -41,7 +41,10 @@ jobs:
 
       - name: Typecheck Desktop
         working-directory: desktop
-        run: hutch pm exec -- tsc --noEmit
+        # prepare projects the electrobun/* type declarations into .hutch/devkit.
+        run: |
+          hutch electrobun prepare
+          hutch pm exec -- tsc --noEmit
 
       # Developer ID signing and notarization switch on only when these secrets exist.
       - name: Build App
