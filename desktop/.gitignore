@@ -5,3 +5,4 @@ dist/
 artifacts/
 *.tsbuildinfo
 .cottontail-tmp/
+engine/

@@ -1,29 +1,53 @@
-# Octonoesis desktop D1
+# Octonoesis desktop
 
-Single-session Electrobun 2.0.6 desktop shell. The React webview loads bundled
-`views://` assets. Open repository uses a native directory picker, then launches
-one stdio engine host with that repository as its working directory.
+Electrobun 2.0.6 desktop app. The React webview talks to the Bun main process, and the main
+process runs one stdio engine host (`src/host/main.ts`, NDJSON protocol v1) per session, with
+the session's repository as its working directory. See ADR-011 in the engine's architecture
+notes.
 
-Run all Hutch commands with the offline release environment:
+## Develop
+
+Hutch drives every command:
 
 ```sh
 export PATH="$HOME/.hutch/bin:$PATH"
-export DASH_RELEASE_OFFLINE=1
 hutch install --frozen-lockfile
 hutch pm exec -- tsc --noEmit
-hutch pm exec -- vite build
-hutch electrobun build --env=dev
-hutch electrobun dev
+hutch run start        # vite build + dev build + launch
 ```
 
-The development build embeds the engine checkout path at build time. Override
-it with `OCTONOESIS_ENGINE_ROOT` when moving the build. Provider credentials and
-configuration use the engine's existing environment/configuration. Packaging a
-standalone engine is D4.
+Install Hutch with its installer: `curl -fsSL https://hutch.blackboard.sh/hutch/install.sh | sh -s -- --version 0.29.0`. `hutch electrobun dev` copies only
+`dist/`, so run `vite build` first (`hutch run start` does). Dev builds run the engine straight
+from this checkout; the path is embedded at build time, and `OCTONOESIS_ENGINE_ROOT`
+overrides it.
 
-The host's stdout is versioned NDJSON only; diagnostics, startup warnings,
-session summary, and memory/journal notices go to stderr and the app log.
-Enter sends, Shift/Option+Enter inserts a newline, and Stop cancels the current
-turn. Permission decisions use Y (once), A (session, exact tool input), N (deny).
+Dev builds also read `OCTONOESIS_DEV_*` launch options for unattended review:
+`OPEN=<repo>`, `PROMPT`, `PERMISSION_MODE=bypass|accept-edits`, `SCREEN=settings`,
+`PANEL=changes|timeline|learning`, `TRACE=1`. Packaged builds ignore all of them.
 
-The reducer tests run in the root `bun test` suite without loading Electrobun.
+## Package
+
+```sh
+hutch run build        # stable: artifacts/macos-arm64-Octonoesis.dmg
+```
+
+The build runs `scripts/build-engine.ts` first. That script bundles the engine host into
+`engine/host.js`, and the app runs that bundle with its own Bun, so a packaged app needs
+neither Bun nor this checkout. The platform's ripgrep goes alongside it in
+`engine/node_modules/@vscode/`, where the bundled `@vscode/ripgrep` resolves it. A packaged
+app starts the engine with the PATH from the user's login shell; launched from Finder, it
+would otherwise get launchd's minimal PATH.
+
+The `.app` in the DMG is Electrobun's self-extracting wrapper: on first launch it unpacks in
+place, and later launches run the full app.
+
+Signing: builds are ad-hoc signed by default. When `ELECTROBUN_DEVELOPER_ID` is set, they are
+signed with Developer ID and notarized. That also needs `ELECTROBUN_TEAMID`, plus either
+`ELECTROBUN_APPLEID` / `ELECTROBUN_APPLEIDPASS` or `ELECTROBUN_APPLEAPIKEY` /
+`ELECTROBUN_APPLEAPIISSUER`. The `Desktop` workflow builds the DMG on every PR, smoke-tests the
+packaged engine, and attaches the DMG to tagged releases. It passes those variables through
+from repository secrets when they exist.
+
+`scripts/icon.ts` regenerates `icon.iconset` from the Noe pixel art (needs ffmpeg).
+
+The reducer and helper tests under `src/shared/` run in the root `bun test` suite.

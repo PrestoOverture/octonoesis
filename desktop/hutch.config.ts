@@ -5,9 +5,9 @@ export default {
     start: 'hutch electrobun prepare && hutch pm exec -- vite build && hutch electrobun dev',
     dev: 'hutch electrobun prepare && hutch pm exec -- vite build && hutch electrobun dev --watch',
     build:
-      'hutch electrobun prepare && hutch pm exec -- vite build && hutch electrobun build --env=stable',
+      'hutch electrobun prepare && hutch scripts/build-engine.ts && hutch pm exec -- vite build && hutch electrobun build --env=stable',
     'build:canary':
-      'hutch electrobun prepare && hutch pm exec -- vite build && hutch electrobun build --env=canary',
+      'hutch electrobun prepare && hutch scripts/build-engine.ts && hutch pm exec -- vite build && hutch electrobun build --env=canary',
   },
   electrobun: {
     version: '2.0.6',
