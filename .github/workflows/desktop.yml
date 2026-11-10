@@ -29,7 +29,9 @@ jobs:
       # The electrobun npm package only bootstraps Hutch (digest-checked) into ~/.hutch.
       - name: Install Hutch
         run: |
-          npx --yes electrobun@2.0.6 --version > /dev/null
+          # Any command triggers the download; this one only prints usage and exits 1.
+          npx --yes electrobun@2.0.6 --version > /dev/null || true
+          test -x "$HOME/.hutch/bin/hutch"
           echo "$HOME/.hutch/bin" >> "$GITHUB_PATH"
 
       - name: Install Desktop Dependencies
