@@ -1,0 +1,101 @@
+import { expect, test } from 'bun:test'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import os from 'node:os'
+import path from 'node:path'
+import type { CanonicalMessage, CanonicalTool } from '../../src/providers/types'
+import { TranscriptEncoder, type TranscriptExchange } from '../../src/state/transcript'
+import { buildDataset, leakCheck, segmentEnds, toSample } from './elx-dataset'
+
+const tools: CanonicalTool[] = [{ name: 'Read', description: 'r', inputSchema: { type: 'object' } }]
+const usage = { input_tokens: 1, output_tokens: 1 }
+const user: CanonicalMessage = { role: 'user', content: 'Fix it' }
+const call: CanonicalMessage = {
+  role: 'assistant',
+  content: [{ type: 'tool_use', id: 'c1', name: 'Read', input: { file_path: 'a.ts' } }],
+}
+const result: CanonicalMessage = { role: 'tool', tool_use_id: 'c1', content: 'file text' }
+const done = [{ type: 'text' as const, text: 'Done.' }]
+
+function ex(
+  messages: CanonicalMessage[],
+  response: TranscriptExchange['response'],
+): TranscriptExchange {
+  return { model: 'm', system: 'sys', tools, messages, response, stopReason: 'end_turn', usage }
+}
+
+test('a continuous session is one segment; a rewritten history starts a new one', () => {
+  const continuous = [ex([user], call.content), ex([user, call, result], done)]
+  expect(segmentEnds(continuous)).toEqual([1])
+  const compacted = [...continuous, ex([{ role: 'user', content: 'summary' }], done)]
+  expect(segmentEnds(compacted)).toEqual([1, 2])
+})
+
+test('a sample is the exact provider request plus the final assistant turn', () => {
+  const sample = toSample(ex([user, call, result], done), {
+    session: 's',
+    family: 'f',
+    seed: 1,
+    segment: 0,
+    run: 'r',
+  })
+  expect(sample.messages.map((m) => m.role)).toEqual([
+    'system',
+    'user',
+    'assistant',
+    'tool',
+    'assistant',
+  ])
+  expect(sample.messages[2]).toEqual({
+    role: 'assistant',
+    content: null,
+    tool_calls: [
+      { id: 'c1', type: 'function', function: { name: 'Read', arguments: '{"file_path":"a.ts"}' } },
+    ],
+  })
+  expect(sample.messages[4]).toEqual({ role: 'assistant', content: 'Done.', tool_calls: undefined })
+  expect(sample.tools[0]?.function.name).toBe('Read')
+})
+
+test('leak check flags local paths, tokens and key literals', () => {
+  expect(leakCheck('ok /workspace/repo /home/user')).toEqual([])
+  expect(leakCheck('at /Users/alice/x')).toEqual(['local user path'])
+  expect(leakCheck('sk-abcdefghijk')).toEqual(['sk- token'])
+  expect(leakCheck('k=spark-secret-xyz', ['spark-secret-xyz'])).toEqual(['key literal'])
+})
+
+test('buildDataset keeps only oracle-PASS, non-void sessions of training families', async () => {
+  const dir = await mkdtemp(path.join(os.tmpdir(), 'elx-dataset-'))
+  try {
+    const job = (id: string, family: string) => ({
+      id,
+      arm: 'train',
+      task: { id, family, seed: 1, split: 'train' },
+    })
+    const events = [
+      { kind: 'result', observation: { job: job('a', 'csv-records'), status: 'PASS' } },
+      { kind: 'result', observation: { job: job('b', 'csv-records'), status: 'FAIL' } },
+      // held-out family: never in training data
+      { kind: 'result', observation: { job: job('c', 'event-bus'), status: 'PASS' } },
+      { kind: 'result', observation: { job: job('d', 'utf8-codec'), status: 'PASS' } },
+      { kind: 'void', jobs: [job('d', 'utf8-codec')], reason: 429 },
+    ]
+    await writeFile(
+      path.join(dir, 'events.jsonl'),
+      `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
+    )
+    for (const id of ['a', 'b', 'c', 'd']) {
+      const encoder = new TranscriptEncoder((t) => t, id)
+      await mkdir(path.join(dir, 'sessions', id), { recursive: true })
+      const lines = [ex([user], call.content), ex([user, call, result], done)].map((e) =>
+        JSON.stringify(encoder.encode(e)),
+      )
+      await writeFile(path.join(dir, 'sessions', id, 'transcript.jsonl'), `${lines.join('\n')}\n`)
+    }
+    const built = await buildDataset([dir])
+    expect(built.samples.map((s) => s.meta.session)).toEqual(['a'])
+    expect(built.perFamily).toEqual({ 'csv-records': 1 })
+    expect(built.missing).toEqual([])
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})

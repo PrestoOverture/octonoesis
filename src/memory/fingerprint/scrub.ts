@@ -41,6 +41,17 @@ const LINE_NUMBER_LABEL_REGEX = /\bline\s+(\d+)\b/gi
 const COL_NUMBER_LABEL_REGEX = /\bcol(?:umn)?\s+(\d+)\b/gi
 
 /**
+ * Redacts credential assignments and `sk-` API tokens only; leaves all other text unchanged.
+ * @param text The raw text.
+ * @returns The text with credential values replaced by `[REDACTED]`.
+ */
+export function redactCredentials(text: string): string {
+  return text
+    .replace(SECRET_ASSIGNMENT_REGEX, '$1[REDACTED]')
+    .replace(API_TOKEN_REGEX, '[REDACTED]')
+}
+
+/**
  * Deterministically normalizes volatile output (ANSI codes, absolute paths,
  * line/column numbers, timestamps, memory addresses, and durations) without using LLMs.
  * @param text The raw output text to scrub.
@@ -52,10 +63,7 @@ export function scrub(text: string, repoRoot: string): string {
   if (!text) return ''
 
   // 1. Remove ANSI escape codes
-  let scrubbed = text
-    .replace(ANSI_REGEX, '')
-    .replace(SECRET_ASSIGNMENT_REGEX, '$1[REDACTED]')
-    .replace(API_TOKEN_REGEX, '[REDACTED]')
+  let scrubbed = redactCredentials(text.replace(ANSI_REGEX, ''))
 
   // 2. Replace absolute paths under repoRoot with relative paths.
   // We normalize potential trailing slashes in the repoRoot.

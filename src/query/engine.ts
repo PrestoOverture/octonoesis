@@ -48,6 +48,7 @@ import type { ResolvedSandboxConfig } from '../sandbox/types'
 import { loadSkills } from '../skills/loader'
 import { createSessionState, flushSessionStats, formatSessionSummary } from '../state/session'
 import { saveSession } from '../state/sessionStore'
+import { getTranscriptRecorder } from '../state/transcript'
 import { cleanupTasks, drainTaskNotifications } from '../tasks/framework'
 import { AgentTool } from '../tools/AgentTool'
 import { bashTool } from '../tools/Bash'
@@ -843,6 +844,18 @@ export async function* streamFromProvider(
       },
     }
   }
+
+  getTranscriptRecorder(ctx.repoRoot, ctx.sessionId)?.record({
+    model: state.model,
+    system: context.system,
+    dynamicSystem: context.dynamicSystem,
+    tools: context.tools,
+    messages: context.messages,
+    response: structuredClone(assistantBlocks),
+    stopReason,
+    usage: finalUsage || { input_tokens: 0, output_tokens: 0 },
+    invalidToolCalls: droppedCalls.map(({ id, name }) => ({ id, name })),
+  })
 
   if (finalUsage) {
     state.contextSnapshot = {

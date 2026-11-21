@@ -59,6 +59,38 @@ export function toOpenAIMessages(messages: CanonicalMessage[]): ChatCompletionMe
   })
 }
 
+/**
+ * Builds the exact chat-completions messages and tools the provider sends.
+ * Shared with the ELX dataset builder so training samples match inference requests.
+ * @param messages The canonical messages.
+ * @param tools The canonical tool definitions.
+ * @param system Static system prompt.
+ * @param dynamicSystem Per-turn system prompt suffix.
+ * @returns OpenAI messages (system first when present) and function tools.
+ */
+export function toOpenAIRequest(
+  messages: CanonicalMessage[],
+  tools: CanonicalTool[],
+  system?: string,
+  dynamicSystem?: string,
+) {
+  const openAIMessages = toOpenAIMessages(messages)
+  const openAITools = tools.map((t) => ({
+    type: 'function' as const,
+    function: {
+      name: t.name,
+      description: t.description,
+      parameters: t.inputSchema,
+    },
+  }))
+  // Prepend system message if system or dynamicSystem is provided
+  if (system || dynamicSystem) {
+    const combined = [system, dynamicSystem].filter(Boolean).join('\n\n')
+    if (combined) openAIMessages.unshift({ role: 'system', content: combined })
+  }
+  return { messages: openAIMessages, tools: openAITools }
+}
+
 export class OpenAIProvider implements LLMProvider {
   readonly name = 'openai-compatible' as const
 
@@ -91,24 +123,12 @@ export class OpenAIProvider implements LLMProvider {
       : process.env.OPENAI_BASE_URL || undefined
     const client = new OpenAI({ apiKey, baseURL })
 
-    const openAIMessages = toOpenAIMessages(messages)
-    const openAITools = tools.map((t) => ({
-      type: 'function' as const,
-      function: {
-        name: t.name,
-        description: t.description,
-        parameters: t.inputSchema,
-      },
-    }))
-
-    // Prepend system message if system or dynamicSystem is provided
-    if (opts.system || opts.dynamicSystem) {
-      const parts = [opts.system, opts.dynamicSystem].filter(Boolean)
-      const combined = parts.join('\n\n')
-      if (combined) {
-        openAIMessages.unshift({ role: 'system', content: combined })
-      }
-    }
+    const { messages: openAIMessages, tools: openAITools } = toOpenAIRequest(
+      messages,
+      tools,
+      opts.system,
+      opts.dynamicSystem,
+    )
 
     dbg('api', 'OpenAI streaming request', {
       model: opts.model,

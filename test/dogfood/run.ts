@@ -20,9 +20,11 @@ import path from 'node:path'
 import { Command } from 'commander'
 import { isKnownJournalEvent, parseJournalEvent } from '../../src/memory/events'
 import { loadAllRulesIncludingArchived } from '../../src/memory/rules/store'
+import { TRANSCRIPT_FILE_ENV } from '../../src/state/transcript'
 import { type CommandResult, command, parseOutput } from '../eval/run'
 import { CALIBRATION_RULE, calibrationGate } from './calibration'
 import { hiddenGroups, parseHiddenResults } from './check'
+import { resolveFamilies } from './elx'
 import { sessionStatus } from './endpoint'
 import type { Job, Observation, Plan } from './model'
 import { clusterPlanningPower, planPower } from './power'
@@ -30,6 +32,7 @@ import { markdown, report } from './stats'
 import {
   DRY_HELDOUT_PER_FAMILY,
   DRY_TRAINING_PER_FAMILY,
+  type Family,
   TRAINING_PER_FAMILY,
   digest,
   families,
@@ -55,6 +58,12 @@ export interface Options {
   calibrate?: boolean
   perFamily?: number
   streamSeed?: number
+  /** Calibration only: `elx-train`, `elx-heldout`, or a comma-separated family list. */
+  families?: string
+  /** Calibration only: capture full main-loop transcripts; provider rejections void and halt. */
+  capture?: boolean
+  /** Calibration only: drain after starting at most N new sessions. */
+  stopAfterSessions?: number
   pairsPerFamily?: number
   mde?: number
   discordance?: number
@@ -281,7 +290,7 @@ export async function preregister(dir: string, options: Options): Promise<Plan> 
   return plan
 }
 
-type SessionConfig = Pick<Plan, 'mode' | 'provider' | 'model'>
+type SessionConfig = Pick<Plan, 'mode' | 'provider' | 'model'> & { capture?: boolean }
 
 export function sessionEnvironment(
   repo: string,
@@ -344,10 +353,11 @@ export async function runSession(
   const originalTest = await readFile(path.join(repo, 'contract.test.ts'), 'utf8')
   const initialSource = await readFile(path.join(repo, 'src/subject.ts'), 'utf8')
   const attemptsFile = path.join(workspace, 'attempts.jsonl')
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     ...sessionEnvironment(repo, ledger, plan),
     OCTONOESIS_DOGFOOD_ATTEMPTS: attemptsFile,
   }
+  if (plan.capture) env[TRANSCRIPT_FILE_ENV] = path.join(workspace, 'transcript.jsonl')
   const before = await loadAllRulesIncludingArchived(path.join(ledger, 'rules'))
   const row: Observation = {
     job,
@@ -917,6 +927,7 @@ export async function run(
 }
 
 interface CalibrationConfig extends SessionConfig {
+  families?: Family[]
   source_hash: string
   per_family: number
   concurrency: number
@@ -998,7 +1009,7 @@ export function calibrationSummary(rows: Observation[]) {
   )
 }
 
-export async function calibrate(options: Options) {
+export async function calibrate(options: Options, session = runSession) {
   requireProviderCredential(options)
   const dir = await assertIsolatedOutput(
     options.output ?? (await mkdtemp(path.join(os.tmpdir(), 'octonoesis-calibration-'))),
@@ -1012,8 +1023,9 @@ export async function calibrate(options: Options) {
     const perFamily = positiveInteger(options.perFamily ?? 3)
     const concurrency = positiveInteger(options.concurrency ?? 1)
     if (concurrency > 10) throw new Error('Concurrency cap is 10')
+    const selected = options.families ? resolveFamilies(options.families) : undefined
     const tasks = generateStream(families.length * perFamily, 1, options.streamSeed ?? 1).filter(
-      (t) => t.split === 'train',
+      (t) => t.split === 'train' && (!selected || selected.includes(t.family)),
     )
     const config: CalibrationConfig = {
       mode: options.dryRun ? 'dry-run' : 'live',
@@ -1026,6 +1038,9 @@ export async function calibrate(options: Options) {
             : provider === 'openai'
               ? DEFAULT_OPENAI_MODEL
               : DEFAULT_ANTHROPIC_MODEL)),
+      // Optional ELX fields are omitted when unset so earlier calibration digests still match.
+      ...(selected ? { families: selected } : {}),
+      ...(options.capture ? { capture: true } : {}),
       per_family: perFamily,
       concurrency,
       source_hash: await sourceHash(),
@@ -1038,18 +1053,71 @@ export async function calibrate(options: Options) {
         throw new Error('Calibration configuration/source differs from existing run')
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
-      if ((await readdir(dir)).some((name) => name !== '.run-lock'))
+      if ((await readdir(dir)).some((name) => name !== '.run-lock' && name !== 'STOP'))
         throw new Error('New calibration output directory must be empty')
       // Descriptive run configuration only: no hypothesis/test, registry entry, or preregistration.
       await jsonFile(file, config)
     }
     const rows = await resumeRows(dir, digest(config), config.jobs)
     const emit = eventWriter(dir)
+    let stopped = false
+    let breaker = false
+    let consecutive429 = rejectionStreak(await readEvents(dir))
+    let startedSessions = 0
+    const canStart = () => {
+      if (existsSync(path.join(dir, 'STOP'))) stopped = true
+      if (options.stopAfterSessions !== undefined && startedSessions >= options.stopAfterSessions)
+        stopped = true
+      return !stopped && !breaker
+    }
     await runPool(config.jobs, concurrency, async (job) => {
       if (rows.some((r) => r.job.id === job.id)) return
-      const row = await performJob(dir, job, config, digest(config), emit, undefined, true)
+      if (!canStart()) return
+      startedSessions++
+      if (!config.capture) {
+        rows.push(await performJob(dir, job, config, digest(config), emit, undefined, true))
+        return
+      }
+      const row = await performJob(
+        dir,
+        job,
+        config,
+        digest(config),
+        emit,
+        undefined,
+        true,
+        session,
+        false,
+      )
+      const reason = providerRejection(row.error)
+      if (reason) {
+        // Outcome-blind: a rejected session is voided and rerun on resume, never graded.
+        consecutive429 = reason === 429 ? consecutive429 + 1 : 0
+        if (reason !== 429 || consecutive429 >= 3) breaker = true
+        const event: VoidEvent = {
+          kind: 'void',
+          id: randomUUID(),
+          jobs: [job],
+          reason,
+          error: row.error as string,
+        }
+        await emit(event)
+        await archiveVoid(dir, event)
+        return
+      }
+      consecutive429 = 0
+      await emit({ kind: 'result', observation: row })
       rows.push(row)
+      console.log(`${rows.length}/${config.jobs.length} ${job.id}: ${row.status}`)
     })
+    if (rows.length !== config.jobs.length) {
+      console.log(
+        breaker
+          ? 'Provider rejected requests; replace SPARK_API_KEY and resume with the same --output'
+          : 'Stopped; resume with the same --output',
+      )
+      return { dir, exitCode: breaker ? 3 : 0, result: undefined }
+    }
     rows.sort(
       (a, b) =>
         config.jobs.findIndex((j) => j.id === a.job.id) -
@@ -1089,7 +1157,7 @@ export async function calibrate(options: Options) {
     console.log(
       `Pooled calibration eligible: ${result.calibration_gate.eligible}; ${result.calibration_gate.reasons.join(' ')}`,
     )
-    return { dir, result }
+    return { dir, exitCode: 0, result }
   } finally {
     await unlock()
   }
@@ -1132,10 +1200,23 @@ if (import.meta.main) {
     )
     .option('--calibrate', 'Descriptive fresh-ledger probe; never writes a preregistration')
     .option('--per-family <K>', 'Calibration sessions per family', positiveInteger)
+    .option('--families <list>', 'Calibration: elx-train, elx-heldout, or comma-separated families')
+    .option(
+      '--capture',
+      'Calibration: capture full transcripts; void and halt on provider rejection',
+    )
+    .option(
+      '--stop-after-sessions <N>',
+      'Calibration: drain after starting at most N new sessions',
+      positiveInteger,
+    )
     .parse(process.argv)
   const options = program.opts<Options>()
   const execution = options.calibrate
-    ? calibrate(options).then(({ dir }) => console.log(`Calibration output: ${dir}`))
+    ? calibrate(options).then(({ dir, exitCode }) => {
+        process.exitCode = exitCode
+        console.log(`Calibration output: ${dir}`)
+      })
     : run(options).then(({ dir, result, exitCode }) => {
         process.exitCode = exitCode
         if (result) console.log(`Verdict: ${result.verdict}\nOutput: ${dir}`)
