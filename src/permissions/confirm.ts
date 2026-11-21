@@ -15,13 +15,18 @@ export type PermissionMode = 'ask' | 'accept-edits' | 'bypass'
 let permissionMode: PermissionMode = 'ask'
 let promptOutput: NodeJS.WriteStream = process.stdout
 
+/** Changes the next permission check without settling an already pending prompt. */
+export function setPermissionMode(mode: PermissionMode): void {
+  permissionMode = mode
+}
+
 /** Configures the one-shot permission boundary; JSON callers keep stdout machine-readable. */
 export function configureOneShotPermissions(
   mode: PermissionMode = 'ask',
   output: NodeJS.WriteStream = process.stdout,
 ): void {
   resetFallbackPromptState()
-  permissionMode = mode
+  setPermissionMode(mode)
   promptOutput = output
   if (mode === 'bypass') {
     process.stderr.write('Warning: --permission-mode bypass auto-approves all tool permissions.\n')

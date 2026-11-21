@@ -279,6 +279,7 @@ export async function runTool(
               ctx.abortSignal,
               true,
               (validatedInput as { timeout_ms?: number }).timeout_ms,
+              ctx,
             )
             verifyResult = {
               ...vr,

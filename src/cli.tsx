@@ -6,27 +6,28 @@ import { Command, Option } from 'commander'
 import { render } from 'ink'
 import React from 'react'
 import { version } from '../package.json'
-import { getConfigTrustWarning, loadConfig } from './config/load.ts'
 import type { OctonoesisConfig } from './config/schema.ts'
 import { appendExperimentRecord, readExperiments } from './experiments/registry.ts'
 import type { ExperimentRecord } from './experiments/schema.ts'
 import { runJsonQuery } from './headless.ts'
-import {
-  formatMemoryUnavailableNotice,
-  initializeMemoryAvailability,
-} from './memory/availability.ts'
-import { flushJournal, formatJournalFailureNotice } from './memory/journal.ts'
 import { rebuildRules } from './memory/rules/rebuild.ts'
 import { getRulesDir } from './memory/rules/store.ts'
 import { configureOneShotPermissions } from './permissions/confirm.ts'
-import { claimProcessSignals } from './providers/fork.ts'
-import { getResolvedModel, setConfiguredModel } from './providers/index.ts'
-import { type ToolContext, runQuery } from './query'
+import { getResolvedModel } from './providers/index.ts'
+import { runQuery } from './query'
 import type { SessionState } from './query/types.ts'
-import { assertSandboxAvailable, resolveSandboxConfig } from './sandbox/manager.ts'
 import type { ResolvedSandboxConfig } from './sandbox/types.ts'
+import {
+  checkApiKey,
+  createInteractiveContext,
+  finishInteractiveSession,
+  initializeSessionMemory,
+  loadSessionConfig,
+  sessionSandbox,
+  sessionSignals,
+} from './session/lifecycle'
 import { rewriteSkillSlashCommand } from './skills/execute.ts'
-import { createSessionState, flushSessionStats, formatSessionSummary } from './state/session.ts'
+import { createSessionState, formatSessionSummary } from './state/session.ts'
 import {
   type StoredSession,
   formatSessionList,
@@ -34,11 +35,8 @@ import {
   loadMostRecentSession,
   loadSession,
 } from './state/sessionStore.ts'
-import { cleanupTasks } from './tasks/framework.ts'
 import { App } from './ui/App'
 import { prepareScreenSequence } from './ui/screen'
-import { dbg } from './utils/debug.ts'
-import { hasAnthropicKey, hasOpenAIKey, hasSparkKey } from './utils/env.ts'
 import { getMemoryDir, getRepoRoot } from './utils/path.ts'
 
 if (process.argv.includes('--fork-child')) {
@@ -49,45 +47,10 @@ if (process.argv.includes('--fork-child')) {
 const startupRepoRoot = getRepoRoot()
 let startupConfig: OctonoesisConfig
 try {
-  startupConfig = await loadConfig(startupRepoRoot)
-  setConfiguredModel(startupConfig.model)
-  const trustWarning = await getConfigTrustWarning(startupRepoRoot, startupConfig)
-  if (trustWarning) console.error(trustWarning)
+  startupConfig = await loadSessionConfig(startupRepoRoot)
 } catch (error) {
   console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
   process.exit(1)
-}
-
-/**
- * Validates that required API key environment variables are configured for the active LLM provider.
- *
- * Prints an error message and terminates the process with exit code 1 if the required key is missing.
- */
-function checkApiKey(): void {
-  const provider = (process.env.LLM_PROVIDER || 'spark').toLowerCase()
-  if (provider === 'spark' && !hasSparkKey()) {
-    console.error('Error: SPARK_API_KEY is not set. Add it to your environment or .env file.')
-    process.exit(1)
-  }
-  if (provider === 'anthropic' && !hasAnthropicKey()) {
-    console.error(
-      'Error: ANTHROPIC_API_KEY is not set.\n\n' +
-        'Set it in your environment:\n' +
-        '  export ANTHROPIC_API_KEY=sk-ant-...\n\n' +
-        'Or switch to OpenAI:\n' +
-        '  export LLM_PROVIDER=openai\n' +
-        '  export OPENAI_API_KEY=sk-proj-...',
-    )
-    process.exit(1)
-  }
-  if (provider === 'openai' && !hasOpenAIKey()) {
-    console.error(
-      'Error: OPENAI_API_KEY is not set.\n\n' +
-        'Set it in your environment:\n' +
-        '  export OPENAI_API_KEY=sk-proj-...',
-    )
-    process.exit(1)
-  }
 }
 
 /**
@@ -314,7 +277,7 @@ program
       process.exit(1)
     }
     const memoryDir = getMemoryDir()
-    await initializeMemoryAvailability(memoryDir)
+    await initializeSessionMemory(memoryDir)
     let resumedSession: StoredSession | undefined
     try {
       if (options.continue && options.resume) {
@@ -335,15 +298,7 @@ program
 
     let sandbox: ResolvedSandboxConfig | undefined
     try {
-      const resolved = resolveSandboxConfig({
-        repoRoot: startupRepoRoot,
-        cliEnabled: program.opts().sandbox,
-        config: startupConfig.sandbox,
-      })
-      if (resolved.enabled) {
-        sandbox = resolved
-        assertSandboxAvailable()
-      }
+      sandbox = sessionSandbox(startupRepoRoot, startupConfig, program.opts().sandbox)
     } catch (error) {
       console.error(`Error: ${error instanceof Error ? error.message : String(error)}`)
       process.exit(1)
@@ -367,45 +322,33 @@ program
       }
     }
 
-    checkApiKey()
+    try {
+      checkApiKey()
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error))
+      process.exit(1)
+    }
 
-    claimProcessSignals()
     const controller = new AbortController()
-    let signalExitCode: number | undefined
     let unmount: (() => void) | undefined
-    let deadline: ReturnType<typeof setTimeout> | undefined
-    const signalCodes = { SIGTERM: 143, SIGINT: 130, SIGHUP: 129 } as const
-    const handlers = Object.entries(signalCodes).map(([signal, code]) => {
-      const handler = () => {
-        if (signalExitCode !== undefined) process.exit(signalExitCode)
-        signalExitCode = code
-        // Keep the deadline referenced even if graceful cleanup leaves no handles.
-        deadline = setTimeout(() => process.exit(code), 3000)
-        controller.abort()
-        unmount?.()
-      }
-      process.on(signal, handler)
-      return { signal, handler }
+    let signalled = false
+    const signals = sessionSignals(() => {
+      signalled = true
+      controller.abort()
+      unmount?.()
     })
 
     try {
       if (!prompt) {
         let latestSession: { sessionState: SessionState; priced: boolean } | undefined
-        const sessionId = crypto.randomUUID()
-        const tuiCtx: ToolContext = {
-          repoRoot: startupRepoRoot,
-          memoryDir,
+        const tuiCtx = createInteractiveContext(startupRepoRoot, memoryDir, startupConfig, {
           persistSession:
             process.stdin.isTTY === true ||
             resumedSession !== undefined ||
             options.saveSession === true,
           messages: structuredClone(resumedSession?.messages ?? []),
-          sessionId,
-          sessionState: createSessionState(sessionId, getResolvedModel()),
           sandbox,
-          config: startupConfig,
-          tasks: new Map(),
-        }
+        })
         if (process.stdout.isTTY === true) {
           process.stdout.write(prepareScreenSequence(process.stdout.rows))
         }
@@ -436,23 +379,14 @@ program
         if (controller.signal.aborted) unmount()
         await instance.waitUntilExit()
         await activeQuery
-        try {
-          await cleanupTasks(tuiCtx)
-        } catch (error) {
-          dbg('cli', 'Failed to clean up background tasks', error)
-        }
-        await flushSessionStats()
-        if (!latestSession && tuiCtx.sessionState) {
-          latestSession = { sessionState: tuiCtx.sessionState, priced: false }
-        }
-        if (latestSession) {
-          console.log(formatSessionSummary(latestSession.sessionState, latestSession.priced))
-        }
-        await flushJournal()
-        const memoryNotice = formatMemoryUnavailableNotice()
-        if (memoryNotice) console.error(memoryNotice)
-        const journalNotice = formatJournalFailureNotice()
-        if (journalNotice) console.error(journalNotice)
+        await finishInteractiveSession(tuiCtx, () => {
+          if (!latestSession && tuiCtx.sessionState) {
+            latestSession = { sessionState: tuiCtx.sessionState, priced: false }
+          }
+          if (latestSession) {
+            console.log(formatSessionSummary(latestSession.sessionState, latestSession.priced))
+          }
+        })
         return
       }
 
@@ -500,7 +434,7 @@ program
       } catch (error) {
         if (error instanceof Error) {
           console.error(`Error: ${error.message}`)
-          if (signalExitCode === undefined) process.exit(1)
+          if (!signalled) process.exit(1)
         } else {
           throw error
         }
@@ -508,9 +442,7 @@ program
         configureOneShotPermissions()
       }
     } finally {
-      if (signalExitCode !== undefined) process.exit(signalExitCode)
-      if (deadline) clearTimeout(deadline)
-      for (const { signal, handler } of handlers) process.removeListener(signal, handler)
+      signals.finish()
     }
   })
 

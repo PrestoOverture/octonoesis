@@ -15,6 +15,20 @@
 
 ---
 
+## 桌面应用（macOS）
+
+同一个引擎也可以在原生 macOS 应用里运行。每个会话是一个独立的引擎进程：可以多个会话并行，在按文件的 diff 面板里查看改动，把文件回退到任意检查点，也能浏览学习闭环积累下来的规则池。
+
+<img src="demo/desktop.gif" alt="Octonoesis 桌面应用：让它修复失败的购物车测试，工具活动折叠显示，修复完成，Changes 面板列出被修改的文件" width="800">
+
+从 [Releases](https://github.com/PrestoOverture/octonoesis/releases) 下载 `Octonoesis-macos-arm64.dmg`，把应用拖进「应用程序」。首次启动时它会先自解压，点 **Close**；如果应用没有自动打开，再打开一次即可。不需要安装 Bun，应用自带运行时和引擎。在 **Provider settings** 里填入模型密钥，密钥存放在 macOS 钥匙串中。
+
+应用暂未公证，第一次打开会被 macOS 拦截。请到 **系统设置 → 隐私与安全性** 点 **仍要打开**，或者清除隔离标记：`xattr -dr com.apple.quarantine /Applications/Octonoesis.app`。
+
+从源码构建请看 [desktop/README.md](desktop/README.md)。
+
+---
+
 ## 功能
 
 **核心**
