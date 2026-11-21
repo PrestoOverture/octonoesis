@@ -63,7 +63,7 @@ test('leak check flags local paths, tokens and key literals', () => {
   expect(leakCheck('k=spark-secret-xyz', ['spark-secret-xyz'])).toEqual(['key literal'])
 })
 
-test('buildDataset keeps only oracle-PASS, non-void sessions of training families', async () => {
+test('buildDataset keeps final-hidden-PASS, non-ERROR, non-void sessions of training families', async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), 'elx-dataset-'))
   try {
     const job = (id: string, family: string) => ({
@@ -72,18 +72,40 @@ test('buildDataset keeps only oracle-PASS, non-void sessions of training familie
       task: { id, family, seed: 1, split: 'train' },
     })
     const events = [
-      { kind: 'result', observation: { job: job('a', 'csv-records'), status: 'PASS' } },
-      { kind: 'result', observation: { job: job('b', 'csv-records'), status: 'FAIL' } },
+      {
+        kind: 'result',
+        observation: { job: job('a', 'csv-records'), status: 'PASS', hidden_status: 'PASS' },
+      },
+      // first tested repair failed, final submission passed: still a verified trajectory
+      {
+        kind: 'result',
+        observation: { job: job('e', 'csv-records'), status: 'FAIL', hidden_status: 'PASS' },
+      },
+      {
+        kind: 'result',
+        observation: { job: job('b', 'csv-records'), status: 'FAIL', hidden_status: 'FAIL' },
+      },
+      // untrusted measurement
+      {
+        kind: 'result',
+        observation: { job: job('f', 'csv-records'), status: 'ERROR', hidden_status: 'PASS' },
+      },
       // held-out family: never in training data
-      { kind: 'result', observation: { job: job('c', 'event-bus'), status: 'PASS' } },
-      { kind: 'result', observation: { job: job('d', 'utf8-codec'), status: 'PASS' } },
+      {
+        kind: 'result',
+        observation: { job: job('c', 'event-bus'), status: 'PASS', hidden_status: 'PASS' },
+      },
+      {
+        kind: 'result',
+        observation: { job: job('d', 'utf8-codec'), status: 'PASS', hidden_status: 'PASS' },
+      },
       { kind: 'void', jobs: [job('d', 'utf8-codec')], reason: 429 },
     ]
     await writeFile(
       path.join(dir, 'events.jsonl'),
       `${events.map((e) => JSON.stringify(e)).join('\n')}\n`,
     )
-    for (const id of ['a', 'b', 'c', 'd']) {
+    for (const id of ['a', 'b', 'c', 'd', 'e', 'f']) {
       const encoder = new TranscriptEncoder((t) => t, id)
       await mkdir(path.join(dir, 'sessions', id), { recursive: true })
       const lines = [ex([user], call.content), ex([user, call, result], done)].map((e) =>
@@ -92,8 +114,8 @@ test('buildDataset keeps only oracle-PASS, non-void sessions of training familie
       await writeFile(path.join(dir, 'sessions', id, 'transcript.jsonl'), `${lines.join('\n')}\n`)
     }
     const built = await buildDataset([dir])
-    expect(built.samples.map((s) => s.meta.session)).toEqual(['a'])
-    expect(built.perFamily).toEqual({ 'csv-records': 1 })
+    expect(built.samples.map((s) => s.meta.session)).toEqual(['a', 'e'])
+    expect(built.perFamily).toEqual({ 'csv-records': 2 })
     expect(built.missing).toEqual([])
   } finally {
     await rm(dir, { recursive: true, force: true })

@@ -82,8 +82,15 @@ async function passingSessions(runDir: string): Promise<Observation[]> {
     if (event.kind === 'result') rows.set(event.observation.job.id, event.observation)
     if (event.kind === 'void') for (const job of event.jobs) voided.add(job.id)
   }
+  // Training data = final hidden oracle PASS. `status` is the RSC first-tested-repair endpoint
+  // (FAIL when the first tested edit failed even if the final submission passed); ERROR rows
+  // (e.g. a modified measurement fixture) are never trusted.
   return [...rows.values()].filter(
-    (row) => row.status === 'PASS' && train.has(row.job.task.family) && !voided.has(row.job.id),
+    (row) =>
+      row.hidden_status === 'PASS' &&
+      row.status !== 'ERROR' &&
+      train.has(row.job.task.family) &&
+      !voided.has(row.job.id),
   )
 }
 
