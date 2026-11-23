@@ -1,0 +1,18 @@
+{
+  "student": "Qwen/Qwen3.5-9B",
+  "revision": "c202236235762e1c871ad0ccb60c8ee5ba337b9a",
+  "lora": {
+    "r": 32,
+    "alpha": 64,
+    "dropout": 0.05,
+    "target_modules": "model\\.language_model\\.layers\\.\\d+\\.mlp\\.(gate_proj|up_proj|down_proj)"
+  },
+  "epochs": 3,
+  "learning_rate": 0.0001,
+  "weight_decay": 0.01,
+  "accumulation_steps": 4,
+  "warmup_fraction": 0.05,
+  "max_grad_norm": 1.0,
+  "max_seq_length": 48000,
+  "seed": 20261124
+}
